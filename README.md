@@ -55,12 +55,20 @@ de reformater ce que vous n'avez pas édité.
 - Ouverture, enregistrement, onglets, Récents, versions Time Machine,
   restauration de session et iCloud Drive, par `NSDocument`
 - `⌘F` avec le chercheur natif, correction orthographique système
+- Mode focus — tout s'atténue sauf la phrase ou le paragraphe courant — et
+  mode machine à écrire, tous deux optionnels : le défilement normal est le défaut
+- Statistiques discrètes : mots, signes, temps de lecture, avec objectif de
+  session facultatif. La syntaxe markdown n'y est pas comptée
 
 ## Ce qui n'est pas encore là
 
 Images rendues dans le flux · tableaux éditables · export PDF, HTML et RTF ·
-mode focus et machine à écrire · plan du document · palette de commandes ·
-menu slash · fenêtre de réglages · import de polices.
+plan du document · palette de commandes · menu slash · fenêtre de réglages ·
+import de polices.
+
+Les réglages existent et sont persistés, mais il n'y a pas encore d'écran pour
+les changer — seuls le mode focus et la machine à écrire ont leur entrée de
+menu.
 
 ## Construire
 
@@ -78,7 +86,7 @@ Voir [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-108 tests, dont les budgets de performance, qui **échouent** s'ils sont
+117 tests, dont les budgets de performance, qui **échouent** s'ils sont
 dépassés. Ils tournent en Debug, la configuration la plus défavorable.
 
 Pour vérifier la fidélité au fichier sur de vrais documents :

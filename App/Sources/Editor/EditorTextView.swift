@@ -22,6 +22,31 @@ final class EditorTextView: NSTextView {
 
     var typography: EditorTypography = .default
 
+    /// La plage laissée en pleine intensité par le mode focus (§4.5).
+    /// `nil` quand le mode est éteint.
+    var focusRange: NSRange? {
+        didSet {
+            guard focusRange != oldValue else { return }
+            focusOverlay.isHidden = focusRange == nil
+            focusOverlay.frame = bounds
+            focusOverlay.needsDisplay = true
+        }
+    }
+
+    /// Le voile du mode focus, **au-dessus** du texte.
+    ///
+    /// Il ne peut pas être peint dans `draw(_:)` : avec TextKit 2, les
+    /// fragments de texte sont rendus dans des couches posées par-dessus le
+    /// dessin de la vue, et le voile passait dessous — invisible. Une sous-vue,
+    /// elle, se compose au-dessus.
+    private lazy var focusOverlay: FocusOverlayView = {
+        let overlay = FocusOverlayView(owner: self)
+        overlay.isHidden = true
+        overlay.autoresizingMask = [.width, .height]
+        addSubview(overlay)
+        return overlay
+    }()
+
     /// Rappels vers `EditorController` pour les touches dont le comportement
     /// dépend du markdown. Chacun renvoie `true` s'il a pris la main.
     var handlesNewline: (() -> Bool)?
@@ -72,6 +97,17 @@ final class EditorTextView: NSTextView {
         isHorizontallyResizable = false
         autoresizingMask = [.width]
         textContainerInset = NSSize(width: 0, height: Theme.Space.s40)
+    }
+
+    /// Remet le voile à la taille de la vue.
+    ///
+    /// La vue de texte grandit à mesure que la mise en page progresse ; sans
+    /// ce rappel, le voile garderait la hauteur qu'elle avait à l'ouverture et
+    /// laisserait le bas du document en pleine intensité.
+    func refreshFocusOverlay() {
+        guard focusRange != nil else { return }
+        focusOverlay.frame = bounds
+        focusOverlay.needsDisplay = true
     }
 
     // MARK: - Décorations
@@ -172,6 +208,55 @@ final class EditorTextView: NSTextView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         NotificationCenter.default.post(name: .foveaAppearanceChanged, object: self)
+    }
+}
+
+/// Le voile qui atténue tout sauf l'unité active.
+///
+/// Il est peint dans la couleur du fond à faible opacité, plutôt qu'en
+/// changeant la couleur des caractères. Les attributs de couleur portent déjà
+/// du sens — code, citation, marqueur révélé — et les écraser obligerait à tout
+/// recalculer pour revenir en arrière, à chaque déplacement du curseur.
+private final class FocusOverlayView: NSView {
+
+    private weak var owner: EditorTextView?
+
+    init(owner: EditorTextView) {
+        self.owner = owner
+        super.init(frame: owner.bounds)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("aucune vue ne vient d'un xib") }
+
+    /// Transparente aux clics : le voile est décoratif, on écrit à travers.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let owner, let focusRange = owner.focusRange,
+              let layout = owner.textLayoutManager,
+              let content = owner.textContentStorage,
+              let start = content.location(content.documentRange.location, offsetBy: focusRange.location),
+              let end = content.location(start, offsetBy: focusRange.length),
+              let range = NSTextRange(location: start, end: end) else { return }
+
+        // Les bornes verticales de l'unité active suffisent : découper par
+        // segments laisserait des trous entre les lignes.
+        var union: NSRect?
+        layout.enumerateTextSegments(in: range, type: .standard, options: []) { _, frame, _, _ in
+            union = union.map { $0.union(frame) } ?? frame
+            return true
+        }
+        guard let union else { return }
+        let active = union.offsetBy(dx: owner.textContainerOrigin.x, dy: owner.textContainerOrigin.y)
+
+        Theme.NS.window.withAlphaComponent(0.74).setFill()
+        NSRect(x: bounds.minX, y: bounds.minY,
+               width: bounds.width, height: max(0, active.minY - bounds.minY))
+            .intersection(dirtyRect).fill()
+        NSRect(x: bounds.minX, y: active.maxY,
+               width: bounds.width, height: max(0, bounds.maxY - active.maxY))
+            .intersection(dirtyRect).fill()
     }
 }
 

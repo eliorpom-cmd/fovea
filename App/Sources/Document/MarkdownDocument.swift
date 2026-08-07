@@ -62,10 +62,11 @@ final class MarkdownDocument: NSDocument {
         addWindowController(controller)
         editor = controller.editor
         controller.editor.setText(text)
-        controller.editor.onTextChanged = { [weak self] in
+        controller.editor.onTextChanged = { [weak self, weak controller] in
             // `updateChangeCount` est ce qui allume la pastille du bouton de
             // fermeture et déclenche l'enregistrement automatique.
             self?.updateChangeCount(.changeDone)
+            controller?.refreshStatistics()
         }
     }
 

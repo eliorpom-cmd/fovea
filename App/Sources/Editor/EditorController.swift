@@ -36,6 +36,9 @@ final class EditorController: NSObject {
     /// qu'il est sale et que la barre d'état se rafraîchisse.
     var onTextChanged: (() -> Void)?
 
+    /// Appelé quand la sélection bouge, pour rafraîchir les statistiques.
+    var onSelectionChanged: (() -> Void)?
+
     // MARK: - Construction
 
     init(typography: EditorTypography? = nil) {
@@ -234,6 +237,82 @@ final class EditorController: NSObject {
         storage.endEditing()
     }
 
+    // MARK: - Fonctions d'écriture (§4.5)
+
+    /// Statistiques du document, ou de la sélection quand il y en a une.
+    var statistics: WritingModes.Statistics {
+        guard let storage = textView.textStorage else {
+            return WritingModes.Statistics(words: 0, characters: 0, readingMinutes: 0)
+        }
+        let selection = textView.selectedRange()
+        guard selection.length > 0 else {
+            return WritingModes.statistics(of: storage.string, spans: spans)
+        }
+        // Sur une sélection, on compte la sélection — et les constructions
+        // ramenées à ses coordonnées, sinon la syntaxe ne serait plus exclue.
+        let fragment = storage.mutableString.substring(with: selection)
+        let local = spans
+            .filter { NSIntersectionRange($0.range, selection).length > 0 }
+            .map { span -> SyntaxSpan in
+                var moved = span
+                moved.range.location -= selection.location
+                moved.content.location -= selection.location
+                moved.markers = span.markers.map {
+                    NSRange(location: $0.location - selection.location, length: $0.length)
+                }
+                return moved
+            }
+        return WritingModes.statistics(of: fragment, spans: local)
+    }
+
+    /// Atténue tout sauf l'unité courante (§4.5).
+    ///
+    /// L'atténuation est une couche d'opacité posée par-dessus le rendu, et
+    /// **jamais** un changement de couleur : les attributs de couleur portent
+    /// déjà le sens — code, citation, marqueur révélé — et les écraser
+    /// obligerait à tout recalculer pour revenir en arrière.
+    private func applyFocus() {
+        guard let storage = textView.textStorage, !isSourceMode else { return }
+        let settings = AppSettings.shared
+        guard settings.focusMode else {
+            textView.focusRange = nil
+            return
+        }
+        textView.focusRange = WritingModes.focusRange(in: storage.mutableString,
+                                                      caret: textView.selectedRange().location,
+                                                      unit: settings.focusUnit)
+    }
+
+    /// Maintient la ligne active à une hauteur fixe (§4.5).
+    ///
+    /// **Désactivé par défaut** : le défilement normal est le défaut, et ce
+    /// mode déroute plus qu'il n'aide tant qu'on ne l'a pas demandé.
+    private func applyTypewriterScrolling() {
+        guard AppSettings.shared.typewriterMode,
+              let layout = textView.textLayoutManager,
+              let content = textView.textContentStorage,
+              let caretLocation = content.location(content.documentRange.location,
+                                                   offsetBy: textView.selectedRange().location)
+        else { return }
+
+        var caretFrame: NSRect?
+        layout.enumerateTextSegments(in: NSTextRange(location: caretLocation),
+                                     type: .selection, options: []) { _, frame, _, _ in
+            caretFrame = frame
+            return false
+        }
+        guard let caretFrame else { return }
+
+        let visible = scrollView.contentView.bounds
+        // Un tiers de la hauteur, pas la moitié : on écrit vers le bas, et
+        // laisser deux tiers de contexte au-dessus se lit mieux qu'un partage
+        // égal.
+        let target = caretFrame.midY + textView.textContainerOrigin.y - visible.height / 3
+        scrollView.contentView.setBoundsOrigin(NSPoint(x: visible.origin.x,
+                                                       y: max(0, target)))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
     private func currentRevealedIndices() -> Set<Int> {
         let selection = textView.selectedRange()
         return RevealPolicy.revealedIndices(index: spanIndex, selection: selection, lineRange: currentLineRange())
@@ -272,6 +351,7 @@ final class EditorController: NSObject {
     /// raison de tourner que lorsque la largeur disponible ou la typographie
     /// change — c'est-à-dire au redimensionnement et dans les réglages.
     func applyColumnLayout() {
+        textView.refreshFocusOverlay()
         guard let container = textView.textContainer else { return }
         let available = scrollView.contentSize.width
         let column = min(typography.columnWidth, max(240, available - Theme.Space.s40 * 2))
@@ -368,6 +448,8 @@ final class EditorController: NSObject {
 
         let scope = reparseIncrementally(editedRange: edited, delta: delta)
         render(in: scope)
+        applyFocus()
+        applyTypewriterScrolling()
         onTextChanged?()
     }
 
@@ -382,6 +464,8 @@ final class EditorController: NSObject {
         // de police laisserait l'ancienne dans le cache.
         FontCache.shared.clear()
         typography = AppSettings.shared.typography
+        applyFocus()
+        applyTypewriterScrolling()
     }
 }
 
@@ -395,6 +479,9 @@ extension EditorController: NSTextViewDelegate {
 
     func textViewDidChangeSelection(_ notification: Notification) {
         updateReveal()
+        applyFocus()
+        applyTypewriterScrolling()
+        onSelectionChanged?()
     }
 }
 

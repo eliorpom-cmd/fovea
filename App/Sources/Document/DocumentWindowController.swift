@@ -10,6 +10,7 @@ import AppKit
 final class DocumentWindowController: NSWindowController {
 
     let editor = EditorController()
+    private let statusBar = StatusBar()
 
     convenience init() {
         let window = NSWindow(
@@ -40,14 +41,26 @@ final class DocumentWindowController: NSWindowController {
         let content = LayoutObservingView()
         content.onLayout = { [weak editor] in editor?.applyColumnLayout() }
         content.addSubview(editor.scrollView)
+        content.addSubview(statusBar)
         editor.scrollView.translatesAutoresizingMaskIntoConstraints = false
+        statusBar.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             editor.scrollView.topAnchor.constraint(equalTo: content.topAnchor),
             editor.scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             editor.scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+
+            // Flottante au-dessus du texte, dans le coin bas-droit : elle ne
+            // vole pas de place à la colonne, et s'efface quand la souris est
+            // ailleurs.
+            statusBar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Theme.Space.s16),
+            statusBar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -Theme.Space.s12),
+            statusBar.heightAnchor.constraint(equalToConstant: 20),
         ])
         window.contentView = content
+
+        editor.onSelectionChanged = { [weak self] in self?.refreshStatistics() }
+        refreshStatistics()
 
         // Le premier répondeur doit être la vue de texte dès l'ouverture : dans
         // une app d'écriture, le curseur clignote avant que la main ne quitte
@@ -59,6 +72,23 @@ final class DocumentWindowController: NSWindowController {
     override func windowDidLoad() {
         super.windowDidLoad()
         editor.applyColumnLayout()
+    }
+
+    /// Rafraîchit la barre d'état.
+    ///
+    /// Appelée à chaque changement de sélection **et** à chaque frappe. Le
+    /// comptage exclut la syntaxe markdown, donc il parcourt le document : sur
+    /// un très gros texte, ce serait le seul coût restant dans le cycle de
+    /// frappe. La barre étant masquable, on ne paie que si elle est affichée.
+    func refreshStatistics() {
+        guard AppSettings.shared.showStatistics else {
+            statusBar.isHidden = true
+            return
+        }
+        statusBar.isHidden = false
+        statusBar.update(editor.statistics,
+                         goal: AppSettings.shared.sessionWordGoal,
+                         isSelection: editor.textView.selectedRange().length > 0)
     }
 }
 
