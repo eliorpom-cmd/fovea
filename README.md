@@ -59,16 +59,29 @@ de reformater ce que vous n'avez pas édité.
   mode machine à écrire, tous deux optionnels : le défilement normal est le défaut
 - Statistiques discrètes : mots, signes, temps de lecture, avec objectif de
   session facultatif. La syntaxe markdown n'y est pas comptée
+- Fenêtre de réglages : thème, police du corps et du code parmi celles
+  installées, taille, interlignage, largeur de colonne en signes
+- S'installe comme éditeur Markdown par défaut du système
 
 ## Ce qui n'est pas encore là
 
 Images rendues dans le flux · tableaux éditables · export PDF, HTML et RTF ·
-plan du document · palette de commandes · menu slash · fenêtre de réglages ·
-import de polices.
+plan du document · palette de commandes · menu slash · import de fichiers de
+police.
 
-Les réglages existent et sont persistés, mais il n'y a pas encore d'écran pour
-les changer — seuls le mode focus et la machine à écrire ont leur entrée de
-menu.
+## Installer
+
+```bash
+scripts/install.sh
+```
+
+Compile en Release, installe dans `/Applications`, recense l'app auprès de
+LaunchServices et la lance. Au premier démarrage, macOS avertit qu'elle n'est
+pas notarisée — clic droit sur l'app → Ouvrir, une seule fois.
+
+Fovea propose alors de devenir l'éditeur Markdown par défaut : les `.md`,
+`.markdown` et `.mdown` s'ouvriront d'un double-clic. L'entrée reste disponible
+dans le menu Fovea et dans Réglages › À propos.
 
 ## Construire
 

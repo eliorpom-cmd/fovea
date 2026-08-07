@@ -30,6 +30,8 @@ enum MainMenu {
         menu.addItem(item("À propos de \(AppConfig.name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
         menu.addItem(.separator())
         menu.addItem(item("Réglages…", #selector(AppCommands.showSettings(_:)), ","))
+        menu.addItem(item("Ouvrir les Markdown avec \(AppConfig.name)",
+                          #selector(AppCommands.makeDefaultMarkdownEditor(_:))))
         menu.addItem(.separator())
 
         let services = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
@@ -241,6 +243,7 @@ enum MainMenu {
 @MainActor
 @objc protocol AppCommands {
     func showSettings(_ sender: Any?)
+    func makeDefaultMarkdownEditor(_ sender: Any?)
     func exportPDF(_ sender: Any?)
     func exportHTML(_ sender: Any?)
     func copyAsRichText(_ sender: Any?)
