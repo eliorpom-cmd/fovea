@@ -26,6 +26,19 @@ final class MarkdownDocument: NSDocument {
 
     override class var autosavesInPlace: Bool { true }
 
+    /// « Enregistrer sous » déplace le document : les images en chemin relatif
+    /// se résolvent alors ailleurs, et l'éditeur doit le savoir.
+    ///
+    /// `fileURL` est déclaré `nonisolated` par AppKit et peut changer depuis la
+    /// coordination de fichiers ; on repasse donc explicitement sur le thread
+    /// principal plutôt que d'affirmer qu'on y est déjà.
+    override var fileURL: URL? {
+        didSet {
+            let url = fileURL
+            Task { @MainActor [weak self] in self?.editor?.documentURL = url }
+        }
+    }
+
     // MARK: - Lecture et écriture
 
     // `read` et `data` sont déclarés `nonisolated` par AppKit, parce qu'un
@@ -61,6 +74,7 @@ final class MarkdownDocument: NSDocument {
         let controller = DocumentWindowController()
         addWindowController(controller)
         editor = controller.editor
+        controller.editor.documentURL = fileURL
         controller.editor.setText(text)
         controller.editor.onTextChanged = { [weak self, weak controller] in
             // `updateChangeCount` est ce qui allume la pastille du bouton de

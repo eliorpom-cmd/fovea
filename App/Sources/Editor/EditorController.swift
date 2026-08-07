@@ -29,6 +29,16 @@ final class EditorController: NSObject {
         }
     }
 
+    /// L'emplacement du document, pour résoudre les images en chemin relatif
+    /// (§4.4). `nil` tant que le document n'a pas été enregistré.
+    var documentURL: URL? {
+        didSet {
+            guard documentURL != oldValue else { return }
+            ImageStore.shared.invalidate()
+            rerenderEverything()
+        }
+    }
+
     /// Mode source (§4.2) : le même tampon, sans la couche de style.
     private(set) var isSourceMode = false
 
@@ -186,7 +196,8 @@ final class EditorController: NSObject {
         }
         revealed = currentRevealedIndices()
         let renderer = MarkdownRenderer(typography: typography,
-                                        colorfulCode: AppSettings.shared.colorfulCodeBlocks)
+                                        colorfulCode: AppSettings.shared.colorfulCodeBlocks,
+                                        documentURL: documentURL)
         // Seules les constructions qui touchent la portée sont repassées ; la
         // portée est celle du bloc édité, pas celle du document.
         let touching = spans.enumerated().filter {
@@ -197,6 +208,7 @@ final class EditorController: NSObject {
                         revealed: Set(touching.indices.filter { revealed.contains(touching[$0].offset) }),
                         in: range)
         textView.typography = typography
+        textView.documentURL = documentURL
         textView.decorations = EditorDecoration.build(from: spans, typography: typography)
     }
 

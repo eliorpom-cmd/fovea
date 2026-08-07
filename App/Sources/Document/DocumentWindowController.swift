@@ -138,6 +138,85 @@ extension DocumentWindowController: NSMenuItemValidation {
         AppSettings.shared.typewriterMode.toggle()
     }
 
+    // MARK: - Exports (§4.6)
+
+    @objc func copyAsRichText(_ sender: Any?) {
+        guard let rich = MarkdownExport.richText(from: editor.text, documentURL: editor.documentURL),
+              let rtf = rich.rtf(from: NSRange(location: 0, length: rich.length), documentAttributes: [:])
+        else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        // Le RTF **et** le texte brut : une app qui ne sait pas lire le premier
+        // doit trouver le second plutôt que de coller un presse-papier vide.
+        pasteboard.declareTypes([.rtf, .string], owner: nil)
+        pasteboard.setData(rtf, forType: .rtf)
+        pasteboard.setString(rich.string, forType: .string)
+    }
+
+    @objc func pastePlainText(_ sender: Any?) {
+        editor.textView.pastePlainText(sender)
+    }
+
+    @objc func exportHTML(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.html]
+        panel.nameFieldStringValue = (documentName as NSString).deletingPathExtension + ".html"
+        panel.message = "Un seul fichier, images comprises."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let html = MarkdownExport.html(from: editor.text,
+                                       title: (documentName as NSString).deletingPathExtension,
+                                       documentURL: editor.documentURL)
+        try? Data(html.utf8).write(to: url)
+    }
+
+    @objc func exportPDF(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = (documentName as NSString).deletingPathExtension + ".pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        exportPDF(to: url)
+    }
+
+    /// Produit le PDF depuis une vue de rendu **jetable**, sans le chrome de
+    /// l'éditeur et tous marqueurs masqués (§4.6).
+    ///
+    /// Imprimer la vue d'édition elle-même donnerait sa largeur de colonne, sa
+    /// couleur de fond et son curseur. La pagination est confiée à
+    /// `NSPrintOperation` : découper à la main produirait des paragraphes
+    /// coupés en deux au bas des pages.
+    private func exportPDF(to url: URL) {
+        guard let rich = MarkdownExport.richText(from: editor.text, documentURL: editor.documentURL) else {
+            return
+        }
+        let info = NSPrintInfo()
+        info.paperSize = NSSize(width: 595, height: 842)   // A4 à 72 ppp
+        info.topMargin = 64; info.bottomMargin = 64
+        info.leftMargin = 64; info.rightMargin = 64
+        info.horizontalPagination = .fit
+        info.verticalPagination = .automatic
+        info.jobDisposition = .save
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
+
+        let printable = info.paperSize.width - info.leftMargin - info.rightMargin
+        let view = NSTextView(frame: NSRect(x: 0, y: 0, width: printable, height: 100))
+        view.textStorage?.setAttributedString(rich)
+        view.isEditable = false
+        view.backgroundColor = .white
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.sizeToFit()
+
+        let operation = NSPrintOperation(view: view, printInfo: info)
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        operation.run()
+    }
+
+    private var documentName: String {
+        (document as? NSDocument)?.displayName ?? "Document"
+    }
+
     @objc func openRepository(_ sender: Any?) {
         NSWorkspace.shared.open(AppConfig.repositoryURL)
     }

@@ -127,6 +127,12 @@ struct EditorTypography {
         return style
     }
 
+    /// Une fonte système à taille libre, pour ce que l'éditeur **dessine**
+    /// plutôt qu'il ne met en page : cadre d'image manquante, puces, numéros.
+    func uiFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        FontCache.shared.font(name: nil, size: size, weight: weight)
+    }
+
     // MARK: - Fabrique de fontes
 
     private func font(_ name: String?, size: CGFloat, weight: NSFont.Weight) -> NSFont {

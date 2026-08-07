@@ -15,6 +15,9 @@ struct MarkdownRenderer {
     /// §4.3 : monochrome par défaut, vraies couleurs sur demande explicite.
     var colorfulCode = false
 
+    /// L'emplacement du document, pour résoudre les images en chemin relatif.
+    var documentURL: URL?
+
     /// Applique le rendu complet à un tampon.
     ///
     /// - Parameters:
@@ -56,10 +59,22 @@ struct MarkdownRenderer {
     /// attributs de la plage, ce qui effacerait le gras du mot au moment précis
     /// où l'on fait réapparaître ses étoiles.
     func applyMarkers(_ storage: NSTextStorage, span: SyntaxSpan, revealed: Bool) {
+        // Le texte alternatif d'une image fait partie de ce qui disparaît :
+        // l'image le remplace à l'écran, et le laisser visible superposerait
+        // deux fois la même information.
+        if case .image = span.kind, !revealed, span.content.length > 0,
+           span.content.upperBound <= storage.length {
+            MarkerMask.hideKeepingMetrics(in: storage, range: span.content, font: typography.body)
+        }
         for marker in span.markers {
             guard marker.length > 0, marker.upperBound <= storage.length else { continue }
             if revealed {
                 MarkerMask.reveal(in: storage, range: marker, font: markerFont(for: span))
+            } else if case .image = span.kind {
+                // La source est masquée **sans réduire la hauteur** : la ligne
+                // doit garder la place réservée à l'image, sinon le dessin
+                // n'aurait nulle part où aller.
+                MarkerMask.hideKeepingMetrics(in: storage, range: marker, font: typography.body)
             } else if case .thematicBreak = span.kind {
                 // Toute la ligne est un marqueur : la masquer à largeur nulle
                 // ferait disparaître la ligne elle-même, et le filet n'aurait
@@ -111,11 +126,20 @@ struct MarkdownRenderer {
                                    .underlineColor: Theme.NS.labelTertiary,
                                    .cursor: NSCursor.pointingHand], range: content)
 
-        case .image:
-            // Le rendu en attachement est le travail du jalon 4. En attendant,
-            // le texte alternatif reste lisible plutôt que masqué : masquer ce
-            // qu'on ne sait pas encore rendre reviendrait à le faire disparaître.
-            storage.addAttributes([.foregroundColor: Theme.NS.labelSecondary], range: content)
+        case .image(let source, _):
+            // **Réserver la place, sans insérer un seul caractère.**
+            //
+            // Une image ne peut pas être un `NSTextAttachment` : un attachement
+            // remplace un caractère, et le §3.1 interdit d'en ajouter un. La
+            // hauteur est donc réservée par `minimumLineHeight` sur le
+            // paragraphe, la source est masquée à largeur nulle comme n'importe
+            // quel marqueur, et `DecorationPainter` peint dans la place ainsi
+            // laissée.
+            let style = typography.paragraphStyle()
+            style.minimumLineHeight = reservedHeight(for: source)
+            style.lineHeightMultiple = 1
+            style.paragraphSpacingBefore = typography.bodySize * 0.5
+            storage.addAttributes([.paragraphStyle: style], range: whole)
 
         case .footnoteReference:
             // L'exposant porte sur le seul identifiant : les crochets sont des
@@ -174,6 +198,16 @@ struct MarkdownRenderer {
 
         case .table:
             storage.addAttributes([.font: typography.inlineCode], range: whole)
+        }
+    }
+
+    /// Hauteur à réserver pour une image, cadre d'absence compris.
+    private func reservedHeight(for source: String) -> CGFloat {
+        switch ImageStore.shared.entry(for: source, relativeTo: documentURL) {
+        case .loaded(let image):
+            ImageStore.displaySize(of: image, columnWidth: typography.columnWidth).height
+        case .missing:
+            ImageStore.missingPlaceholderHeight
         }
     }
 

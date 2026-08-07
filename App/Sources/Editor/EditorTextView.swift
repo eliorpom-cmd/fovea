@@ -1,6 +1,7 @@
 // Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
 // Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
 import AppKit
+import UniformTypeIdentifiers
 
 /// La vue d'édition.
 ///
@@ -21,6 +22,7 @@ final class EditorTextView: NSTextView {
     }
 
     var typography: EditorTypography = .default
+    var documentURL: URL?
 
     /// La plage laissée en pleine intensité par le mode focus (§4.5).
     /// `nil` quand le mode est éteint.
@@ -71,6 +73,8 @@ final class EditorTextView: NSTextView {
         usesFindBar = true
         isIncrementalSearchingEnabled = true
 
+        registerForDraggedTypes([.fileURL, .png, .tiff])
+
         // §2.5 : aucune substitution typographique, y compris celles de macOS.
         // Dans un fichier destiné à git ou à un générateur de site, une
         // transformation invisible est un bug, pas un service.
@@ -119,7 +123,8 @@ final class EditorTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard !decorations.isEmpty else { return }
-        DecorationPainter(typography: typography).draw(decorations, in: self, dirtyRect: rect)
+        DecorationPainter(typography: typography, documentURL: documentURL)
+            .draw(decorations, in: self, dirtyRect: rect)
     }
 
     // MARK: - Suppression intelligente
@@ -159,6 +164,61 @@ final class EditorTextView: NSTextView {
         super.insertBacktab(sender)
     }
 
+    // MARK: - Glisser-déposer d'images
+
+    /// Accepte les images déposées depuis le Finder ou d'autres apps (§4.4).
+    ///
+    /// `NSTextView` accepte déjà des dépôts, mais pour y insérer du texte
+    /// riche — ce qu'un tampon `isRichText = false` refuse. On intercepte donc
+    /// avant lui, et seulement pour ce qui est une image.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        carriesImage(sender) ? .copy : super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        carriesImage(sender) ? .copy : super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard carriesImage(sender),
+              let result = ImageDrop.handle(sender.draggingPasteboard, document: documentURL)
+        else { return super.performDragOperation(sender) }
+
+        // L'insertion se fait là où le curseur *serait* si on cliquait : c'est
+        // l'endroit visé par le geste, pas la sélection d'avant le dépôt.
+        let point = convert(sender.draggingLocation, from: nil)
+        let index = characterIndexForInsertion(at: point)
+        setSelectedRange(NSRange(location: index, length: 0))
+        insertText(surrounded(result.markdown, at: index), replacementRange: NSRange(location: index, length: 0))
+        return true
+    }
+
+    private func carriesImage(_ sender: NSDraggingInfo) -> Bool {
+        let pasteboard = sender.draggingPasteboard
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] {
+            return urls.contains { url in
+                guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+                return type.conforms(to: .image)
+            }
+        }
+        return NSImage.canInit(with: pasteboard)
+    }
+
+    /// Une image est un bloc : elle a besoin d'une ligne vide de chaque côté,
+    /// sans quoi markdown la colle au paragraphe voisin et elle se rend en
+    /// pleine phrase.
+    private func surrounded(_ markdown: String, at index: Int) -> String {
+        guard let storage = textStorage else { return markdown }
+        let text = storage.mutableString
+        var prefix = "\n\n"
+        var suffix = "\n\n"
+        if index == 0 { prefix = "" }
+        else if index >= 2, text.substring(with: NSRange(location: index - 2, length: 2)) == "\n\n" { prefix = "" }
+        if index >= text.length { suffix = "\n" }
+        else if text.character(at: index) == 10 { suffix = "\n" }
+        return prefix + markdown + suffix
+    }
+
     // MARK: - Collage
 
     /// `⌘V` convertit le texte riche en markdown (§2.5).
@@ -168,6 +228,14 @@ final class EditorTextView: NSTextView {
     /// en `isRichText = false`, les attributs seraient perdus sans rien laisser
     /// en échange. On intercepte donc, et on insère du markdown.
     override func paste(_ sender: Any?) {
+        // Une image d'abord : elle doit devenir un fichier à côté du document,
+        // pas un texte riche perdu (§2.5, étape 3).
+        if NSImage.canInit(with: .general),
+           let result = ImageDrop.handle(.general, document: documentURL) {
+            let index = selectedRange().location
+            insertText(surrounded(result.markdown, at: index), replacementRange: selectedRange())
+            return
+        }
         if let markdown = PasteConversion.markdown(from: .general) {
             insertText(markdown, replacementRange: selectedRange())
             return

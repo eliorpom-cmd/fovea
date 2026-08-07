@@ -32,6 +32,8 @@ struct EditorDecoration {
         case rule
         /// Fond arrondi d'un bloc de code.
         case codeBackground
+        /// Une image rendue dans le flux (§4.4).
+        case image(source: String, alt: String)
     }
 
     var kind: Kind
@@ -74,6 +76,11 @@ extension EditorDecoration {
                                                     range: span.range,
                                                     indent: typography.codeBlockIndent))
 
+            case .image(let source, let alt):
+                decorations.append(EditorDecoration(kind: .image(source: source, alt: alt),
+                                                    range: span.range,
+                                                    indent: 0))
+
             default:
                 break
             }
@@ -102,6 +109,8 @@ extension EditorDecoration {
 struct DecorationPainter {
 
     var typography: EditorTypography
+    /// L'emplacement du document, pour résoudre les chemins d'image relatifs.
+    var documentURL: URL?
 
     /// Dessine les marques dans la vue, derrière le texte.
     ///
@@ -194,6 +203,9 @@ struct DecorationPainter {
             Theme.NS.separator.setFill()
             NSBezierPath(rect: rule).fill()
 
+        case .image(let source, let alt):
+            paint(image: source, alt: alt, at: frame, columnWidth: columnWidth)
+
         case .codeBackground:
             let padding = typography.bodySize * 0.5
             let left = frame.minX - decoration.indent
@@ -206,6 +218,48 @@ struct DecorationPainter {
                          xRadius: Theme.Radius.codeBlock,
                          yRadius: Theme.Radius.codeBlock).fill()
         }
+    }
+
+    /// Dessine l'image, ou son cadre d'absence.
+    ///
+    /// La place a déjà été réservée par `minimumLineHeight` sur le paragraphe :
+    /// ici on ne fait que peindre dedans.
+    private func paint(image source: String, alt: String, at frame: NSRect, columnWidth: CGFloat) {
+        switch ImageStore.shared.entry(for: source, relativeTo: documentURL) {
+        case .loaded(let image):
+            let size = ImageStore.displaySize(of: image, columnWidth: columnWidth)
+            let box = NSRect(x: frame.minX, y: frame.minY, width: size.width, height: size.height)
+            NSGraphicsContext.current?.imageInterpolation = .high
+            // `.sourceOver` et non `.copy` : une image à canal alpha doit se
+            // composer sur le fond, pas le remplacer par du transparent.
+            image.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
+
+        case .missing:
+            // §6 : un cadre au trait avec le chemin, et jamais un espace vide
+            // qui laisserait croire à un bug de l'éditeur.
+            let box = NSRect(x: frame.minX, y: frame.minY,
+                             width: min(columnWidth, 420),
+                             height: ImageStore.missingPlaceholderHeight - 8)
+            let path = NSBezierPath(roundedRect: box, xRadius: Theme.Radius.card, yRadius: Theme.Radius.card)
+            path.lineWidth = 1
+            Theme.NS.separator.setStroke()
+            path.stroke()
+
+            let title = alt.isEmpty ? "Image introuvable" : "Image introuvable — \(alt)"
+            draw(title, in: box, at: 8, font: typography.uiFont(size: 12, weight: .medium),
+                 color: Theme.NS.labelSecondary)
+            draw(source, in: box, at: 26, font: typography.uiFont(size: 11, weight: .regular),
+                 color: Theme.NS.labelTertiary)
+        }
+    }
+
+    private func draw(_ text: String, in box: NSRect, at offset: CGFloat,
+                      font: NSFont, color: NSColor) {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byTruncatingMiddle
+        (text as NSString).draw(
+            in: NSRect(x: box.minX + 12, y: box.minY + offset, width: box.width - 24, height: 18),
+            withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
     }
 
     /// Rectangle englobant d'une plage, en coordonnées du conteneur de texte.

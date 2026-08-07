@@ -61,13 +61,17 @@ de reformater ce que vous n'avez pas édité.
   session facultatif. La syntaxe markdown n'y est pas comptée
 - Fenêtre de réglages : thème, police du corps et du code parmi celles
   installées, taille, interlignage, largeur de colonne en signes
+- Images rendues dans le flux, glisser-déposer depuis le Finder et collage
+  d'images : le fichier est copié à côté du document et le lien écrit en
+  chemin relatif
+- Export HTML autonome — un seul fichier, images comprises — export PDF
+  paginé, et `⌘⇧C` qui met du texte riche dans le presse-papier
 - S'installe comme éditeur Markdown par défaut du système
 
 ## Ce qui n'est pas encore là
 
-Images rendues dans le flux · tableaux éditables · export PDF, HTML et RTF ·
-plan du document · palette de commandes · menu slash · import de fichiers de
-police.
+Tableaux éditables · plan du document · palette de commandes · menu slash ·
+import de fichiers de police · icône · notarisation.
 
 ## Installer
 
@@ -99,7 +103,7 @@ Voir [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-117 tests, dont les budgets de performance, qui **échouent** s'ils sont
+133 tests, dont les budgets de performance, qui **échouent** s'ils sont
 dépassés. Ils tournent en Debug, la configuration la plus défavorable.
 
 Pour vérifier la fidélité au fichier sur de vrais documents :
