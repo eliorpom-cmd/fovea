@@ -1,0 +1,98 @@
+# =============================================================================
+#  Fovea — éditeur markdown WYSIWYG natif pour macOS
+#
+#  Ce fichier est la SOURCE DE VÉRITÉ du projet Xcode. `Fovea.xcodeproj` est
+#  généré et git-ignoré : on n'y touche jamais. Après avoir ajouté un fichier
+#  Swift, relancer `xcodegen generate`, sinon la compilation échoue sur
+#  « cannot find X in scope ».
+#
+#  Le nom est court et sans espace, donc une seule forme suffit — contrairement
+#  à TBD qui en avait trois. « Fovea » sert au bundle, à l'exécutable, au module
+#  Swift, au Finder et au menu de l'app.
+# =============================================================================
+name: Fovea
+
+options:
+  bundleIdPrefix: com.byelior
+  deploymentTarget:
+    # macOS 15 et pas 13 comme TBD : le cœur de cette app EST TextKit 2, et
+    # TextKit 2 traîne sur Ventura des défauts de fragments et d'attachements
+    # qu'il faudrait contourner à la main. Voir §3.2 du cahier des charges.
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+packages:
+  # L'AST de cmark-gfm exposé en Swift, avec des SourceRange sur chaque nœud.
+  # C'est précisément ce dont dépend le §3.3 : on ne re-sérialise jamais l'AST,
+  # on ne s'en sert que pour savoir OÙ poser les attributs dans le texte source.
+  Markdown:
+    url: https://github.com/apple/swift-markdown
+    from: "0.8.0"
+
+targets:
+  Fovea:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/Sources
+    dependencies:
+      - package: Markdown
+    settings:
+      base:
+        PRODUCT_NAME: Fovea
+        PRODUCT_BUNDLE_IDENTIFIER: com.byelior.fovea
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/Fovea.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        # Hardened runtime OFF : requis uniquement pour la notarisation Apple,
+        # qui demande un compte développeur payant. À passer à YES le jour où
+        # le Developer ID existe (§10 du cahier des charges).
+        ENABLE_HARDENED_RUNTIME: NO
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        # Zéro avertissement toléré. Posé sur la CIBLE et pas sur le projet :
+        # au niveau projet, le drapeau atteindrait aussi les dépendances SwiftPM
+        # qui compilent avec -suppress-warnings, et les deux ensemble sont une
+        # erreur dure du compilateur.
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        SWIFT_STRICT_CONCURRENCY: complete
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+
+  # La couche Markdown/ est testée sans interface : c'est là que vit la
+  # conversion de plages UTF-8 → UTF-16 du §3.3, qui doit être juste au
+  # caractère près sur du français accentué, des emoji et du CJK.
+  FoveaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: Fovea
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.byelior.fovea.tests
+        GENERATE_INFOPLIST_FILE: YES
+        MACOSX_DEPLOYMENT_TARGET: "15.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+
+schemes:
+  Fovea:
+    build:
+      targets:
+        Fovea: all
+        FoveaTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - FoveaTests
