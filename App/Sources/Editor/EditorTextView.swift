@@ -123,6 +123,27 @@ final class EditorTextView: NSTextView {
         super.insertBacktab(sender)
     }
 
+    // MARK: - Collage
+
+    /// `⌘V` convertit le texte riche en markdown (§2.5).
+    ///
+    /// `NSTextView` propose `paste(_:)` et `pasteAsPlainText(_:)`. Le premier
+    /// collerait du texte riche dans un tampon qui n'en veut pas — la vue est
+    /// en `isRichText = false`, les attributs seraient perdus sans rien laisser
+    /// en échange. On intercepte donc, et on insère du markdown.
+    override func paste(_ sender: Any?) {
+        if let markdown = PasteConversion.markdown(from: .general) {
+            insertText(markdown, replacementRange: selectedRange())
+            return
+        }
+        super.pasteAsPlainText(sender)
+    }
+
+    /// `⌘⇧V` colle toujours en texte brut, sans aucune conversion (§2.5).
+    @objc func pastePlainText(_ sender: Any?) {
+        super.pasteAsPlainText(sender)
+    }
+
     // MARK: - Liens
 
     /// `⌘`+clic ouvre l'URL. Un clic simple ne le fait pas : dans un éditeur,
