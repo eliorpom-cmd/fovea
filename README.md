@@ -66,12 +66,15 @@ de reformater ce que vous n'avez pas édité.
   chemin relatif
 - Export HTML autonome — un seul fichier, images comprises — export PDF
   paginé, et `⌘⇧C` qui met du texte riche dans le presse-papier
+- Plan du document (`⌘⌥0`) : toute la structure, hiérarchisée, cliquable
+- Palette de commandes (`⌘K`) : les commandes **et** les titres du document
+  dans la même liste, filtrés par sous-séquence — « mdf » trouve « Mode focus »
 - S'installe comme éditeur Markdown par défaut du système
 
 ## Ce qui n'est pas encore là
 
-Tableaux éditables · plan du document · palette de commandes · menu slash ·
-import de fichiers de police · icône · notarisation.
+Tableaux éditables · menu slash · import de fichiers de police · icône ·
+notarisation.
 
 ## Installer
 

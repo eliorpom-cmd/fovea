@@ -11,6 +11,10 @@ final class DocumentWindowController: NSWindowController {
 
     let editor = EditorController()
     private let statusBar = StatusBar()
+    private let outline = OutlinePanel()
+    private let palette = CommandPalette()
+    /// Largeur du plan quand il est ouvert. Zéro le referme.
+    private var outlineWidth: NSLayoutConstraint!
 
     convenience init() {
         let window = NSWindow(
@@ -40,14 +44,23 @@ final class DocumentWindowController: NSWindowController {
         // donc rattaché à la mise en page de la vue elle-même.
         let content = LayoutObservingView()
         content.onLayout = { [weak editor] in editor?.applyColumnLayout() }
+        content.addSubview(outline)
         content.addSubview(editor.scrollView)
         content.addSubview(statusBar)
         editor.scrollView.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
+        outline.translatesAutoresizingMaskIntoConstraints = false
+        outlineWidth = outline.widthAnchor.constraint(equalToConstant: 0)
+
         NSLayoutConstraint.activate([
+            outline.topAnchor.constraint(equalTo: content.topAnchor),
+            outline.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            outline.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            outlineWidth,
+
             editor.scrollView.topAnchor.constraint(equalTo: content.topAnchor),
             editor.scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            editor.scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            editor.scrollView.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
             // Flottante au-dessus du texte, dans le coin bas-droit : elle ne
@@ -59,7 +72,12 @@ final class DocumentWindowController: NSWindowController {
         ])
         window.contentView = content
 
-        editor.onSelectionChanged = { [weak self] in self?.refreshStatistics() }
+        editor.onSelectionChanged = { [weak self] in
+            self?.refreshStatistics()
+            self?.refreshOutlineHighlight()
+        }
+        editor.onSpansChanged = { [weak self] in self?.refreshOutline() }
+        outline.onSelect = { [weak self] location in self?.goTo(location) }
         refreshStatistics()
 
         // Le premier répondeur doit être la vue de texte dès l'ouverture : dans
@@ -217,6 +235,97 @@ extension DocumentWindowController: NSMenuItemValidation {
         (document as? NSDocument)?.displayName ?? "Document"
     }
 
+    // MARK: - Plan et palette (§4.5)
+
+    @objc func toggleOutline(_ sender: Any?) {
+        let opening = outlineWidth.constant == 0
+        // La largeur **avant** le remplissage : `refreshOutline` se garde
+        // d'agir sur un panneau fermé, et l'appeler d'abord le laissait vide.
+        outlineWidth.constant = opening ? 220 : 0
+        if opening {
+            refreshOutline()
+            refreshOutlineHighlight()
+        }
+
+        // « Réduire les animations » est un besoin, pas une préférence (§8) :
+        // le panneau s'ouvre quand même, il ne glisse simplement pas.
+        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = reduced ? 0 : 0.2
+            context.allowsImplicitAnimation = true
+            window?.contentView?.layoutSubtreeIfNeeded()
+        } completionHandler: {
+            // Le bloc de fin est appelé par AppKit sans isolement déclaré, mais
+            // toujours sur le thread principal — c'est lui qui anime.
+            MainActor.assumeIsolated { [weak self] in self?.editor.applyColumnLayout() }
+        }
+    }
+
+    @objc func showCommandPalette(_ sender: Any?) {
+        palette.present(entries: paletteEntries(), relativeTo: window)
+    }
+
+    /// Les commandes **et** les titres du document, dans la même liste.
+    ///
+    /// Dans un document long, chercher un titre et y sauter est plus fréquent
+    /// que n'importe quelle commande — les séparer obligerait à choisir un
+    /// mode avant de savoir ce qu'on cherche.
+    private func paletteEntries() -> [CommandPalette.Entry] {
+        var entries: [CommandPalette.Entry] = [
+            .init(title: editor.isSourceMode ? "Masquer la source" : "Afficher la source",
+                  detail: "⌘/") { [weak self] in self?.editor.toggleSourceMode() },
+            .init(title: "Plan du document", detail: "⌘⌥0") { [weak self] in self?.toggleOutline(nil) },
+            .init(title: AppSettings.shared.focusMode ? "Désactiver le mode focus" : "Mode focus",
+                  detail: "") { AppSettings.shared.focusMode.toggle() },
+            .init(title: AppSettings.shared.typewriterMode ? "Désactiver la machine à écrire" : "Machine à écrire",
+                  detail: "") { AppSettings.shared.typewriterMode.toggle() },
+            .init(title: "Gras", detail: "⌘B") { [weak self] in self?.editor.wrapSelection(with: "**") },
+            .init(title: "Italique", detail: "⌘I") { [weak self] in self?.editor.wrapSelection(with: "*") },
+            .init(title: "Code", detail: "⌘⇧K") { [weak self] in self?.editor.wrapSelection(with: "`") },
+            .init(title: "Barré", detail: "⌘⇧X") { [weak self] in self?.editor.wrapSelection(with: "~~") },
+            .init(title: "Exporter en HTML autonome", detail: "") { [weak self] in self?.exportHTML(nil) },
+            .init(title: "Exporter en PDF", detail: "") { [weak self] in self?.exportPDF(nil) },
+            .init(title: "Copier en texte riche", detail: "⌘⇧C") { [weak self] in self?.copyAsRichText(nil) },
+            .init(title: "Réglages", detail: "⌘,") { SettingsWindowController.shared.present() },
+        ]
+        for level in 1...3 {
+            entries.append(.init(title: "Titre \(level)", detail: "⌘⌃\(level)") { [weak self] in
+                self?.editor.setHeadingLevel(level)
+            })
+        }
+
+        let text = editor.textView.textStorage?.mutableString ?? NSMutableString()
+        for span in editor.spans {
+            guard case .heading(let level) = span.kind,
+                  span.content.upperBound <= text.length else { continue }
+            let title = text.substring(with: span.content).trimmingCharacters(in: .whitespaces)
+            guard !title.isEmpty else { continue }
+            entries.append(.init(title: title,
+                                 detail: "Titre \(level)") { [weak self] in
+                self?.goTo(span.range.location)
+            })
+        }
+        return entries
+    }
+
+    private func goTo(_ location: Int) {
+        let length = editor.textView.textStorage?.length ?? 0
+        editor.textView.setSelectedRange(NSRange(location: min(location, length), length: 0))
+        editor.textView.scrollRangeToVisible(NSRange(location: min(location, length), length: 0))
+        window?.makeFirstResponder(editor.textView)
+    }
+
+    private func refreshOutline() {
+        guard outlineWidth?.constant != 0 else { return }
+        outline.update(spans: editor.spans,
+                       text: editor.textView.textStorage?.mutableString ?? NSMutableString())
+    }
+
+    private func refreshOutlineHighlight() {
+        guard outlineWidth?.constant != 0 else { return }
+        outline.highlight(caret: editor.textView.selectedRange().location)
+    }
+
     @objc func openRepository(_ sender: Any?) {
         NSWorkspace.shared.open(AppConfig.repositoryURL)
     }
@@ -234,6 +343,9 @@ extension DocumentWindowController: NSMenuItemValidation {
 
         case #selector(toggleTypewriterMode(_:)):
             menuItem.state = AppSettings.shared.typewriterMode ? .on : .off
+
+        case #selector(toggleOutline(_:)):
+            menuItem.state = outlineWidth?.constant != 0 ? .on : .off
 
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)),
              #selector(toggleStrikethrough(_:)), #selector(toggleInlineCode(_:)),

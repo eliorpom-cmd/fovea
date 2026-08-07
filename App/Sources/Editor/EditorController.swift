@@ -49,6 +49,9 @@ final class EditorController: NSObject {
     /// Appelé quand la sélection bouge, pour rafraîchir les statistiques.
     var onSelectionChanged: (() -> Void)?
 
+    /// Appelé quand les constructions ont changé, pour que le plan suive.
+    var onSpansChanged: (() -> Void)?
+
     // MARK: - Construction
 
     init(typography: EditorTypography? = nil) {
@@ -146,6 +149,7 @@ final class EditorController: NSObject {
         spans = MarkdownParser.parse(textView.string).spans
             .sorted { $0.range.location < $1.range.location }
         spanIndex = SpanIndex(spans)
+        onSpansChanged?()
     }
 
     /// Ré-analyse **le seul bloc touché**, et retombe sur le document entier
@@ -175,6 +179,7 @@ final class EditorController: NSObject {
         let fresh = MarkdownParser.parse(fragment, offsetBy: scope.location)
         spans = MarkdownParser.splice(spans, replacing: scope, with: fresh, delta: delta)
         spanIndex = SpanIndex(spans)
+        onSpansChanged?()
         return scope
     }
 
