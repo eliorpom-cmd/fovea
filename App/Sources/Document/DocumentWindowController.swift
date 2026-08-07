@@ -88,12 +88,54 @@ extension DocumentWindowController: NSMenuItemValidation {
         editor.toggleSourceMode()
     }
 
+    @objc func toggleBold(_ sender: Any?) { editor.wrapSelection(with: "**") }
+    @objc func toggleItalic(_ sender: Any?) { editor.wrapSelection(with: "*") }
+    @objc func toggleStrikethrough(_ sender: Any?) { editor.wrapSelection(with: "~~") }
+    @objc func toggleInlineCode(_ sender: Any?) { editor.wrapSelection(with: "`") }
+
+    @objc func setHeadingLevel(_ sender: Any?) {
+        // Le niveau voyage dans le `tag` de l'entrée de menu : six entrées, une
+        // seule action, et le raccourci ⌘⌃n reste lisible dans le menu.
+        guard let item = sender as? NSMenuItem else { return }
+        editor.setHeadingLevel(item.tag)
+    }
+
+    @objc func toggleFocusMode(_ sender: Any?) {
+        AppSettings.shared.focusMode.toggle()
+    }
+
+    @objc func toggleTypewriterMode(_ sender: Any?) {
+        AppSettings.shared.typewriterMode.toggle()
+    }
+
+    @objc func openRepository(_ sender: Any?) {
+        NSWorkspace.shared.open(AppConfig.repositoryURL)
+    }
+
     /// `NSWindowController` n'hérite pas de la validation : sans cette
-    /// conformité, l'entrée de menu resterait grisée alors que l'action existe.
+    /// conformité, les entrées resteraient grisées alors que les actions
+    /// existent. C'est aussi ici que les états cochés se mettent à jour.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleSourceMode(_:)) {
+        switch menuItem.action {
+        case #selector(toggleSourceMode(_:)):
             menuItem.title = editor.isSourceMode ? "Masquer la source" : "Afficher la source"
-            return true
+
+        case #selector(toggleFocusMode(_:)):
+            menuItem.state = AppSettings.shared.focusMode ? .on : .off
+
+        case #selector(toggleTypewriterMode(_:)):
+            menuItem.state = AppSettings.shared.typewriterMode ? .on : .off
+
+        case #selector(toggleBold(_:)), #selector(toggleItalic(_:)),
+             #selector(toggleStrikethrough(_:)), #selector(toggleInlineCode(_:)),
+             #selector(setHeadingLevel(_:)):
+            // Le mode source montre le fichier tel qu'il est : y appliquer un
+            // formatage par raccourci reviendrait à écrire des étoiles à
+            // l'aveugle dans du texte brut.
+            return !editor.isSourceMode
+
+        default:
+            break
         }
         return true
     }

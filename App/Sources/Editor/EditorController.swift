@@ -13,11 +13,20 @@ final class EditorController: NSObject {
     let scrollView: NSScrollView
 
     private(set) var spans: [SyntaxSpan] = []
-    private(set) var positions = SourcePositionMap(text: "")
     private var revealed: Set<Int> = []
+    /// Reconstruit à chaque analyse, consulté à chaque déplacement du curseur.
+    private var spanIndex = SpanIndex([])
+
+    /// La dernière édition signalée par `NSTextStorage`, pour que le cycle de
+    /// frappe sache quel bloc ré-analyser.
+    private var lastEditedRange: NSRange?
+    private var lastChangeInLength = 0
 
     var typography: EditorTypography {
-        didSet { rerenderEverything() }
+        didSet {
+            rerenderEverything()
+            applyColumnLayout()
+        }
     }
 
     /// Mode source (§4.2) : le même tampon, sans la couche de style.
@@ -29,8 +38,8 @@ final class EditorController: NSObject {
 
     // MARK: - Construction
 
-    init(typography: EditorTypography = .default) {
-        self.typography = typography
+    init(typography: EditorTypography? = nil) {
+        self.typography = typography ?? AppSettings.shared.typography
         self.textView = EditorTextView.make()
         self.scrollView = NSScrollView()
         super.init()
@@ -44,13 +53,25 @@ final class EditorController: NSObject {
         scrollView.scrollerStyle = .overlay
 
         textView.delegate = self
+        textView.textStorage?.delegate = self
         textView.handlesDeleteBackward = { [weak self] selection in
             self?.deleteConstruct(at: selection) ?? false
+        }
+        textView.handlesNewline = { [weak self] in
+            guard let self, AppSettings.shared.markdownShortcutsWhileTyping else { return false }
+            return apply(TypingBehaviour.newline(in: text, selection: textView.selectedRange()))
+        }
+        textView.handlesIndent = { [weak self] outdent in
+            guard let self, AppSettings.shared.markdownShortcutsWhileTyping else { return false }
+            return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
         }
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appearanceChanged),
             name: .foveaAppearanceChanged, object: textView)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(settingsChanged),
+            name: AppSettings.didChange, object: nil)
     }
 
     // MARK: - Contenu
@@ -58,6 +79,12 @@ final class EditorController: NSObject {
     var text: String {
         textView.string
     }
+
+    /// Longueur analysée et stylée **avant** le premier affichage.
+    ///
+    /// Assez pour plusieurs écrans à n'importe quelle taille de police ; le
+    /// reste attend le tour de boucle suivant. Voir `setText(_:)`.
+    private static let firstPaintLength = 40_000
 
     func setText(_ newText: String) {
         guard let storage = textView.textStorage else { return }
@@ -67,31 +94,107 @@ final class EditorController: NSObject {
         // Le remplacement initial n'est pas une modification de l'utilisateur :
         // il ne doit ni salir le document ni entrer dans la pile d'annulation.
         textView.undoManager?.removeAllActions()
-        reparse()
-        rerenderEverything()
+        lastEditedRange = nil
+        lastChangeInLength = 0
+
+        guard storage.length > Self.firstPaintLength else {
+            reparse()
+            rerenderEverything()
+            applyColumnLayout()
+            return
+        }
+
+        // **Ouverture progressive.** Analyser et styler 600 pages avant de
+        // montrer quoi que ce soit coûtait plus d'une seconde, pour un budget
+        // de 500 ms (§9) — et l'utilisateur n'a besoin que du premier écran.
+        //
+        // TextKit 2 ne met déjà en page que le viewport ; ce qui restait
+        // proportionnel au document, c'était l'analyse et la pose d'attributs.
+        // On en fait juste assez pour peindre, le reste suit immédiatement
+        // après, avant même que la main n'ait quitté le clavier.
+        let head = IncrementalParse.blockRange(
+            in: storage.mutableString,
+            around: NSRange(location: 0, length: Self.firstPaintLength))
+        spans = MarkdownParser.parse(storage.mutableString.substring(with: head), offsetBy: head.location)
+        spanIndex = SpanIndex(spans)
+        render(in: head)
+        applyColumnLayout()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            reparse()
+            rerenderEverything()
+        }
     }
 
     // MARK: - Analyse et rendu
 
     private func reparse() {
-        let result = MarkdownParser.parse(textView.string)
-        spans = result.spans
-        positions = result.positions
+        spans = MarkdownParser.parse(textView.string).spans
+            .sorted { $0.range.location < $1.range.location }
+        spanIndex = SpanIndex(spans)
+    }
+
+    /// Ré-analyse **le seul bloc touché**, et retombe sur le document entier
+    /// quand son sens en dépend (voir `IncrementalParse`).
+    ///
+    /// - Returns: la plage à re-styler.
+    private func reparseIncrementally(editedRange: NSRange, delta: Int) -> NSRange {
+        guard let storage = textView.textStorage else { return NSRange(location: 0, length: 0) }
+        let whole = NSRange(location: 0, length: storage.length)
+
+        let inserted = editedRange.length > 0 && editedRange.upperBound <= storage.length
+            ? storage.mutableString.substring(with: editedRange)
+            : ""
+        let codeBlocks = spans.compactMap { span -> NSRange? in
+            if case .codeBlock = span.kind { return span.range } else { return nil }
+        }
+
+        guard let scope = IncrementalParse.scope(in: storage.mutableString,
+                                                 editedRange: editedRange,
+                                                 inserted: inserted,
+                                                 existingCodeBlocks: codeBlocks) else {
+            reparse()
+            return whole
+        }
+
+        let fragment = storage.mutableString.substring(with: scope)
+        let fresh = MarkdownParser.parse(fragment, offsetBy: scope.location)
+        spans = MarkdownParser.splice(spans, replacing: scope, with: fresh, delta: delta)
+        spanIndex = SpanIndex(spans)
+        return scope
     }
 
     private func rerenderEverything() {
+        guard let storage = textView.textStorage else { return }
+        render(in: NSRange(location: 0, length: storage.length))
+    }
+
+    /// Pose les attributs sur une portée, et rien qu'elle.
+    ///
+    /// Les décorations, elles, sont toujours reconstruites en entier : leur
+    /// calcul ne fait que parcourir la liste des constructions, sans toucher au
+    /// tampon, et il est négligeable face à la pose d'attributs.
+    private func render(in range: NSRange) {
         guard let storage = textView.textStorage else { return }
         guard !isSourceMode else {
             renderSourceMode(storage)
             return
         }
         revealed = currentRevealedIndices()
-        let renderer = MarkdownRenderer(typography: typography)
-        renderer.render(storage, spans: spans, revealed: revealed,
-                        in: NSRange(location: 0, length: storage.length))
+        let renderer = MarkdownRenderer(typography: typography,
+                                        colorfulCode: AppSettings.shared.colorfulCodeBlocks)
+        // Seules les constructions qui touchent la portée sont repassées ; la
+        // portée est celle du bloc édité, pas celle du document.
+        let touching = spans.enumerated().filter {
+            NSIntersectionRange($0.element.range, range).length > 0 || range.length == 0
+        }
+        renderer.render(storage,
+                        spans: touching.map(\.element),
+                        revealed: Set(touching.indices.filter { revealed.contains(touching[$0].offset) }),
+                        in: range)
         textView.typography = typography
         textView.decorations = EditorDecoration.build(from: spans, typography: typography)
-        applyColumnLayout()
     }
 
     /// Le filet de sécurité (§4.2) : le texte tel qu'il est dans le fichier,
@@ -109,7 +212,6 @@ final class EditorController: NSObject {
         // Le mode source montre le fichier, pas une interprétation : aucune
         // marque dessinée n'y a sa place.
         textView.decorations = []
-        applyColumnLayout()
     }
 
     /// Recalcule uniquement les constructions dont l'état de révélation a
@@ -134,8 +236,27 @@ final class EditorController: NSObject {
 
     private func currentRevealedIndices() -> Set<Int> {
         let selection = textView.selectedRange()
-        let line = positions.lineRange(containing: min(selection.location, max(0, positions.utf16Length)))
-        return RevealPolicy.revealedIndices(spans: spans, selection: selection, lineRange: line)
+        return RevealPolicy.revealedIndices(index: spanIndex, selection: selection, lineRange: currentLineRange())
+    }
+
+    /// La plage de la ligne du curseur, terminateur exclu.
+    ///
+    /// Calculée directement sur le tampon plutôt que lue dans une table des
+    /// lignes : `NSString.lineRange(for:)` coûte la longueur d'**une ligne**,
+    /// là où reconstruire la table coûtait le document entier — 1,7 ms par
+    /// tranche de 10 000 mots, à chaque frappe, pour une seule ligne utile.
+    private func currentLineRange() -> NSRange {
+        guard let storage = textView.textStorage else { return NSRange(location: 0, length: 0) }
+        let caret = min(textView.selectedRange().location, storage.length)
+        var line = storage.mutableString.lineRange(for: NSRange(location: caret, length: 0))
+        // `lineRange(for:)` inclut le terminateur ; le §2.2 le veut exclu, sans
+        // quoi un curseur en début de ligne suivante révélerait la précédente.
+        while line.length > 0 {
+            let last = storage.mutableString.character(at: line.upperBound - 1)
+            guard last == 10 || last == 13 else { break }
+            line.length -= 1
+        }
+        return line
     }
 
     // MARK: - Mise en page de la colonne
@@ -143,6 +264,13 @@ final class EditorController: NSObject {
     /// Centre la colonne de texte dans la fenêtre (§7). La largeur est mesurée
     /// en signes sur la fonte réelle, pas fixée en points, pour qu'elle suive
     /// le choix de police et de taille.
+    /// **À ne jamais appeler depuis le cycle de frappe.**
+    ///
+    /// Réécrire `textContainerInset` et la taille du conteneur invalide la mise
+    /// en page de *tout* le document. Appelée à chaque touche, cette seule
+    /// ligne coûtait plus cher que l'analyse et le rendu réunis. Elle n'a de
+    /// raison de tourner que lorsque la largeur disponible ou la typographie
+    /// change — c'est-à-dire au redimensionnement et dans les réglages.
     func applyColumnLayout() {
         guard let container = textView.textContainer else { return }
         let available = scrollView.contentSize.width
@@ -158,6 +286,40 @@ final class EditorController: NSObject {
     func toggleSourceMode() {
         isSourceMode.toggle()
         rerenderEverything()
+    }
+
+    /// Encadre la sélection, ou retire le formatage s'il est déjà là (§2.5).
+    func wrapSelection(with marker: String) {
+        guard !isSourceMode else { return }
+        _ = apply(TypingBehaviour.wrap(text, selection: textView.selectedRange(), with: marker))
+    }
+
+    func setHeadingLevel(_ level: Int) {
+        guard !isSourceMode else { return }
+        _ = apply(TypingBehaviour.setHeadingLevel(level, in: text, selection: textView.selectedRange()))
+    }
+
+    /// Applique une édition calculée par `TypingBehaviour`.
+    ///
+    /// Elle passe par `shouldChangeText(in:replacementString:)`, ce qui est ce
+    /// qui inscrit l'annulation dans le `NSUndoManager` de la vue plutôt que
+    /// dans une pile parallèle : un `⌘Z` défait la continuation de liste comme
+    /// il défait une frappe, sans que rien n'ait été écrit pour ça.
+    @discardableResult
+    private func apply(_ edit: TypingBehaviour.Edit?) -> Bool {
+        guard let edit, let storage = textView.textStorage,
+              edit.range.upperBound <= storage.length else { return false }
+
+        guard textView.shouldChangeText(in: edit.range, replacementString: edit.replacement) else {
+            return false
+        }
+        if let name = edit.undoName {
+            textView.undoManager?.setActionName(name)
+        }
+        storage.replaceCharacters(in: edit.range, with: edit.replacement)
+        textView.didChangeText()
+        textView.setSelectedRange(NSRange(location: min(edit.caret, storage.length), length: 0))
+        return true
     }
 
     /// Supprime la construction entière quand `⌫` tomberait sur un marqueur
@@ -199,8 +361,13 @@ final class EditorController: NSObject {
     // MARK: - Réactions
 
     private func handleTextChange() {
-        reparse()
-        rerenderEverything()
+        let edited = lastEditedRange ?? NSRange(location: 0, length: textView.textStorage?.length ?? 0)
+        let delta = lastChangeInLength
+        lastEditedRange = nil
+        lastChangeInLength = 0
+
+        let scope = reparseIncrementally(editedRange: edited, delta: delta)
+        render(in: scope)
         onTextChanged?()
     }
 
@@ -208,6 +375,13 @@ final class EditorController: NSObject {
         // Les couleurs déjà posées dans le tampon ont été résolues au moment de
         // la pose : un changement clair/sombre ne les met pas à jour tout seul.
         rerenderEverything()
+    }
+
+    @objc private func settingsChanged() {
+        // Les fontes sont mises en cache par couple (famille, taille) : changer
+        // de police laisserait l'ancienne dans le cache.
+        FontCache.shared.clear()
+        typography = AppSettings.shared.typography
     }
 }
 
@@ -224,3 +398,26 @@ extension EditorController: NSTextViewDelegate {
     }
 }
 
+
+// MARK: - NSTextStorageDelegate
+
+extension EditorController: NSTextStorageDelegate {
+
+    /// **Enregistre** la plage modifiée, sans rien analyser ici.
+    ///
+    /// C'est le seul endroit qui connaisse précisément ce qui a changé —
+    /// `textDidChange(_:)` ne le dit pas. Mais ré-analyser depuis ce rappel
+    /// reviendrait à rentrer dans une édition en cours de traitement, ce qui
+    /// est le meilleur moyen de corrompre les plages de `NSTextStorage`. On
+    /// note, et on travaille au tour suivant.
+    nonisolated func textStorage(_ textStorage: NSTextStorage,
+                                 didProcessEditing editedMask: NSTextStorageEditActions,
+                                 range editedRange: NSRange,
+                                 changeInLength delta: Int) {
+        guard editedMask.contains(.editedCharacters) else { return }
+        MainActor.assumeIsolated {
+            lastEditedRange = editedRange
+            lastChangeInLength = delta
+        }
+    }
+}

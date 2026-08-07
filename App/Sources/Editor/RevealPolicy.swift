@@ -46,6 +46,51 @@ enum RevealPolicy {
     static func revealedIndices(spans: [SyntaxSpan],
                                 selection: NSRange,
                                 lineRange: NSRange) -> Set<Int> {
+        revealedIndices(index: SpanIndex(spans), selection: selection, lineRange: lineRange)
+    }
+
+    /// La même décision, mais en consultant un index au lieu de balayer.
+    ///
+    /// C'est le chemin emprunté à chaque flèche du clavier. Le balayage
+    /// linéaire coûtait 3,3 ms sur un document de 100 000 mots — pour un budget
+    /// d'une milliseconde, et sur l'opération la plus fréquente de l'app.
+    static func revealedIndices(index: SpanIndex,
+                                selection: NSRange,
+                                lineRange: NSRange) -> Set<Int> {
+        guard selection.length == 0 else { return [] }
+        var revealed = Set<Int>()
+        var innermost: (index: Int, length: Int)?
+
+        for candidate in index.candidates(near: selection.location, line: lineRange) {
+            let span = index.spans[candidate]
+            switch span.kind.revealScope {
+            case .innermostInline:
+                guard contains(span.range, selection.location) else { continue }
+                if innermost == nil || span.range.length < innermost!.length {
+                    innermost = (candidate, span.range.length)
+                }
+            case .wholeLine:
+                if intersects(span.range, lineRange) && contains(lineRange, selection.location) {
+                    revealed.insert(candidate)
+                }
+            case .wholeBlock:
+                if contains(span.range, selection.location) {
+                    revealed.insert(candidate)
+                }
+            }
+        }
+        if let innermost { revealed.insert(innermost.index) }
+        return revealed
+    }
+
+    /// Version de référence, par balayage.
+    ///
+    /// Conservée parce qu'elle est la définition littérale de la règle, et
+    /// parce que `SpanIndexTests` s'en sert pour vérifier que l'index rend
+    /// exactement la même réponse.
+    static func revealedIndicesByScan(spans: [SyntaxSpan],
+                                      selection: NSRange,
+                                      lineRange: NSRange) -> Set<Int> {
 
         // Une sélection non vide ne révèle rien. L'utilisateur sélectionne du
         // texte rendu ; faire apparaître la syntaxe sous la sélection en

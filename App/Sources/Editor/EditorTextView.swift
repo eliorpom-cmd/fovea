@@ -22,6 +22,11 @@ final class EditorTextView: NSTextView {
 
     var typography: EditorTypography = .default
 
+    /// Rappels vers `EditorController` pour les touches dont le comportement
+    /// dépend du markdown. Chacun renvoie `true` s'il a pris la main.
+    var handlesNewline: (() -> Bool)?
+    var handlesIndent: ((_ outdent: Bool) -> Bool)?
+
     // MARK: - Construction
 
     static func make() -> EditorTextView {
@@ -93,6 +98,29 @@ final class EditorTextView: NSTextView {
             return
         }
         super.deleteBackward(sender)
+    }
+
+    // MARK: - Listes
+
+    /// `⏎` continue la liste, `⇥` et `⇧⇥` en changent le niveau (§2.5).
+    ///
+    /// Ces trois touches sont interceptées ici plutôt que dans `keyDown` :
+    /// `insertNewline(_:)` et `insertTab(_:)` sont les actions que le système
+    /// envoie, et les traiter à ce niveau conserve la saisie par dictée, les
+    /// méthodes de saisie asiatiques et les claviers de remplacement.
+    override func insertNewline(_ sender: Any?) {
+        if handlesNewline?() == true { return }
+        super.insertNewline(sender)
+    }
+
+    override func insertTab(_ sender: Any?) {
+        if handlesIndent?(false) == true { return }
+        super.insertTab(sender)
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        if handlesIndent?(true) == true { return }
+        super.insertBacktab(sender)
     }
 
     // MARK: - Liens

@@ -12,6 +12,9 @@ struct MarkdownRenderer {
 
     var typography: EditorTypography
 
+    /// §4.3 : monochrome par défaut, vraies couleurs sur demande explicite.
+    var colorfulCode = false
+
     /// Applique le rendu complet à un tampon.
     ///
     /// - Parameters:
@@ -152,7 +155,7 @@ struct MarkdownRenderer {
             // paragraphe qui dessine le trait.
             break
 
-        case .codeBlock:
+        case .codeBlock(let language):
             // Pas de `.backgroundColor` : posé caractère par caractère, il
             // produit un liseré dentelé qui s'arrête au dernier signe de chaque
             // ligne. Le fond est dessiné par `DecorationPainter`, en un seul
@@ -163,6 +166,7 @@ struct MarkdownRenderer {
             style.headIndent = typography.codeBlockIndent
             storage.addAttributes([.font: typography.codeBlock,
                                    .paragraphStyle: style], range: whole)
+            highlightCode(storage, content: content, language: language)
 
         case .frontMatter:
             storage.addAttributes([.font: typography.codeBlock,
@@ -170,6 +174,23 @@ struct MarkdownRenderer {
 
         case .table:
             storage.addAttributes([.font: typography.inlineCode], range: whole)
+        }
+    }
+
+    /// Colorie le contenu d'un bloc de code.
+    ///
+    /// Un langage absent ou inconnu ne produit aucune catégorie : le bloc reste
+    /// en chasse fixe, non coloré. Jamais d'erreur, jamais de bloc vide (§4.3).
+    private func highlightCode(_ storage: NSTextStorage, content: NSRange, language: String?) {
+        guard content.length > 0, content.upperBound <= storage.length else { return }
+        let code = storage.attributedSubstring(from: content).string
+        let font = typography.codeBlock
+        for (range, category) in CodeHighlighter.categorize(code, language: language, offset: content.location) {
+            guard range.upperBound <= storage.length else { continue }
+            let attributes = colorfulCode
+                ? CodeHighlighter.colorAttributes(for: category, font: font)
+                : CodeHighlighter.monochromeAttributes(for: category, font: font)
+            storage.addAttributes(attributes, range: range)
         }
     }
 
