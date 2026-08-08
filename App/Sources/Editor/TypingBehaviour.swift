@@ -19,6 +19,10 @@ enum TypingBehaviour {
         /// Nom de l'action dans le menu Annuler. `nil` regroupe avec la frappe
         /// en cours plutôt que d'ouvrir sa propre étape.
         var undoName: String?
+        /// Longueur de la sélection à laisser après l'édition. Zéro — le cas
+        /// courant — pose un simple curseur ; c'est l'encadrement d'une
+        /// sélection qui a besoin de la conserver.
+        var selectionLength: Int = 0
     }
 
     // MARK: - Retour à la ligne dans une liste
@@ -201,6 +205,127 @@ enum TypingBehaviour {
             }
         }
         return false
+    }
+
+    // MARK: - Paires automatiques
+
+    /// Les paires posées à la frappe.
+    ///
+    /// L'apostrophe `'` en est **volontairement absente**. En français elle est
+    /// une lettre du mot — *l'app*, *aujourd'hui* — et aucun garde-fou ne
+    /// rattrape une paire posée là : MarkText s'en sort avec « pas après un
+    /// caractère alphanumérique », ce qui laisse encore passer *'Bonjour*. Le
+    /// coût d'y renoncer est nul, celui de se tromper est une frappe corrigée
+    /// à chaque mot.
+    static let pairs: [Character: Character] = [
+        "(": ")", "[": "]", "{": "}", "\"": "\"",
+        "*": "*", "_": "_", "`": "`", "~": "~",
+    ]
+
+    /// Les marqueurs markdown parmi les paires : ceux qui ne doivent jamais
+    /// s'ouvrir au milieu d'un mot, sans quoi `2*3` pose une étoile fantôme et
+    /// `snake_case` passe en italique.
+    private static let markdownPairs: Set<Character> = ["*", "_", "`", "~"]
+
+    /// Les caractères que retaper fait **franchir** au lieu de doubler.
+    private static let steppedOver: Set<Character> = [")", "]", "}", "\"", "*", "_", "`", "~"]
+
+    /// Ce qui peut suivre le curseur sans empêcher la pose d'une fermeture.
+    /// Une paire ouverte au milieu d'un mot serait presque toujours fausse.
+    private static let permissiveNeighbours: Set<Character> = [")", "]", "}", "\"", ",", ";", ":", ".", "!", "?", "…", "»"]
+
+    /// Ce que la frappe d'un caractère doit produire, quand ce n'est pas
+    /// simplement lui-même.
+    ///
+    /// Trois gestes en un, dans cet ordre :
+    ///
+    /// 1. **entourer** — avec du texte sélectionné, taper `(` ou `*` encadre
+    ///    la sélection au lieu de l'effacer. La sélection est conservée sur le
+    ///    même texte, ce qui permet d'enchaîner `*` puis `*` pour passer de
+    ///    l'italique au gras ;
+    /// 2. **franchir** — retaper la fermeture qui est déjà à droite du curseur
+    ///    avance au lieu d'en écrire une seconde ;
+    /// 3. **poser la fermeture**, si et seulement si elle ne coupe pas un mot.
+    ///
+    /// - Parameter insideCode: le curseur est dans du code, bloc ou `code` en
+    ///   ligne. Les marqueurs markdown n'y ont aucun sens ; les parenthèses,
+    ///   si.
+    /// - Returns: `nil` quand la touche doit s'insérer normalement.
+    static func autoPair(typing character: Character, in text: String,
+                         selection: NSRange, insideCode: Bool) -> Edit? {
+        let units = Array(text.utf16)
+        guard selection.location >= 0, selection.upperBound <= units.count else { return nil }
+        let forbidden = insideCode && markdownPairs.contains(character)
+
+        if selection.length > 0 {
+            guard let closing = pairs[character], !forbidden else { return nil }
+            return Edit(range: selection,
+                        replacement: String(character) + slice(units, selection) + String(closing),
+                        caret: selection.location + 1,
+                        undoName: "Entourer",
+                        selectionLength: selection.length)
+        }
+
+        let caret = selection.location
+        let next = caret < units.count ? symbol(units[caret]) : nil
+        let previous = caret > 0 ? symbol(units[caret - 1]) : nil
+
+        // Un marqueur markdown ouvre-t-il, ou vient-il refermer ?
+        //
+        // La question ne se règle pas sur le caractère précédent : dans
+        // `**gras|**` comme dans `du *|*`, taper `*` voit la même chose autour
+        // du curseur. Ce qui les sépare est le mot **avant la série de
+        // marqueurs** — `gras` d'un côté, une espace de l'autre. On remonte
+        // donc la série avant de juger.
+        let isMarkdown = markdownPairs.contains(character)
+        var opens = true
+        if isMarkdown {
+            var start = caret
+            while start > 0, symbol(units[start - 1]) == character { start -= 1 }
+            if let before = start > 0 ? symbol(units[start - 1]) : nil, before.isLetter || before.isNumber {
+                opens = false
+            }
+        }
+
+        if let next, next == character, steppedOver.contains(character), !(isMarkdown && opens) {
+            return Edit(range: NSRange(location: caret, length: 0), replacement: "",
+                        caret: caret + 1, undoName: nil)
+        }
+
+        guard let closing = pairs[character], !forbidden, previous != "\\", opens else { return nil }
+        // La fermeture qu'on vient de poser compte comme une frontière : c'est
+        // ce qui permet à `*` puis `*` de donner `**|**` plutôt que de buter
+        // sur son propre voisin.
+        guard next == nil || next!.isWhitespace || next! == character
+                || permissiveNeighbours.contains(next!) else { return nil }
+
+        return Edit(range: NSRange(location: caret, length: 0),
+                    replacement: String(character) + String(closing),
+                    caret: caret + 1, undoName: nil)
+    }
+
+    /// `⌫` entre les deux moitiés d'une paire les efface toutes les deux.
+    ///
+    /// Sans ça, revenir sur une parenthèse qu'on n'a pas voulue laisse sa
+    /// jumelle orpheline — et c'est le reproche le plus courant fait aux
+    /// éditeurs qui apparient sans savoir défaire.
+    static func deletingPair(in text: String, selection: NSRange) -> Edit? {
+        guard selection.length == 0, selection.location > 0 else { return nil }
+        let units = Array(text.utf16)
+        guard selection.location < units.count,
+              let opener = symbol(units[selection.location - 1]),
+              let closing = pairs[opener],
+              symbol(units[selection.location]) == closing else { return nil }
+        return Edit(range: NSRange(location: selection.location - 1, length: 2), replacement: "",
+                    caret: selection.location - 1, undoName: nil)
+    }
+
+    /// Le caractère d'une unité UTF-16, quand elle en est un à elle seule.
+    /// Une moitié de paire de substitution ne peut être aucun de nos
+    /// délimiteurs, tous ASCII : la rendre `nil` suffit.
+    private static func symbol(_ unit: UInt16) -> Character? {
+        guard let scalar = UnicodeScalar(unit) else { return nil }
+        return Character(scalar)
     }
 
     // MARK: - Encadrement par un raccourci

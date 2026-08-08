@@ -59,6 +59,10 @@ final class EditorTextView: NSTextView {
     var handlesNewline: (() -> Bool)?
     var handlesIndent: ((_ outdent: Bool) -> Bool)?
 
+    /// Appelé pour chaque caractère tapé, avant son insertion. Sert aux paires
+    /// automatiques. Renvoie `true` si le caractère a été traité autrement.
+    var handlesTyping: ((Character) -> Bool)?
+
     /// Appelé quand on clique la case à cocher d'une tâche. Reçoit la plage du
     /// contenu de l'item, celle que porte la décoration.
     var handlesTaskToggle: ((NSRange) -> Bool)?
@@ -240,6 +244,23 @@ final class EditorTextView: NSTextView {
     override func insertTab(_ sender: Any?) {
         if handlesIndent?(false) == true { return }
         super.insertTab(sender)
+    }
+
+    /// Les paires automatiques passent par ici, et non par `keyDown` : c'est le
+    /// point où le caractère est déjà déterminé, quelle que soit la façon dont
+    /// il a été produit — clavier, dictée, palette de caractères.
+    ///
+    /// La saisie en cours de composition — accents morts, méthodes asiatiques —
+    /// est laissée intacte : y intercaler une fermeture couperait la
+    /// composition en deux.
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        let typed = (string as? String) ?? (string as? NSAttributedString)?.string
+        if !hasMarkedText(), replacementRange.location == NSNotFound,
+           let typed, typed.count == 1, let character = typed.first,
+           handlesTyping?(character) == true {
+            return
+        }
+        super.insertText(string, replacementRange: replacementRange)
     }
 
     override func insertBacktab(_ sender: Any?) {

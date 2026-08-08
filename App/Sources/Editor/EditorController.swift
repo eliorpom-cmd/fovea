@@ -76,7 +76,15 @@ final class EditorController: NSObject {
         textView.textStorage?.delegate = self
         textView.handlesDeleteBackward = { [weak self] selection in
             guard let self else { return false }
-            return stepBackInsteadOfBreakingTheGrid(at: selection) || deleteConstruct(at: selection)
+            return stepBackInsteadOfBreakingTheGrid(at: selection)
+                || deletePair(at: selection)
+                || deleteConstruct(at: selection)
+        }
+        textView.handlesTyping = { [weak self] character in
+            guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return false }
+            return apply(TypingBehaviour.autoPair(typing: character, in: text,
+                                                  selection: textView.selectedRange(),
+                                                  insideCode: isInsideCode(at: textView.selectedRange().location)))
         }
         textView.handlesNewline = { [weak self] in
             guard let self else { return false }
@@ -88,6 +96,9 @@ final class EditorController: NSObject {
         }
         textView.handlesIndent = { [weak self] outdent in
             guard let self else { return false }
+            // Sortir d'un format passe avant tout le reste : c'est le geste qui
+            // ferme la boucle ouverte par les paires automatiques.
+            if !outdent, escapeFormat() { return true }
             if moveBetweenCells(outdent: outdent) { return true }
             guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
@@ -665,6 +676,18 @@ final class EditorController: NSObject {
         guard let edit, let storage = textView.textStorage,
               edit.range.upperBound <= storage.length else { return false }
 
+        // Une édition qui ne change aucun caractère ne déplace que le curseur —
+        // c'est le cas de la fermeture qu'on franchit. La faire passer par la
+        // pile d'annulation y inscrirait une étape qui ne défait rien.
+        let selection = { (caret: Int) in
+            NSRange(location: min(caret, storage.length),
+                    length: min(edit.selectionLength, storage.length - min(caret, storage.length)))
+        }
+        guard edit.range.length > 0 || !edit.replacement.isEmpty else {
+            textView.setSelectedRange(selection(edit.caret))
+            return true
+        }
+
         guard textView.shouldChangeText(in: edit.range, replacementString: edit.replacement) else {
             return false
         }
@@ -673,7 +696,54 @@ final class EditorController: NSObject {
         }
         storage.replaceCharacters(in: edit.range, with: edit.replacement)
         textView.didChangeText()
-        textView.setSelectedRange(NSRange(location: min(edit.caret, storage.length), length: 0))
+        textView.setSelectedRange(selection(edit.caret))
+        return true
+    }
+
+    /// `⌫` entre les deux moitiés d'une paire les efface toutes les deux.
+    private func deletePair(at selection: NSRange) -> Bool {
+        guard !isSourceMode, AppSettings.shared.automaticPairs else { return false }
+        return apply(TypingBehaviour.deletingPair(in: text, selection: selection))
+    }
+
+    /// Le curseur est-il dans du code, où les marqueurs markdown n'ont pas
+    /// cours ? Passe par l'index plutôt que par la liste entière : la question
+    /// est posée à chaque caractère tapé (§9).
+    private func isInsideCode(at location: Int) -> Bool {
+        spanIndex.candidates(near: location, line: currentLineRange()).contains { index in
+            guard index < spanIndex.spans.count else { return false }
+            let span = spanIndex.spans[index]
+            switch span.kind {
+            case .inlineCode, .codeBlock:
+                return NSLocationInRange(location, span.range)
+            default:
+                return false
+            }
+        }
+    }
+
+    /// `⇥` collé devant la balise fermante saute par-dessus.
+    ///
+    /// C'est la sortie de `**gras|**` sans lever la main, et le pendant exact
+    /// des paires automatiques : elles posent la fermeture, celle-ci la
+    /// franchit. La condition est stricte — le curseur doit être **à la fin du
+    /// contenu**, pas n'importe où dedans — sinon `⇥` cesserait d'indenter.
+    private func escapeFormat() -> Bool {
+        guard !isSourceMode else { return false }
+        let selection = textView.selectedRange()
+        guard selection.length == 0 else { return false }
+
+        var innermost: NSRange?
+        for index in spanIndex.candidates(near: selection.location, line: currentLineRange())
+        where index < spanIndex.spans.count {
+            let span = spanIndex.spans[index]
+            guard span.kind.revealScope == .innermostInline,
+                  span.content.upperBound == selection.location,
+                  span.range.upperBound > selection.location else { continue }
+            if innermost == nil || span.range.length < innermost!.length { innermost = span.range }
+        }
+        guard let innermost else { return false }
+        textView.setSelectedRange(NSRange(location: innermost.upperBound, length: 0))
         return true
     }
 

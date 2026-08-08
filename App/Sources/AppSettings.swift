@@ -97,6 +97,7 @@ final class AppSettings {
     }
 
     var markdownShortcutsWhileTyping = true { didSet { store(markdownShortcutsWhileTyping, .shortcuts) } }
+    var automaticPairs = true { didSet { store(automaticPairs, .automaticPairs) } }
     var slashMenuScope: SlashMenuScope = .anywhere { didSet { store(slashMenuScope.rawValue, .slashMenuScope) } }
     var assetsFolderName = AppConfig.defaultAssetsFolderName { didSet { store(assetsFolderName, .assetsFolder) } }
 
@@ -124,7 +125,7 @@ final class AppSettings {
     private enum Key: String {
         case appearance, bodyFontName, monoFontName, bodySize, lineHeight, columnWidth
         case colorfulCode, focusMode, focusUnit, typewriter, statistics, wordGoal
-        case shortcuts, slashMenu, slashMenuScope, assetsFolder
+        case shortcuts, automaticPairs, slashMenu, slashMenuScope, assetsFolder
     }
 
     private let defaults = UserDefaults.standard
@@ -148,6 +149,7 @@ final class AppSettings {
         showStatistics = read(.statistics) as? Bool ?? true
         sessionWordGoal = read(.wordGoal) as? Int ?? 0
         markdownShortcutsWhileTyping = read(.shortcuts) as? Bool ?? true
+        automaticPairs = read(.automaticPairs) as? Bool ?? true
         if let raw = read(.slashMenuScope) as? String, let value = SlashMenuScope(rawValue: raw) {
             slashMenuScope = value
         } else if read(.slashMenu) as? Bool == false {

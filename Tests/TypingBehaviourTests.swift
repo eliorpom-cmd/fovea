@@ -228,6 +228,114 @@ final class TypingBehaviourTests: XCTestCase {
         XCTAssertFalse(TypingBehaviour.looksLikeURL(""))
     }
 
+    // MARK: - Paires automatiques
+
+    /// Outil : ce que la frappe produit, en texte, pour lire les cas d'un coup
+    /// d'œil. Le curseur est marqué `|`, la sélection par deux `|`.
+    private func typing(_ character: Character, into text: String,
+                        selection: NSRange, insideCode: Bool = false) -> String {
+        guard let edit = TypingBehaviour.autoPair(typing: character, in: text,
+                                                  selection: selection, insideCode: insideCode)
+        else { return "—" }
+        let result = NSMutableString(string: text)
+        result.replaceCharacters(in: edit.range, with: edit.replacement)
+        result.insert("|", at: edit.caret + edit.selectionLength)
+        if edit.selectionLength > 0 { result.insert("|", at: edit.caret) }
+        return result as String
+    }
+
+    func testAnOpeningBracketPosesItsClosing() {
+        XCTAssertEqual(typing("(", into: "Voir ", selection: NSRange(location: 5, length: 0)),
+                       "Voir (|)")
+        XCTAssertEqual(typing("[", into: "", selection: NSRange(location: 0, length: 0)), "[|]")
+    }
+
+    /// Le cas qui décide de tout en français : l'apostrophe est une lettre du
+    /// mot. Aucune paire, jamais, quel que soit le contexte.
+    func testTheApostropheIsNeverPaired() {
+        XCTAssertEqual(typing("'", into: "l", selection: NSRange(location: 1, length: 0)), "—")
+        XCTAssertEqual(typing("'", into: "", selection: NSRange(location: 0, length: 0)), "—")
+        XCTAssertEqual(typing("'", into: "dit ", selection: NSRange(location: 4, length: 0)), "—")
+    }
+
+    /// `2*3` ne doit pas poser d'étoile fantôme, ni `snake_case` d'italique.
+    func testAMarkdownMarkerNeverOpensInsideAWord() {
+        XCTAssertEqual(typing("*", into: "2", selection: NSRange(location: 1, length: 0)), "—")
+        XCTAssertEqual(typing("_", into: "snake", selection: NSRange(location: 5, length: 0)), "—")
+        XCTAssertEqual(typing("*", into: "du ", selection: NSRange(location: 3, length: 0)), "du *|*")
+    }
+
+    /// Une paire au milieu d'un mot serait presque toujours fausse ; devant une
+    /// ponctuation fermante, elle est presque toujours juste.
+    func testAPairOnlyOpensBeforeABoundary() {
+        XCTAssertEqual(typing("(", into: "abc", selection: NSRange(location: 0, length: 0)), "—")
+        XCTAssertEqual(typing("(", into: " abc", selection: NSRange(location: 0, length: 0)), "(|) abc")
+        XCTAssertEqual(typing("*", into: "du .", selection: NSRange(location: 3, length: 0)), "du *|*.")
+    }
+
+    func testABackslashCancelsThePair() {
+        XCTAssertEqual(typing("*", into: "un \\", selection: NSRange(location: 4, length: 0)), "—")
+    }
+
+    /// Retaper la fermeture avance au lieu d'en écrire une seconde : c'est ce
+    /// qui rend la paire invisible à l'usage.
+    func testRetypingTheClosingStepsOverIt() {
+        XCTAssertEqual(typing(")", into: "(essai)", selection: NSRange(location: 6, length: 0)),
+                       "(essai)|")
+        // Qui tape les deux étoiles de fermeture à la main les franchit toutes
+        // les deux : `**gras|**` puis `*` puis `*` donne `**gras**|`.
+        XCTAssertEqual(typing("*", into: "**gras**", selection: NSRange(location: 6, length: 0)),
+                       "**gras*|*")
+        XCTAssertEqual(typing("*", into: "**gras**", selection: NSRange(location: 7, length: 0)),
+                       "**gras**|")
+    }
+
+    /// Le cœur du confort : `**` puis le texte puis `⇥`. Ici, la première
+    /// moitié — la pose de `****` avec le curseur au milieu.
+    func testTypingTwoStarsLandsBetweenFour() {
+        XCTAssertEqual(typing("*", into: "du ", selection: NSRange(location: 3, length: 0)), "du *|*")
+        XCTAssertEqual(typing("*", into: "du **", selection: NSRange(location: 4, length: 0)), "du **|**")
+    }
+
+    func testMarkdownMarkersAreNotPairedInsideCode() {
+        XCTAssertEqual(typing("*", into: "let a = ", selection: NSRange(location: 8, length: 0),
+                              insideCode: true), "—")
+        // Les parenthèses, elles, gardent tout leur sens dans du code.
+        XCTAssertEqual(typing("(", into: "print", selection: NSRange(location: 5, length: 0),
+                              insideCode: true), "print(|)")
+    }
+
+    /// Avec du texte sélectionné, la touche entoure au lieu d'effacer — et la
+    /// sélection reste sur le même texte, pour pouvoir enchaîner `*` puis `*`.
+    func testASelectionIsSurroundedAndKept() {
+        XCTAssertEqual(typing("*", into: "du gras ici", selection: NSRange(location: 3, length: 4)),
+                       "du *|gras|* ici")
+        XCTAssertEqual(typing("(", into: "un aparté", selection: NSRange(location: 3, length: 6)),
+                       "un (|aparté|)")
+    }
+
+    func testAnUnpairedCharacterIsLeftAlone() {
+        XCTAssertEqual(typing("a", into: "", selection: NSRange(location: 0, length: 0)), "—")
+        XCTAssertEqual(typing("a", into: "mot", selection: NSRange(location: 0, length: 3)), "—")
+    }
+
+    /// Revenir sur une parenthèse qu'on n'a pas voulue ne doit pas laisser sa
+    /// jumelle orpheline.
+    func testBackspaceBetweenAPairRemovesBoth() throws {
+        let edit = try XCTUnwrap(TypingBehaviour.deletingPair(in: "Voir ()",
+                                                              selection: NSRange(location: 6, length: 0)))
+        XCTAssertEqual(edit.range, NSRange(location: 5, length: 2))
+        XCTAssertEqual(edit.replacement, "")
+        XCTAssertEqual(edit.caret, 5)
+    }
+
+    func testBackspaceElsewhereIsLeftAlone() {
+        // La fermeture n'est pas collée : ce que l'on efface n'est plus une paire.
+        XCTAssertNil(TypingBehaviour.deletingPair(in: "Voir (a)", selection: NSRange(location: 6, length: 0)))
+        XCTAssertNil(TypingBehaviour.deletingPair(in: "Voir ()", selection: NSRange(location: 7, length: 0)))
+        XCTAssertNil(TypingBehaviour.deletingPair(in: "", selection: NSRange(location: 0, length: 0)))
+    }
+
     // MARK: - Analyse de ligne
 
     func testLineRangeExcludesTheTerminator() {

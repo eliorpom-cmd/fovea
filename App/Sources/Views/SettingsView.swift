@@ -152,6 +152,13 @@ private struct EditingSettings: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                Toggle("Fermer les paires automatiquement", isOn: $settings.automaticPairs)
+                Text("« ( » pose « () », « ** » pose « **** » et place le curseur au milieu ; "
+                     + "⇥ ressort du format. Avec du texte sélectionné, la touche l'entoure au "
+                     + "lieu de l'effacer. L'apostrophe est laissée tranquille.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 Picker("Menu d'insertion sur « / »", selection: $settings.slashMenuScope) {
                     ForEach(AppSettings.SlashMenuScope.allCases) { Text($0.label).tag($0) }
                 }
