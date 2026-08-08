@@ -76,12 +76,26 @@ final class MarkdownDocument: NSDocument {
         editor = controller.editor
         controller.editor.documentURL = fileURL
         controller.editor.setText(text)
+        // Les états du §6 se disent à l'ouverture, une fois, sans interrompre.
+        controller.banner.show(DocumentBanner.messages(byteCount: text.utf8.count,
+                                                       encoding: sourceEncoding,
+                                                       isWritable: isWritable))
+
         controller.editor.onTextChanged = { [weak self, weak controller] in
             // `updateChangeCount` est ce qui allume la pastille du bouton de
             // fermeture et déclenche l'enregistrement automatique.
             self?.updateChangeCount(.changeDone)
             controller?.refreshStatistics()
         }
+    }
+
+    /// Le fichier peut-il être réécrit ?
+    ///
+    /// Un nouveau document sans emplacement l'est par définition : il n'y a
+    /// encore rien à écraser, et « Enregistrer » ouvrira un sélecteur.
+    private var isWritable: Bool {
+        guard let fileURL else { return true }
+        return FileManager.default.isWritableFile(atPath: fileURL.path)
     }
 
     // MARK: - Type de fichier

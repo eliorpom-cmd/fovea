@@ -282,13 +282,27 @@ struct DecorationPainter {
     /// ici on ne fait que peindre dedans.
     private func paint(image source: String, alt: String, at frame: NSRect, columnWidth: CGFloat) {
         switch ImageStore.shared.entry(for: source, relativeTo: documentURL) {
-        case .loaded(let image):
+        case .loaded(let image, let animated):
             let size = ImageStore.displaySize(of: image, columnWidth: columnWidth)
             let box = NSRect(x: frame.minX, y: frame.minY, width: size.width, height: size.height)
             NSGraphicsContext.current?.imageInterpolation = .high
             // `.sourceOver` et non `.copy` : une image à canal alpha doit se
             // composer sur le fond, pas le remplacer par du transparent.
             image.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
+            // §6 : seule la première trame est dessinée. Le dire évite de
+            // laisser croire que l'animation est cassée.
+            if animated { paintTag("Animé", in: box) }
+
+        case .oversized(let thumbnail, let bytes):
+            // Le fichier existe : l'annoncer « introuvable » serait faux.
+            let size = thumbnail.map { ImageStore.displaySize(of: $0, columnWidth: columnWidth) }
+                ?? NSSize(width: min(columnWidth, 420), height: ImageStore.missingPlaceholderHeight - 8)
+            let box = NSRect(x: frame.minX, y: frame.minY, width: size.width, height: size.height)
+            if let thumbnail {
+                NSGraphicsContext.current?.imageInterpolation = .high
+                thumbnail.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
+            }
+            paintTag("\(bytes / (1024 * 1024)) Mo — aperçu", in: box)
 
         case .missing:
             // §6 : un cadre au trait avec le chemin, et jamais un espace vide
@@ -307,6 +321,27 @@ struct DecorationPainter {
             draw(source, in: box, at: 26, font: typography.uiFont(size: 11, weight: .regular),
                  color: Theme.NS.labelTertiary)
         }
+    }
+
+    /// Une pastille discrète dans le coin bas-gauche d'une image.
+    ///
+    /// Posée sur l'image et non à côté : elle décrit cette image-là, et une
+    /// ligne de texte en dessous décalerait tout ce qui suit.
+    private func paintTag(_ text: String, in box: NSRect) {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: typography.uiFont(size: 10, weight: .medium),
+            .foregroundColor: Theme.NS.window,
+        ]
+        let size = (text as NSString).size(withAttributes: attributes)
+        let padding: CGFloat = 5
+        let pill = NSRect(x: box.minX + 8,
+                          y: box.maxY - size.height - padding * 2 - 8,
+                          width: size.width + padding * 2,
+                          height: size.height + padding)
+        Theme.NS.label.withAlphaComponent(0.72).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+        (text as NSString).draw(at: NSPoint(x: pill.minX + padding, y: pill.minY + padding / 2),
+                                withAttributes: attributes)
     }
 
     private func draw(_ text: String, in box: NSRect, at offset: CGFloat,

@@ -27,7 +27,11 @@ final class ImageStore {
 
     /// Ce qu'on sait d'une image référencée.
     enum Entry {
-        case loaded(NSImage)
+        case loaded(NSImage, animated: Bool)
+        /// Trop lourde pour être décodée en entier : on montre une vignette et
+        /// on le dit (§6). Le fichier existe, et l'annoncer « introuvable »
+        /// serait un mensonge — c'était pourtant le comportement précédent.
+        case oversized(NSImage?, bytes: Int)
         /// Le fichier n'existe pas, ou n'est pas une image lisible (§6).
         case missing
     }
@@ -67,14 +71,42 @@ final class ImageStore {
         let entry: Entry
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         if size > Self.maximumBytes {
-            entry = .missing
+            entry = .oversized(Self.thumbnail(of: url), bytes: size)
         } else if let image = NSImage(contentsOf: url), image.size.width > 0 {
-            entry = .loaded(image)
+            entry = .loaded(image, animated: Self.isAnimated(url))
         } else {
             entry = .missing
         }
         cache[url] = entry
         return entry
+    }
+
+    /// Une vignette lue **sans décoder l'image entière**.
+    ///
+    /// `CGImageSourceCreateThumbnailAtIndex` travaille sur le flux : c'est ce
+    /// qui permet de montrer quelque chose d'une image de 200 Mo sans en payer
+    /// le prix en mémoire, qui est justement la raison de la borne.
+    private static func thumbnail(of url: URL) -> NSImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 1024,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
+    /// Une image animée a plusieurs trames dans son fichier.
+    ///
+    /// Seule la première est dessinée : animer dans un éditeur est un coût
+    /// processeur permanent, payé pendant qu'on écrit, pour une image que
+    /// personne ne regarde (§6). Le rendu le signale plutôt que de le taire.
+    private static func isAnimated(_ url: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        return CGImageSourceGetCount(source) > 1
     }
 
     /// Oublie ce qui a été chargé.

@@ -445,8 +445,11 @@ struct MarkdownRenderer {
     /// Hauteur à réserver pour une image, cadre d'absence compris.
     private func reservedHeight(for source: String) -> CGFloat {
         switch ImageStore.shared.entry(for: source, relativeTo: documentURL) {
-        case .loaded(let image):
+        case .loaded(let image, _):
             ImageStore.displaySize(of: image, columnWidth: typography.columnWidth).height
+        case .oversized(let thumbnail, _):
+            thumbnail.map { ImageStore.displaySize(of: $0, columnWidth: typography.columnWidth).height }
+                ?? ImageStore.missingPlaceholderHeight
         case .missing:
             ImageStore.missingPlaceholderHeight
         }

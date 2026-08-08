@@ -10,6 +10,8 @@ import AppKit
 final class DocumentWindowController: NSWindowController {
 
     let editor = EditorController()
+    /// Les états du §6 qui se disent sans interrompre.
+    let banner = DocumentBanner()
     private let statusBar = StatusBar()
     private let outline = OutlinePanel()
     private let palette = CommandPalette()
@@ -45,11 +47,13 @@ final class DocumentWindowController: NSWindowController {
         let content = LayoutObservingView()
         content.onLayout = { [weak editor] in editor?.applyColumnLayout() }
         content.addSubview(outline)
+        content.addSubview(banner)
         content.addSubview(editor.scrollView)
         content.addSubview(statusBar)
         editor.scrollView.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
         outline.translatesAutoresizingMaskIntoConstraints = false
+        banner.translatesAutoresizingMaskIntoConstraints = false
         outlineWidth = outline.widthAnchor.constraint(equalToConstant: 0)
 
         NSLayoutConstraint.activate([
@@ -58,7 +62,14 @@ final class DocumentWindowController: NSWindowController {
             outline.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             outlineWidth,
 
-            editor.scrollView.topAnchor.constraint(equalTo: content.topAnchor),
+            // Le bandeau est **au-dessus** de la colonne, pas par-dessus : il
+            // pousse le texte au lieu de le masquer, et le rend intégralement
+            // quand il se referme.
+            banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s40),
+            banner.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
+            banner.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+
+            editor.scrollView.topAnchor.constraint(equalTo: banner.bottomAnchor),
             editor.scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             editor.scrollView.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),

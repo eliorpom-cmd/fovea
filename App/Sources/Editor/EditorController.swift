@@ -406,8 +406,33 @@ final class EditorController: NSObject {
     // MARK: - Commandes
 
     func toggleSourceMode() {
+        let selection = textView.selectedRange()
         isSourceMode.toggle()
+        slashMenu.dismiss()
         rerenderEverything()
+
+        // §6 : la sélection est conservée, mais **étendue aux marqueurs de ses
+        // constructions**. Sélectionner un mot en gras ne sélectionne que le
+        // mot — ses `**` étaient invisibles. Passer en source sans étendre
+        // laisserait une sélection qui coupe la construction en deux, et un
+        // `⌘X` produirait un `**` orphelin.
+        if isSourceMode, selection.length > 0 {
+            textView.setSelectedRange(extendedToConstructs(selection))
+        }
+    }
+
+    /// La sélection élargie aux constructions inline qu'elle touche.
+    ///
+    /// Seules les constructions inline : élargir aux blocs ferait sauter la
+    /// sélection d'un mot à un chapitre entier dès qu'on est sous un titre.
+    private func extendedToConstructs(_ selection: NSRange) -> NSRange {
+        var result = selection
+        for span in spans where span.kind.revealScope == .innermostInline {
+            guard NSIntersectionRange(span.range, selection).length > 0 else { continue }
+            result = NSUnionRange(result, span.range)
+        }
+        let length = textView.textStorage?.length ?? 0
+        return NSIntersectionRange(result, NSRange(location: 0, length: length))
     }
 
     /// Encadre la sélection, ou retire le formatage s'il est déjà là (§2.5).
