@@ -46,9 +46,22 @@ struct MarkdownRenderer {
         // Le masquage vient en dernier, sur les marqueurs seulement : il doit
         // gagner contre tout attribut de fonte posé plus haut par le bloc
         // porteur, sinon un `#` de titre resterait grand et visible.
-        for index in ordered {
+        for index in ordered where !isTable(spans[index]) {
             applyMarkers(storage, span: spans[index], revealed: revealed.contains(index))
         }
+
+        // Les tableaux tout à la fin, et pour une raison précise : la grille
+        // place ses colonnes sur la largeur **réellement rendue** de chaque
+        // cellule. Une cellule contenant du gras a déjà perdu ses `**` à
+        // l'étape précédente ; la mesurer avant les aurait comptés.
+        for index in ordered where isTable(spans[index]) {
+            applyTable(storage, span: spans[index], revealed: revealed.contains(index))
+        }
+    }
+
+    func isTable(_ span: SyntaxSpan) -> Bool {
+        if case .table = span.kind { return true }
+        return false
     }
 
     /// Bascule les marqueurs d'une seule construction, **sans toucher au reste
@@ -59,6 +72,12 @@ struct MarkdownRenderer {
     /// attributs de la plage, ce qui effacerait le gras du mot au moment précis
     /// où l'on fait réapparaître ses étoiles.
     func applyMarkers(_ storage: NSTextStorage, span: SyntaxSpan, revealed: Bool) {
+        // Un tableau a sa propre géométrie : ses `|` ne sont pas masqués à
+        // largeur nulle mais à une largeur calculée. Voir `applyTable`.
+        if case .table = span.kind {
+            applyTable(storage, span: span, revealed: revealed)
+            return
+        }
         // Le texte alternatif d'une image fait partie de ce qui disparaît :
         // l'image le remplace à l'écran, et le laisser visible superposerait
         // deux fois la même information.
@@ -84,6 +103,204 @@ struct MarkdownRenderer {
                 MarkerMask.hide(in: storage, range: marker)
             }
         }
+    }
+
+    // MARK: - Tableaux (§2.6)
+
+    /// Gouttière entre deux colonnes, en signes de chasse fixe.
+    static let tableGutter = 3
+
+    /// Hauteur réservée à la ligne de délimitation, en fraction du corps.
+    /// Elle ne montre rien, mais elle porte le filet d'en-tête.
+    static let tableRuleHeight: CGFloat = 0.7
+
+    /// La grille tient-elle dans la colonne de texte ?
+    ///
+    /// Le calcul se fait sur les signes de la source, pas sur le rendu : c'est
+    /// une estimation par excès — une cellule en gras rendra plus court que sa
+    /// source — mais elle a l'avantage d'être la même partout, y compris dans
+    /// la couche de décoration qui ne peut rien mesurer. Un tableau limite sera
+    /// donc laissé en source plutôt que dessiné de travers.
+    func fitsAsGrid(_ table: MarkdownTable) -> Bool {
+        let advance = ("0" as NSString).size(withAttributes: [.font: typography.codeBlock]).width
+        guard advance > 0 else { return false }
+        return CGFloat(table.totalWidth(gutter: Self.tableGutter)) * advance <= typography.columnWidth
+    }
+
+    /// Pose — ou retire — la grille d'un tableau.
+    ///
+    /// # Le repli du §2.6, et pourquoi c'est le bon
+    ///
+    /// Le cahier des charges visait une grille réellement éditable, avec un
+    /// `firstResponder` imbriqué par cellule, et armait d'avance un repli :
+    /// *grille en lecture, source à l'édition*. C'est ce repli qui est en
+    /// place, et pas par manque de temps — la couche de décoration, écrite
+    /// pour les images, l'a rendu **meilleur** que la cible d'origine.
+    ///
+    /// Un éditeur dans l'éditeur aurait signifié deux piles d'annulation à
+    /// tenir synchrones, une sélection qui ne traverse plus le tableau, et un
+    /// `⌘F` qui s'arrête à ses bords. Ici il n'y a toujours qu'un seul tampon :
+    /// la sélection traverse la grille, la recherche y trouve, l'annulation est
+    /// celle de la frappe.
+    ///
+    /// # Comment la grille tient sans un caractère ajouté
+    ///
+    /// Chaque `|` est masqué, mais reçoit **une avance calculée** : celle qu'il
+    /// faut pour que la cellule suivante tombe sur sa colonne. Les blancs de
+    /// remplissage de la source passent à zéro — c'est la grille qui espace,
+    /// plus l'auteur. La ligne `|---|` est masquée entière et sa hauteur
+    /// réduite à la place d'un filet.
+    ///
+    /// Les colonnes sont mesurées, pas comptées : `**Titre**` rend six signes
+    /// de moins que sa source, et une colonne calculée sur les signes serait
+    /// large de six de trop.
+    func applyTable(_ storage: NSTextStorage, span: SyntaxSpan, revealed: Bool) {
+        guard case .table(let table) = span.kind, let table,
+              span.range.upperBound <= storage.length else { return }
+
+        let font = typography.codeBlock
+        let advance = ("0" as NSString).size(withAttributes: [.font: font]).width
+        guard advance > 0 else { return }
+
+        // Un tableau plus large que la colonne de texte se replierait ligne à
+        // ligne, et une grille repliée ne se lit plus du tout. On renonce alors
+        // à la grille et on montre la source, comme pour un tableau malformé.
+        guard fitsAsGrid(table), !revealed else {
+            showTableSource(storage, table: table, font: font)
+            return
+        }
+        layOutTable(storage, table: table, advance: advance)
+    }
+
+    /// Le tableau tel qu'il est écrit : `|` et blancs visibles, ligne de
+    /// délimitation à sa hauteur normale. C'est l'état sous le curseur, et
+    /// celui d'un tableau trop large pour la colonne.
+    private func showTableSource(_ storage: NSTextStorage, table: MarkdownTable, font: NSFont) {
+        for marker in table.markerRanges where marker.upperBound <= storage.length {
+            MarkerMask.reveal(in: storage, range: marker, font: font)
+        }
+        // Le repli à la ligne est **rétabli** : la source à pipes est plus large
+        // que la grille qu'elle remplace, et la tronquer cacherait à l'auteur
+        // la moitié de ce qu'il est en train d'éditer.
+        applyRowStyles(storage, table: table, clipping: false, reducedRuleLine: false)
+    }
+
+    private func layOutTable(_ storage: NSTextStorage, table: MarkdownTable, advance: CGFloat) {
+        // 1. Tout ce qui est syntaxe disparaît d'abord, à largeur nulle. Les
+        //    avances utiles seront réécrites juste après ; celles qui ne le
+        //    sont pas — un `|` de bord droit — doivent rester à zéro.
+        for marker in table.markerRanges where marker.upperBound <= storage.length {
+            MarkerMask.hide(in: storage, range: marker)
+        }
+
+        // 2. Hauteurs de ligne, dont celle — réduite — de la délimitation.
+        applyRowStyles(storage, table: table, clipping: true, reducedRuleLine: true)
+
+        // 3. Largeur de chaque colonne, mesurée sur le rendu réel.
+        var widths = [CGFloat](repeating: 0, count: table.columnCount)
+        for row in table.rows {
+            for (column, cell) in row.cells.enumerated() where column < widths.count {
+                widths[column] = max(widths[column], measure(storage, cell.content))
+            }
+        }
+
+        // 4. Abscisse de départ de chaque colonne.
+        let gutter = CGFloat(Self.tableGutter) * advance
+        var origins: [CGFloat] = []
+        var cursor: CGFloat = 0
+        for width in widths {
+            origins.append(cursor)
+            cursor += width + gutter
+        }
+
+        // 5. Chaque `|` reçoit l'avance qui mène au début de sa cellule.
+        for row in table.rows {
+            var pen: CGFloat = 0
+            for (column, cell) in row.cells.enumerated() {
+                let own = measure(storage, cell.content)
+                let origin = column < origins.count ? origins[column] : pen
+                let slack = column < widths.count ? max(0, widths[column] - own) : 0
+                let offset: CGFloat = switch alignment(of: table, column: column) {
+                case .leading: 0
+                case .center: (slack / 2).rounded()
+                case .trailing: slack
+                }
+
+                // Le séparateur qui précède la cellule : le `|` de bord gauche
+                // pour la première, celui qui la sépare de la précédente sinon.
+                let pipeIndex = row.hasLeadingPipe ? column : column - 1
+                if pipeIndex >= 0, pipeIndex < row.pipes.count,
+                   row.pipes[pipeIndex].upperBound <= storage.length {
+                    MarkerMask.hide(in: storage, range: row.pipes[pipeIndex],
+                                    advance: origin + offset - pen)
+                    pen = origin + offset
+                }
+                pen += own
+            }
+        }
+    }
+
+    /// Les styles de paragraphe des lignes du tableau.
+    ///
+    /// L'espace au-dessus du bloc ne va que sur la **première** ligne. Posé sur
+    /// toute la plage, comme il l'était d'abord, il s'appliquait à chaque ligne
+    /// source — c'est-à-dire à chaque rangée — et le tableau se lisait aussi
+    /// aéré qu'une suite de paragraphes.
+    private func applyRowStyles(_ storage: NSTextStorage, table: MarkdownTable,
+                                clipping: Bool, reducedRuleLine: Bool) {
+        for (index, row) in table.rows.enumerated() {
+            let style = tableParagraphStyle(clipping: clipping)
+            if index == 0 { style.paragraphSpacingBefore = (typography.bodySize * 0.6).rounded() }
+            storage.addAttribute(.paragraphStyle, value: style,
+                                 range: paragraph(of: row.line, in: storage))
+        }
+
+        let ruleStyle = tableParagraphStyle(clipping: clipping)
+        if reducedRuleLine {
+            // La ligne ne montre rien : sa hauteur est celle du filet qu'elle
+            // porte, pas celle d'une rangée vide.
+            ruleStyle.minimumLineHeight = (typography.bodySize * Self.tableRuleHeight).rounded()
+            ruleStyle.maximumLineHeight = ruleStyle.minimumLineHeight
+            ruleStyle.lineHeightMultiple = 1
+        }
+        storage.addAttribute(.paragraphStyle, value: ruleStyle,
+                             range: paragraph(of: table.delimiter, in: storage))
+    }
+
+    private func alignment(of table: MarkdownTable, column: Int) -> MarkdownTable.Alignment {
+        column < table.alignments.count ? table.alignments[column] : .leading
+    }
+
+    /// Largeur réellement rendue d'une plage, attributs compris.
+    private func measure(_ storage: NSTextStorage, _ range: NSRange) -> CGFloat {
+        guard range.length > 0, range.upperBound <= storage.length else { return 0 }
+        return storage.attributedSubstring(from: range).size().width
+    }
+
+    /// La plage du paragraphe qui porte une ligne, terminateur compris.
+    ///
+    /// Un style de paragraphe posé sur la ligne sans son `\n` laisse TextKit
+    /// lire celui du caractère suivant : la hauteur réduite ne prendrait pas.
+    private func paragraph(of line: NSRange, in storage: NSTextStorage) -> NSRange {
+        var range = line
+        if range.upperBound < storage.length,
+           storage.mutableString.character(at: range.upperBound) == 10 {
+            range.length += 1
+        }
+        return NSRange(location: range.location, length: min(range.length, storage.length - range.location))
+    }
+
+    /// Interlignage resserré : un tableau est une grille, pas de la prose.
+    ///
+    /// - Parameter clipping: vrai quand la grille est posée. Une rangée ne doit
+    ///   alors jamais passer à la ligne — le calcul de largeur garantit qu'elle
+    ///   tient, et un repli décalerait toutes les rangées en dessous. En source,
+    ///   au contraire, le repli est ce qui rend le bloc lisible.
+    private func tableParagraphStyle(clipping: Bool) -> NSMutableParagraphStyle {
+        let style = typography.paragraphStyle()
+        style.lineHeightMultiple = 1.2
+        style.lineBreakMode = clipping ? .byClipping : .byWordWrapping
+        return style
     }
 
     // MARK: - Style de base
@@ -196,8 +413,32 @@ struct MarkdownRenderer {
             storage.addAttributes([.font: typography.codeBlock,
                                    .foregroundColor: Theme.NS.labelSecondary], range: whole)
 
-        case .table:
-            storage.addAttributes([.font: typography.inlineCode], range: whole)
+        case .table(let table):
+            // Chasse fixe pour tout le bloc, y compris sous le curseur : c'est
+            // ce qui rend la source à pipes lisible pendant qu'on l'édite, et
+            // ce sur quoi la grille appuie ses colonnes. Les hauteurs de ligne,
+            // elles, dépendent de l'état de révélation et sont posées par
+            // `applyRowStyles`.
+            storage.addAttributes([.font: typography.codeBlock,
+                                   .paragraphStyle: tableParagraphStyle(clipping: false)],
+                                  range: whole)
+
+            // L'en-tête en gras. Il l'est aussi sous le curseur : c'est la
+            // seule information de structure que la source à pipes ne donne
+            // pas d'elle-même.
+            if let header = table?.rows.first {
+                // `convert(toHaveTrait:)` plutôt que le passage par la famille :
+                // la chasse fixe du système s'appelle `.AppleSystemUIFontMono‑
+                // spaced`, un nom que `NSFontManager` ne sait pas retrouver, et
+                // la conversion par famille retombait silencieusement sur le
+                // maigre.
+                let bold = NSFontManager.shared.convert(typography.codeBlock, toHaveTrait: .boldFontMask)
+                for cell in header.cells {
+                    let range = clamp(cell.content, to: storage.length)
+                    guard range.length > 0 else { continue }
+                    storage.addAttribute(.font, value: bold, range: range)
+                }
+            }
         }
     }
 

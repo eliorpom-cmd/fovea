@@ -214,7 +214,8 @@ final class EditorController: NSObject {
                         in: range)
         textView.typography = typography
         textView.documentURL = documentURL
-        textView.decorations = EditorDecoration.build(from: spans, typography: typography)
+        textView.decorations = EditorDecoration.build(from: spans, typography: typography,
+                                                      revealed: revealed)
     }
 
     /// Le filet de sécurité (§4.2) : le texte tel qu'il est dans le fichier,
@@ -251,7 +252,28 @@ final class EditorController: NSObject {
         for index in changed where index < spans.count {
             renderer.applyMarkers(storage, span: spans[index], revealed: next.contains(index))
         }
+
+        // Un tableau dont une cellule vient de révéler ses `**` a changé de
+        // largeur : ses colonnes doivent être reposées, sinon toutes celles de
+        // droite glissent de la largeur des marqueurs réapparus. On ne repose
+        // que les tableaux réellement concernés — il y en a rarement plus d'un.
+        let touched = changed.compactMap { $0 < spans.count ? spans[$0].range : nil }
+        var rebuiltDecorations = false
+        for (index, span) in spans.enumerated() where renderer.isTable(span) {
+            guard changed.contains(index)
+                    || touched.contains(where: { NSIntersectionRange($0, span.range).length > 0 })
+            else { continue }
+            renderer.applyTable(storage, span: span, revealed: next.contains(index))
+            rebuiltDecorations = true
+        }
         storage.endEditing()
+
+        // Les filets suivent l'état du tableau : ils disparaissent quand la
+        // source réapparaît sous le curseur.
+        if rebuiltDecorations {
+            textView.decorations = EditorDecoration.build(from: spans, typography: typography,
+                                                          revealed: next)
+        }
     }
 
     // MARK: - Fonctions d'écriture (§4.5)
@@ -270,15 +292,7 @@ final class EditorController: NSObject {
         let fragment = storage.mutableString.substring(with: selection)
         let local = spans
             .filter { NSIntersectionRange($0.range, selection).length > 0 }
-            .map { span -> SyntaxSpan in
-                var moved = span
-                moved.range.location -= selection.location
-                moved.content.location -= selection.location
-                moved.markers = span.markers.map {
-                    NSRange(location: $0.location - selection.location, length: $0.length)
-                }
-                return moved
-            }
+            .map { $0.shifted(by: -selection.location) }
         return WritingModes.statistics(of: fragment, spans: local)
     }
 
@@ -428,8 +442,15 @@ final class EditorController: NSObject {
 
         // La construction visée est celle dont un marqueur contient la position
         // qui allait être supprimée.
+        //
+        // Les blocs délimités en sont exclus, et c'est un garde-fou, pas une
+        // simplification : leurs marqueurs sont les deux clôtures d'un bloc
+        // entier. Un `⌫` en fin de ligne ` ```swift ` aurait effacé la clôture
+        // de fermeture dix lignes plus bas, sans que rien ne le laisse voir —
+        // et dans un tableau, il aurait retiré tous les `|` d'un coup.
         guard let index = spans.firstIndex(where: { span in
-            span.markers.contains { NSLocationInRange(target, $0) }
+            span.kind.revealScope != .wholeBlock
+                && span.markers.contains { NSLocationInRange(target, $0) }
         }) else { return false }
 
         let span = spans[index]

@@ -74,6 +74,24 @@ enum MarkerMask {
         storage.removeAttribute(.foveaRevealed, range: range)
     }
 
+    /// Rend une plage invisible en lui imposant **une largeur choisie**.
+    ///
+    /// C'est ce qui permet à la grille des tableaux d'exister sans qu'un seul
+    /// caractère soit ajouté au fichier (§3.1) : le `|` qui sépare deux
+    /// cellules ne se dessine plus, mais son avance est calculée pour poser la
+    /// colonne suivante exactement où elle doit tomber. Le crénage porte cette
+    /// avance, la fonte infinitésimale annule celle du glyphe.
+    static func hide(in storage: NSTextStorage, range: NSRange, advance: CGFloat) {
+        guard range.length > 0 else { return }
+        storage.addAttributes([
+            .font: NSFont.systemFont(ofSize: hiddenFontSize),
+            .foregroundColor: NSColor.clear,
+            .kern: max(0, advance),
+            .foveaMasked: true,
+        ], range: range)
+        storage.removeAttribute(.foveaRevealed, range: range)
+    }
+
     /// Rend une plage invisible **sans réduire sa largeur ni sa hauteur**.
     ///
     /// Pour une ligne dont *tout* le contenu est un marqueur — le `---` d'un

@@ -30,7 +30,11 @@ struct SyntaxSpan: Equatable, Sendable {
         // Bloc délimité — les deux clôtures révélées ensemble.
         case codeBlock(language: String?)
         case frontMatter
-        case table
+        /// La géométrie est portée par la construction elle-même : le rendu en
+        /// a besoin à chaque déplacement du curseur, et la relire dans le texte
+        /// à ce moment-là coûterait un balayage par frappe. `nil` quand le
+        /// bloc n'est pas une grille lisible — voir §6, tableau malformé.
+        case table(MarkdownTable?)
 
         /// La portée de révélation, telle que définie par le tableau du §2.2.
         var revealScope: RevealScope {
@@ -95,5 +99,24 @@ struct SyntaxSpan: Equatable, Sendable {
         self.markers = markers
         self.content = content
         self.depth = depth
+    }
+
+    /// Décale toutes les positions de la construction.
+    ///
+    /// Un seul endroit fait ce calcul, et c'est important : l'analyse par
+    /// fragment (§3.3) le déclenche à chaque frappe, et une construction qui
+    /// porte des positions ailleurs que dans `range`, `content` et `markers` —
+    /// un tableau, avec sa grille — serait laissée en arrière par un décalage
+    /// écrit à la main sur le lieu d'appel.
+    func shifted(by delta: Int) -> SyntaxSpan {
+        guard delta != 0 else { return self }
+        var moved = self
+        moved.range.location += delta
+        moved.content.location += delta
+        moved.markers = markers.map { NSRange(location: $0.location + delta, length: $0.length) }
+        if case .table(let table?) = kind {
+            moved.kind = .table(table.shifted(by: delta))
+        }
+        return moved
     }
 }

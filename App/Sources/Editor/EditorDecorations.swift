@@ -34,6 +34,24 @@ struct EditorDecoration {
         case codeBackground
         /// Une image rendue dans le flux (§4.4).
         case image(source: String, alt: String)
+        /// Un des trois filets qui cadrent un tableau (§2.6).
+        case tableRule(TableRule)
+    }
+
+    /// Où se pose un filet de tableau dans la plage qui le porte.
+    ///
+    /// Trois filets et pas un de plus : un cadre complet avec ses traits
+    /// verticaux donnerait une feuille de calcul au milieu d'un texte. Les
+    /// colonnes sont déjà alignées ; ce qu'il reste à dire, c'est où le tableau
+    /// commence, où s'arrête son en-tête, et où il finit.
+    enum TableRule: Equatable {
+        /// Au sommet de la première ligne.
+        case top
+        /// Au milieu de la ligne de délimitation, dont la hauteur a été réduite
+        /// pour lui faire exactement cette place.
+        case header
+        /// Sous la dernière ligne.
+        case bottom
     }
 
     var kind: Kind
@@ -46,11 +64,20 @@ struct EditorDecoration {
 extension EditorDecoration {
 
     /// Construit les décorations à partir des constructions repérées.
+    ///
+    /// - Parameter revealed: les constructions que le curseur touche. Seuls les
+    ///   tableaux s'en servent : sous le curseur, la source à pipes réapparaît
+    ///   et les filets n'auraient plus rien à cadrer — le filet d'en-tête
+    ///   barrerait même la ligne `|---|`, redevenue visible.
     @MainActor
-    static func build(from spans: [SyntaxSpan], typography: EditorTypography) -> [EditorDecoration] {
+    static func build(from spans: [SyntaxSpan],
+                      typography: EditorTypography,
+                      revealed: Set<Int> = []) -> [EditorDecoration] {
         var decorations: [EditorDecoration] = []
-        for span in spans {
+        for (index, span) in spans.enumerated() {
             switch span.kind {
+            case .table(let table?) where !revealed.contains(index):
+                decorations.append(contentsOf: rules(for: table, typography: typography))
             case .blockQuote:
                 decorations.append(EditorDecoration(kind: .quoteBar,
                                                     range: span.range,
@@ -86,6 +113,22 @@ extension EditorDecoration {
             }
         }
         return decorations
+    }
+
+    /// Les trois filets d'un tableau, ou aucun si la grille ne tient pas dans
+    /// la colonne — auquel cas le rendu montre la source, qu'il ne faut pas
+    /// cadrer comme une grille.
+    @MainActor
+    private static func rules(for table: MarkdownTable,
+                              typography: EditorTypography) -> [EditorDecoration] {
+        guard MarkdownRenderer(typography: typography).fitsAsGrid(table),
+              let first = table.rows.first, let last = table.rows.last else { return [] }
+
+        return [
+            EditorDecoration(kind: .tableRule(.top), range: first.line, indent: 0),
+            EditorDecoration(kind: .tableRule(.header), range: table.delimiter, indent: 0),
+            EditorDecoration(kind: .tableRule(.bottom), range: last.line, indent: 0),
+        ]
     }
 
     /// La puce d'une liste à puces est toujours `•`, quel que soit le signe
@@ -205,6 +248,19 @@ struct DecorationPainter {
 
         case .image(let source, let alt):
             paint(image: source, alt: alt, at: frame, columnWidth: columnWidth)
+
+        case .tableRule(let position):
+            // Le filet d'en-tête est plus appuyé que les deux bords : c'est lui
+            // qui sépare les titres des données, et c'est la seule séparation
+            // dont un tableau de prose a vraiment besoin.
+            let y: CGFloat = switch position {
+            case .top: frame.minY
+            case .header: (frame.midY - 0.5).rounded()
+            case .bottom: frame.maxY - 1
+            }
+            let rule = NSRect(x: frame.minX, y: y, width: columnWidth - frame.minX * 2, height: 1)
+            (position == .header ? Theme.NS.labelTertiary : Theme.NS.separator).setFill()
+            NSBezierPath(rect: rule).fill()
 
         case .codeBackground:
             let padding = typography.bodySize * 0.5

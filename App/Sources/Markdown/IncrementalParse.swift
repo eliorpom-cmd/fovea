@@ -143,13 +143,7 @@ extension MarkdownParser {
     /// découper : un bloc délimité par des lignes vides se lit sans son
     /// contexte.
     static func parse(_ text: String, offsetBy offset: Int) -> [SyntaxSpan] {
-        let spans = offset == 0 ? parse(text).spans : parse(text).spans.map { span in
-            var moved = span
-            moved.range.location += offset
-            moved.content.location += offset
-            moved.markers = span.markers.map { NSRange(location: $0.location + offset, length: $0.length) }
-            return moved
-        }
+        let spans = offset == 0 ? parse(text).spans : parse(text).spans.map { $0.shifted(by: offset) }
         // Trié par position, pour que `splice` rende une liste triée et que
         // `SpanIndex` n'ait plus rien à trier. Le fragment est petit : ce tri
         // remplace celui du document entier, à chaque frappe.
@@ -177,13 +171,7 @@ extension MarkdownParser {
         result += fresh
         result += previous
             .filter { $0.range.location >= oldScopeEnd }
-            .map { span in
-                var moved = span
-                moved.range.location += delta
-                moved.content.location += delta
-                moved.markers = span.markers.map { NSRange(location: $0.location + delta, length: $0.length) }
-                return moved
-            }
+            .map { $0.shifted(by: delta) }
         return result
     }
 }

@@ -137,6 +137,14 @@ private struct HTMLWriter {
                 closeLists(&listStack, into: &output)
                 continue
             }
+            // Un tableau non plus. Sans ce cas, chacune de ses lignes ressortait
+            // en paragraphe, pipes compris.
+            if let block = table(containing: line.location) {
+                closeLists(&listStack, into: &output)
+                output.append(renderTable(block))
+                index = max(index, block.range.upperBound)
+                continue
+            }
             if frontMatter(containing: line.location) != nil { continue }
 
             let raw = text.substring(with: line)
@@ -198,8 +206,14 @@ private struct HTMLWriter {
                 index = span.range.upperBound
                 continue
             }
-            output += MarkdownExport.escape(String(UnicodeScalar(text.character(at: index)) ?? " "))
-            index += 1
+            // Une paire de substitution se copie **entière**. Convertir l'unité
+            // UTF-16 seule en `UnicodeScalar` échouait sur la moitié haute d'un
+            // emoji, et chaque emoji ressortait en deux espaces.
+            var step = 1
+            let unit = text.character(at: index)
+            if unit >= 0xD800, unit <= 0xDBFF, index + 1 < range.upperBound { step = 2 }
+            output += MarkdownExport.escape(text.substring(with: NSRange(location: index, length: step)))
+            index += step
         }
         return output
     }
@@ -254,6 +268,34 @@ private struct HTMLWriter {
         return "<pre><code class=\"language-\(MarkdownExport.escape(language))\">\(code)</code></pre>"
     }
 
+    /// Le tableau, avec son en-tête et ses alignements.
+    ///
+    /// La géométrie vient de la même lecture que celle de l'écran : ce qui est
+    /// exporté est donc exactement ce que la grille montrait, alignements
+    /// compris.
+    private func renderTable(_ span: SyntaxSpan) -> String {
+        guard case .table(let table) = span.kind, let table, let header = table.rows.first else {
+            // Tableau malformé : la source, telle quelle, comme à l'écran (§6).
+            return "<pre><code>\(MarkdownExport.escape((source as NSString).substring(with: span.range)))</code></pre>"
+        }
+
+        func cells(_ row: MarkdownTable.Row, tag: String) -> String {
+            row.cells.enumerated().map { column, cell in
+                let style = switch column < table.alignments.count ? table.alignments[column] : .leading {
+                case MarkdownTable.Alignment.center: " style=\"text-align:center\""
+                case .trailing: " style=\"text-align:right\""
+                case .leading: ""
+                }
+                return "<\(tag)\(style)>\(inline(in: cell.content))</\(tag)>"
+            }.joined()
+        }
+
+        var rows = ["<thead><tr>\(cells(header, tag: "th"))</tr></thead>"]
+        let body = table.rows.dropFirst().map { "<tr>\(cells($0, tag: "td"))</tr>" }
+        if !body.isEmpty { rows.append("<tbody>\(body.joined())</tbody>") }
+        return "<table>\(rows.joined())</table>"
+    }
+
     private func quoteContent(of span: SyntaxSpan, line: NSRange) -> NSRange {
         // Le `>` de la ligne courante est un marqueur ; le contenu est ce qui
         // reste de la ligne après lui.
@@ -293,6 +335,13 @@ private struct HTMLWriter {
     private func codeBlock(containing location: Int) -> SyntaxSpan? {
         spans.first {
             if case .codeBlock = $0.kind { return NSLocationInRange(location, $0.range) }
+            return false
+        }
+    }
+
+    private func table(containing location: Int) -> SyntaxSpan? {
+        spans.first {
+            if case .table = $0.kind { return NSLocationInRange(location, $0.range) }
             return false
         }
     }

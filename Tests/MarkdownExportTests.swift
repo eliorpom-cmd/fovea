@@ -73,6 +73,32 @@ final class MarkdownExportTests: XCTestCase {
         XCTAssertTrue(html.contains("<h1>Vrai titre</h1>"), html)
     }
 
+    // MARK: - Tableaux
+
+    func testATableBecomesATable() {
+        // Sans ce cas, chaque rangée ressortait en paragraphe, pipes compris.
+        let html = MarkdownExport.html(from: "| a | b |\n|---|---|\n| 1 | 2 |\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertTrue(html.contains("<table>"), html)
+        XCTAssertTrue(html.contains("<th>a</th>"), html)
+        XCTAssertTrue(html.contains("<td>1</td>"), html)
+        XCTAssertFalse(html.contains("<p>| a | b |</p>"), html)
+    }
+
+    func testTableAlignmentsSurvive() {
+        let html = MarkdownExport.html(from: "| g | c | d |\n|:--|:-:|--:|\n| 1 | 2 | 3 |\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertTrue(html.contains("text-align:center"), html)
+        XCTAssertTrue(html.contains("text-align:right"), html)
+    }
+
+    func testInlineMarkupInsideACellIsRendered() {
+        let html = MarkdownExport.html(from: "| **gras** | `code` |\n|---|---|\n| a | b |\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertTrue(html.contains("<th><strong>gras</strong></th>"), html)
+        XCTAssertTrue(html.contains("<code>code</code>"), html)
+    }
+
     // MARK: - Échappement
 
     func testHTMLSpecialCharactersAreEscaped() {
@@ -85,6 +111,14 @@ final class MarkdownExportTests: XCTestCase {
     func testCodeContentIsEscapedToo() {
         let html = MarkdownExport.html(from: "```\nif (a < b) { }\n```\n", title: "T", documentURL: nil)
         XCTAssertTrue(html.contains("if (a &lt; b)"), html)
+    }
+
+    func testAnEmojiSurvivesTheExport() {
+        // Une paire de substitution doit se copier entière. Convertir l'unité
+        // UTF-16 seule échouait sur la moitié haute, et chaque emoji ressortait
+        // en deux espaces.
+        let html = MarkdownExport.html(from: "Bravo 🙂 vraiment.\n", title: "T", documentURL: nil)
+        XCTAssertTrue(html.contains("Bravo 🙂 vraiment"), html)
     }
 
     func testTitleIsEscaped() {

@@ -280,11 +280,15 @@ struct MarkdownParser {
                                     depth: depth))
         }
 
+        /// La grille est relevée dans la source plutôt que dans l'arbre : cmark
+        /// ne rend ni les `|` ni la ligne de délimitation, et ce sont
+        /// précisément les caractères à masquer. Voir `MarkdownTable`.
         private mutating func emitTable(_ node: Table, depth: Int) {
             guard let full = range(of: node) else { return }
-            spans.append(SyntaxSpan(kind: .table,
+            let table = MarkdownTable.scan(utf16: utf16, in: full)
+            spans.append(SyntaxSpan(kind: .table(table),
                                     range: full,
-                                    markers: [],
+                                    markers: table?.markerRanges ?? [],
                                     content: full,
                                     depth: depth))
         }
