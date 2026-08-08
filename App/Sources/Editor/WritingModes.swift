@@ -110,20 +110,44 @@ enum WritingModes {
     /// gras et l'URL d'un lien ne sont pas des mots. Compter la source donnerait
     /// un total qui n'a de sens pour personne — et qui gonflerait à chaque
     /// formatage.
+    /// Les constructions reçues **ne sont pas garanties de tenir dans le
+    /// texte**, et c'est ce qui a fait planter l'app.
+    ///
+    /// Sur une sélection, l'appelant ramène les constructions aux coordonnées du
+    /// fragment sélectionné en les décalant de `-selection.location`. Une
+    /// construction qui *commence avant* la sélection — un `**gras**` dont on
+    /// n'a pris que la fin, un lien à cheval sur la bordure — se retrouve alors
+    /// à une position **négative**, et une qui finit après déborde de l'autre
+    /// côté.
+    ///
+    /// L'ancien bornage écrivait `max(0, début)..<min(units, fin)`. Chaque borne
+    /// prise séparément semble prudente ; ensemble, elles s'inversent dès que la
+    /// plage tombe entièrement d'un côté ou de l'autre — `0..<-3` — et Swift
+    /// arrête le programme. Sélectionner deux paragraphes suffisait à
+    /// déclencher un `Range requires lowerBound <= upperBound`, à chaque
+    /// mouvement de la souris pendant le glissement.
+    ///
+    /// D'où l'intersection, qui est ce que les deux bornes voulaient dire.
+    private static func clamped(_ range: NSRange, to units: Int) -> Range<Int>? {
+        let lower = max(0, range.location)
+        let upper = min(units, range.upperBound)
+        return lower < upper ? lower..<upper : nil
+    }
+
     static func statistics(of text: String, spans: [SyntaxSpan]) -> Statistics {
         let units = text.utf16.count
         var isSyntax = [Bool](repeating: false, count: units)
         for span in spans {
             for marker in span.markers {
-                for offset in max(0, marker.location)..<min(units, marker.upperBound) {
-                    isSyntax[offset] = true
-                }
+                guard let range = clamped(marker, to: units) else { continue }
+                for offset in range { isSyntax[offset] = true }
             }
             // Une URL n'est pas du texte à lire ; le libellé du lien, si.
             if case .link = span.kind {
-                for offset in max(0, span.content.upperBound)..<min(units, span.range.upperBound) {
-                    isSyntax[offset] = true
-                }
+                let url = NSRange(location: span.content.upperBound,
+                                  length: max(0, span.range.upperBound - span.content.upperBound))
+                guard let range = clamped(url, to: units) else { continue }
+                for offset in range { isSyntax[offset] = true }
             }
         }
 

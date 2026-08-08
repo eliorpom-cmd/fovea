@@ -76,4 +76,64 @@ final class WritingModesTests: XCTestCase {
         let stats = WritingModes.statistics(of: "Été déjà vu œuvre 日本語", spans: [])
         XCTAssertEqual(stats.words, 5)
     }
+
+    // MARK: - Les statistiques d'une sélection
+    //
+    // C'est ici que l'app s'arrêtait. La barre d'état compte la sélection, donc
+    // l'éditeur ramène les constructions aux coordonnées du fragment en les
+    // décalant de `-selection.location` — et une construction qui commence avant
+    // la sélection se retrouve à une position négative. Le bornage d'origine,
+    // `max(0, début)..<min(units, fin)`, s'inversait alors en `0..<-3`, ce que
+    // Swift traite comme une erreur fatale. Sélectionner deux paragraphes
+    // suffisait, et le plantage tombait pendant le glissement de la souris.
+
+    /// Reproduit exactement ce que fait `EditorController.statistics`.
+    private func statisticsOfSelection(_ selection: NSRange, in source: String) -> WritingModes.Statistics {
+        let spans = MarkdownParser.parse(source).spans
+        let fragment = (source as NSString).substring(with: selection)
+        let local = spans
+            .filter { NSIntersectionRange($0.range, selection).length > 0 }
+            .map { $0.shifted(by: -selection.location) }
+        return WritingModes.statistics(of: fragment, spans: local)
+    }
+
+    func testASelectionStartingInsideABoldWordDoesNotCrash() {
+        // « Un mot **important** ici » : la sélection prend « portant** ici »,
+        // donc le `**` ouvrant tombe à une position négative.
+        let source = "Un mot **important** ici, et la suite du paragraphe.\n"
+        let stats = statisticsOfSelection(NSRange(location: 13, length: 20), in: source)
+        XCTAssertGreaterThan(stats.words, 0)
+    }
+
+    func testASelectionEndingInsideAConstructDoesNotCrash() {
+        // Le symétrique : le `**` fermant et la fin du lien débordent après le
+        // fragment.
+        let source = "Un [lien](https://exemple.fr) et un **gras** à cheval.\n"
+        let stats = statisticsOfSelection(NSRange(location: 0, length: 40), in: source)
+        XCTAssertGreaterThan(stats.words, 0)
+    }
+
+    /// Le vrai geste de l'utilisateur : glisser d'un bloc à l'autre. Chaque
+    /// position intermédiaire déclenche un calcul, donc chacune doit tenir.
+    func testEveryPossibleSelectionOfARealDocumentIsSafe() {
+        let source = """
+        # Titre
+
+        Un mot **important**, de l'*italique*, du `code` et un
+        [lien](https://exemple.fr/page) dans la phrase.
+
+        - Un item de liste
+        - [x] Une tâche faite
+
+        > Une citation qui traverse
+        > deux lignes entières.
+        """
+        let length = (source as NSString).length
+        for start in stride(from: 0, to: length, by: 3) {
+            for end in stride(from: start + 1, through: length, by: 7) {
+                let stats = statisticsOfSelection(NSRange(location: start, length: end - start), in: source)
+                XCTAssertGreaterThanOrEqual(stats.characters, 0)
+            }
+        }
+    }
 }
