@@ -103,14 +103,27 @@ extension TypingBehaviour {
         var range: NSRange
         /// Ce qui suit le `/`, pour filtrer la liste.
         var query: String
+        /// Vrai quand du texte précède le `/` sur la ligne : le bloc inséré doit
+        /// alors commencer par un retour, sinon il se collerait à la phrase en
+        /// cours et ne serait pas un bloc du tout.
+        var startsNewLine = false
     }
 
     /// Le menu doit-il être ouvert, vu la ligne courante et le curseur ?
     ///
-    /// La condition est stricte, et volontairement : **une ligne vide**, un `/`
-    /// en tête, et rien d'autre que le mot en cours de frappe. Un `/` au milieu
-    /// d'une phrase est une barre oblique, un chemin de fichier ou une date, et
-    /// ouvrir un menu dessus rendrait la touche inutilisable.
+    /// # Ce qui décide, c'est ce qui précède le `/`
+    ///
+    /// La première version n'ouvrait le menu que sur une **ligne vide**, par
+    /// crainte qu'un `/` au milieu d'une phrase — `https://`, `/Users/`,
+    /// `12/03`, `et/ou` — rende la touche inutilisable. La crainte est fondée,
+    /// mais la condition était trop large : elle privait du menu exactement les
+    /// gens à qui il sert, ceux qui ne connaissent pas la syntaxe qu'on leur a
+    /// masquée et qui ne devineront jamais qu'il faut d'abord une ligne vide.
+    ///
+    /// Le bon discriminant est plus étroit : **le `/` doit ouvrir un mot**,
+    /// c'est-à-dire être en début de ligne ou précédé d'un blanc. Les quatre cas
+    /// redoutés ont tous un caractère collé devant le `/` et sont donc écartés
+    /// par la même règle, sans rien coûter au reste.
     ///
     /// La fonction prend **la ligne**, pas le document. C'est délibéré : elle
     /// est appelée à chaque frappe et à chaque déplacement du curseur, et la
@@ -122,29 +135,52 @@ extension TypingBehaviour {
     ///   - line: la ligne du curseur, terminateur exclu.
     ///   - lineStart: son offset dans le document, pour rendre une plage absolue.
     ///   - caret: le curseur, en offset absolu.
-    static func slashTrigger(inLine line: String, lineStart: Int, caret: Int) -> SlashTrigger? {
+    ///   - scope: le réglage §4.7 — jamais, en début de ligne seulement, partout.
+    static func slashTrigger(inLine line: String, lineStart: Int, caret: Int,
+                             scope: AppSettings.SlashMenuScope) -> SlashTrigger? {
+        guard scope != .off else { return nil }
         let units = Array(line.utf16)
         let offset = caret - lineStart
+        guard offset > 0, offset <= units.count else { return nil }
 
+        // Le curseur doit être en bout de ligne. Le menu accompagne la frappe ;
+        // s'ouvrir au milieu d'un texte déjà écrit laisserait la fin de la
+        // phrase derrière le bloc inséré, dans la dernière cellule d'un tableau
+        // ou après une clôture de code.
+        guard offset == units.count else { return nil }
+
+        // Le `/` qui a ouvert : le dernier avant le curseur, sans blanc entre
+        // les deux — ce qu'il y a derrière est la recherche en cours.
         let slash = UInt16(UnicodeScalar("/").value)
-        guard units.first == slash else { return nil }
-        // Le curseur est derrière le `/`, et rien ne le suit sur la ligne : on
-        // ouvre un bloc, on ne s'insère pas au milieu d'un texte déjà écrit.
-        guard offset > 0, offset == units.count else { return nil }
+        var start = offset - 1
+        while start >= 0, !isBlank(units[start]), units[start] != slash { start -= 1 }
+        guard start >= 0, units[start] == slash else { return nil }
 
-        let query = String(decoding: units[1...], as: UTF16.self)
-        // Un espace ferme le menu : « /note à moi » est du texte.
-        guard !query.contains(where: { $0 == " " || $0 == "\t" }) else { return nil }
+        // La règle qui rend la touche `/` de nouveau utilisable pour ce qu'elle
+        // est : collée à un caractère, elle n'ouvre rien.
+        if start > 0, !isBlank(units[start - 1]) { return nil }
+        if scope == .lineStart, start != 0 { return nil }
 
-        return SlashTrigger(range: NSRange(location: lineStart, length: offset), query: query)
+        let query = String(decoding: units[(start + 1)..<offset], as: UTF16.self)
+        return SlashTrigger(range: NSRange(location: lineStart + start, length: offset - start),
+                            query: query,
+                            startsNewLine: units[..<start].contains { !isBlank($0) })
+    }
+
+    private static func isBlank(_ unit: UInt16) -> Bool {
+        unit == UInt16(UnicodeScalar(" ").value) || unit == UInt16(UnicodeScalar("\t").value)
     }
 
     /// L'édition qui remplace le `/query` par le bloc choisi.
-    static func insertion(of command: SlashCommand, replacing range: NSRange) -> Edit {
+    static func insertion(of command: SlashCommand, replacing trigger: SlashTrigger) -> Edit {
         let (body, caretOffset) = template(for: command)
-        return Edit(range: range,
-                    replacement: body,
-                    caret: range.location + caretOffset,
+        // Un bloc posé à la suite d'une phrase commence à la ligne. Le blanc
+        // laissé devant le retour est sans effet en markdown, et le retirer
+        // toucherait à un texte que l'utilisateur n'a pas demandé qu'on touche.
+        let lead = trigger.startsNewLine ? "\n" : ""
+        return Edit(range: trigger.range,
+                    replacement: lead + body,
+                    caret: trigger.range.location + lead.utf16.count + caretOffset,
                     undoName: "Insérer : \(command.title)")
     }
 

@@ -254,12 +254,8 @@ struct DecorationPainter {
             (symbol as NSString).draw(at: point, withAttributes: attributes)
 
         case .checkbox(let checked):
-            let side = typography.bodySize * 0.8
-            // Même raison que pour la puce : on s'aligne sur le bas de la
-            // ligne, en remontant d'un cheveu pour compenser le jambage.
-            let box = NSRect(x: frame.minX - side - typography.listMarkerGap,
-                             y: frame.maxY - side - typography.bodySize * 0.22,
-                             width: side, height: side)
+            let box = checkboxBox(at: frame)
+            let side = box.width
             let path = NSBezierPath(roundedRect: box, xRadius: 3, yRadius: 3)
             if checked {
                 Theme.NS.label.setFill()
@@ -400,6 +396,44 @@ struct DecorationPainter {
         (text as NSString).draw(
             in: NSRect(x: box.minX + 12, y: box.minY + offset, width: box.width - 24, height: 18),
             withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
+    }
+
+    /// La case à cocher d'un item de tâche, posée à gauche de son texte.
+    ///
+    /// Alignée par le **bas** de la ligne et non centrée dans sa boîte : avec un
+    /// interlignage supérieur à 1, TextKit ajoute son surplus au-dessus du
+    /// texte, et une case centrée flotterait au-dessus de la ligne qu'elle
+    /// introduit. Le cheveu retiré en plus compense le jambage.
+    ///
+    /// Une seule définition, parce qu'elle a deux lecteurs : le dessin, et le
+    /// clic qui coche (§2.5). Deux copies auraient divergé au premier
+    /// changement d'interlignage, et la case aurait cessé de répondre là où
+    /// elle se voit.
+    func checkboxBox(at frame: NSRect) -> NSRect {
+        let side = typography.bodySize * 0.8
+        return NSRect(x: frame.minX - side - typography.listMarkerGap,
+                      y: frame.maxY - side - typography.bodySize * 0.22,
+                      width: side, height: side)
+    }
+
+    /// La tâche dont la case se trouve sous ce point, en coordonnées de la vue.
+    ///
+    /// La zone sensible est élargie de quelques points autour du dessin : une
+    /// case fait treize points de côté à la taille par défaut, et viser
+    /// treize points à la souris n'est pas une expérience qu'on inflige.
+    func task(at point: NSPoint, among decorations: [EditorDecoration],
+              in view: NSTextView) -> NSRange? {
+        guard let layout = view.textLayoutManager, let content = view.textContentStorage else { return nil }
+        let origin = view.textContainerOrigin
+
+        for decoration in decorations {
+            guard case .checkbox = decoration.kind,
+                  let frame = boundingFrame(of: decoration.range, layout: layout, content: content)
+            else { continue }
+            let box = checkboxBox(at: frame.offsetBy(dx: origin.x, dy: origin.y))
+            if box.insetBy(dx: -5, dy: -5).contains(point) { return decoration.range }
+        }
+        return nil
     }
 
     /// Rectangle englobant d'une plage, en coordonnées du conteneur de texte.

@@ -77,8 +77,27 @@ final class AppSettings {
     var showStatistics = true { didSet { store(showStatistics, .statistics); notify() } }
     var sessionWordGoal: Int = 0 { didSet { store(sessionWordGoal, .wordGoal); notify() } }
 
+    /// Où la touche `/` ouvre le menu d'insertion de bloc (§4.5).
+    ///
+    /// Trois états et pas un interrupteur : « en début de ligne » était le
+    /// comportement d'origine, et c'est celui qui privait du menu les gens à qui
+    /// il sert le plus. « Partout » est donc le défaut, et le réglage reste pour
+    /// qui écrit des chemins de fichiers à longueur de journée.
+    enum SlashMenuScope: String, CaseIterable, Identifiable {
+        case off, lineStart, anywhere
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .off: "Jamais"
+            case .lineStart: "En début de ligne"
+            case .anywhere: "Partout"
+            }
+        }
+    }
+
     var markdownShortcutsWhileTyping = true { didSet { store(markdownShortcutsWhileTyping, .shortcuts) } }
-    var slashMenuEnabled = true { didSet { store(slashMenuEnabled, .slashMenu) } }
+    var slashMenuScope: SlashMenuScope = .anywhere { didSet { store(slashMenuScope.rawValue, .slashMenuScope) } }
     var assetsFolderName = AppConfig.defaultAssetsFolderName { didSet { store(assetsFolderName, .assetsFolder) } }
 
     // MARK: - Diffusion aux fenêtres
@@ -105,7 +124,7 @@ final class AppSettings {
     private enum Key: String {
         case appearance, bodyFontName, monoFontName, bodySize, lineHeight, columnWidth
         case colorfulCode, focusMode, focusUnit, typewriter, statistics, wordGoal
-        case shortcuts, slashMenu, assetsFolder
+        case shortcuts, slashMenu, slashMenuScope, assetsFolder
     }
 
     private let defaults = UserDefaults.standard
@@ -129,7 +148,13 @@ final class AppSettings {
         showStatistics = read(.statistics) as? Bool ?? true
         sessionWordGoal = read(.wordGoal) as? Int ?? 0
         markdownShortcutsWhileTyping = read(.shortcuts) as? Bool ?? true
-        slashMenuEnabled = read(.slashMenu) as? Bool ?? true
+        if let raw = read(.slashMenuScope) as? String, let value = SlashMenuScope(rawValue: raw) {
+            slashMenuScope = value
+        } else if read(.slashMenu) as? Bool == false {
+            // L'ancien interrupteur, respecté : qui avait coupé le menu ne doit
+            // pas le voir revenir parce que le réglage a changé de forme.
+            slashMenuScope = .off
+        }
         assetsFolderName = read(.assetsFolder) as? String ?? AppConfig.defaultAssetsFolderName
 
         isLoaded = true

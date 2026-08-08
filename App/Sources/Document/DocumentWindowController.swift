@@ -151,6 +151,8 @@ extension DocumentWindowController: NSMenuItemValidation {
     @objc func toggleItalic(_ sender: Any?) { editor.wrapSelection(with: "*") }
     @objc func toggleStrikethrough(_ sender: Any?) { editor.wrapSelection(with: "~~") }
     @objc func toggleInlineCode(_ sender: Any?) { editor.wrapSelection(with: "`") }
+    @objc func insertLink(_ sender: Any?) { editor.insertLink() }
+    @objc func toggleTaskAtCaret(_ sender: Any?) { editor.toggleTaskAtCaret() }
 
     @objc func setHeadingLevel(_ sender: Any?) {
         // Le niveau voyage dans le `tag` de l'entrée de menu : six entrées, une
@@ -356,9 +358,22 @@ extension DocumentWindowController: NSMenuItemValidation {
         case #selector(toggleOutline(_:)):
             menuItem.state = outlineWidth?.constant != 0 ? .on : .off
 
+        case #selector(toggleTaskAtCaret(_:)):
+            // L'entrée dit ce qu'elle fera, et se grise hors d'une tâche plutôt
+            // que de ne rien faire quand on la choisit.
+            let caret = editor.textView.selectedRange().location
+            let task = editor.spans.first { span in
+                guard case .taskItem(_, let checked) = span.kind,
+                      RevealPolicy.contains(span.range, caret) else { return false }
+                menuItem.title = checked ? "Décocher la tâche" : "Cocher la tâche"
+                return true
+            }
+            if task == nil { menuItem.title = "Cocher la tâche" }
+            return task != nil && !editor.isSourceMode
+
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)),
              #selector(toggleStrikethrough(_:)), #selector(toggleInlineCode(_:)),
-             #selector(setHeadingLevel(_:)):
+             #selector(insertLink(_:)), #selector(setHeadingLevel(_:)):
             // Le mode source montre le fichier tel qu'il est : y appliquer un
             // formatage par raccourci reviendrait à écrire des étoiles à
             // l'aveugle dans du texte brut.

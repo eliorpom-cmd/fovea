@@ -11,11 +11,12 @@ import AppKit
 /// texte qui parle de chemins de fichiers ou de dates.
 final class SlashCommandTests: XCTestCase {
 
-    private func trigger(_ line: String, caret: Int? = nil,
-                         lineStart: Int = 0) -> TypingBehaviour.SlashTrigger? {
+    private func trigger(_ line: String, caret: Int? = nil, lineStart: Int = 0,
+                         scope: AppSettings.SlashMenuScope = .anywhere) -> TypingBehaviour.SlashTrigger? {
         TypingBehaviour.slashTrigger(inLine: line,
                                      lineStart: lineStart,
-                                     caret: lineStart + (caret ?? line.utf16.count))
+                                     caret: lineStart + (caret ?? line.utf16.count),
+                                     scope: scope)
     }
 
     // MARK: - Quand il s'ouvre
@@ -41,9 +42,29 @@ final class SlashCommandTests: XCTestCase {
 
     // MARK: - Quand il ne s'ouvre pas
 
-    func testASlashInTheMiddleOfATextIsJustASlash() {
+    /// La règle qui remplace « seulement sur une ligne vide » : **le `/` doit
+    /// ouvrir un mot**. Collé à un caractère, il reste une barre oblique.
+    func testASlashGluedToACharacterIsJustASlash() {
         XCTAssertNil(trigger("voir docs/api"))
         XCTAssertNil(trigger("le 12/08/2026"))
+        XCTAssertNil(trigger("https://exemple.fr"))
+        XCTAssertNil(trigger("et/ou"))
+    }
+
+    /// Et son pendant, qui est tout l'objet du changement : au milieu d'une
+    /// phrase, après un blanc, le menu s'ouvre. Sans ça, il ne servait qu'à qui
+    /// savait déjà qu'il fallait d'abord une ligne vide.
+    func testASlashAfterASpaceOpensTheMenuMidSentence() throws {
+        let found = try XCTUnwrap(trigger("Voici un tableau /tab"))
+        XCTAssertEqual(found.query, "tab")
+        XCTAssertEqual(found.range, NSRange(location: 17, length: 4))
+        XCTAssertTrue(found.startsNewLine, "Le bloc devra commencer à la ligne")
+    }
+
+    func testTheLineStartScopeKeepsTheOldBehaviour() {
+        XCTAssertNil(trigger("Voici un tableau /tab", scope: .lineStart))
+        XCTAssertNotNil(trigger("/tab", scope: .lineStart))
+        XCTAssertNil(trigger("/tab", scope: .off))
     }
 
     func testASpaceClosesTheMenu() {
@@ -52,8 +73,7 @@ final class SlashCommandTests: XCTestCase {
     }
 
     func testTextAfterTheCaretClosesTheMenu() {
-        // On insère un bloc sur une ligne vide, pas au milieu d'un texte déjà
-        // écrit qui se retrouverait poussé dans le tableau.
+        // On insère un bloc entre deux mots, pas au milieu de l'un d'eux.
         XCTAssertNil(trigger("/tab et la suite", caret: 4))
     }
 
@@ -90,36 +110,51 @@ final class SlashCommandTests: XCTestCase {
 
     // MARK: - Ce qui est inséré
 
+    private func insertion(_ command: SlashCommand, at location: Int, length: Int,
+                           startsNewLine: Bool = false) -> TypingBehaviour.Edit {
+        TypingBehaviour.insertion(
+            of: command,
+            replacing: .init(range: NSRange(location: location, length: length),
+                             query: "", startsNewLine: startsNewLine))
+    }
+
     func testTheSlashIsReplacedNotKept() {
-        let edit = TypingBehaviour.insertion(of: .heading2,
-                                             replacing: NSRange(location: 10, length: 3))
+        let edit = insertion(.heading2, at: 10, length: 3)
         XCTAssertEqual(edit.range, NSRange(location: 10, length: 3))
         XCTAssertEqual(edit.replacement, "## ")
     }
 
+    /// Un bloc demandé au milieu d'une phrase commence à la ligne : collé à ce
+    /// qui précède, un `## ` ne serait pas un titre, et un tableau avalerait la
+    /// fin de la phrase dans sa première cellule.
+    func testABlockAskedMidSentenceStartsOnItsOwnLine() {
+        let edit = insertion(.heading2, at: 10, length: 3, startsNewLine: true)
+        XCTAssertEqual(edit.replacement, "\n## ")
+        XCTAssertEqual(edit.caret, 14, "Le curseur suit le retour ajouté")
+    }
+
     func testTheCaretLandsWhereOneWrites() {
         // Dans le bloc de code, pas après sa clôture.
-        let code = TypingBehaviour.insertion(of: .codeBlock, replacing: NSRange(location: 0, length: 1))
+        let code = insertion(.codeBlock, at: 0, length: 1)
         XCTAssertEqual(code.replacement, "```\n\n```")
         XCTAssertEqual(code.caret, 4, "Le curseur doit être sur la ligne vide, entre les clôtures")
 
         // Dans la première cellule du tableau, pas à la ligne suivante.
-        let table = TypingBehaviour.insertion(of: .table, replacing: NSRange(location: 0, length: 1))
-        XCTAssertEqual(table.caret, 2)
+        XCTAssertEqual(insertion(.table, at: 0, length: 1).caret, 2)
     }
 
     func testEveryInsertedBlockIsValidMarkdown() {
         // Le menu existe parce que les marqueurs sont masqués : ce qu'il pose
         // doit être relu par le parseur comme la construction annoncée.
         for command in SlashCommand.allCases {
-            let edit = TypingBehaviour.insertion(of: command, replacing: NSRange(location: 0, length: 0))
+            let edit = insertion(command, at: 0, length: 0)
             let spans = MarkdownParser.parse(edit.replacement + "texte\n").spans
             XCTAssertFalse(spans.isEmpty, "« \(command.title) » ne produit aucune construction")
         }
     }
 
     func testTheInsertedTableIsReadAsAGrid() throws {
-        let edit = TypingBehaviour.insertion(of: .table, replacing: NSRange(location: 0, length: 0))
+        let edit = insertion(.table, at: 0, length: 0)
         let spans = MarkdownParser.parse(edit.replacement + "\n").spans
         let table = try XCTUnwrap(spans.first { if case .table = $0.kind { return true } else { return false } })
         guard case .table(let grid?) = table.kind else {

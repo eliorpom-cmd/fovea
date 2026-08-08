@@ -91,6 +91,87 @@ enum TypingBehaviour {
                     undoName: "Indenter")
     }
 
+    // MARK: - Insérer un lien
+
+    /// Pose `[texte](url)` autour de la sélection.
+    ///
+    /// L'URL vient du presse-papier quand il en contient une : c'est le geste
+    /// réel — on copie une adresse dans un navigateur, on revient, on
+    /// sélectionne le mot. Sinon les parenthèses sont laissées vides et le
+    /// curseur atterrit dedans, là où il ne reste qu'à coller.
+    ///
+    /// Sans sélection, le curseur va **entre les crochets** : on écrit d'abord
+    /// le texte, l'adresse ensuite.
+    static func link(in text: String, selection: NSRange, url: String?) -> Edit {
+        let units = Array(text.utf16)
+        let label = selection.length > 0 && selection.upperBound <= units.count
+            ? slice(units, selection)
+            : ""
+        let destination = url ?? ""
+        // Le curseur va là où il reste quelque chose à écrire : le texte s'il
+        // manque, l'adresse si elle manque, et après le lien quand il est
+        // complet — le seul cas où l'on peut reprendre sa phrase.
+        let caret = switch (label.isEmpty, destination.isEmpty) {
+        case (true, _):      selection.location + 1
+        case (false, true):  selection.location + label.utf16.count + 3
+        case (false, false): selection.location + label.utf16.count + destination.utf16.count + 4
+        }
+
+        return Edit(range: selection,
+                    replacement: "[\(label)](\(destination))",
+                    caret: caret,
+                    undoName: "Insérer un lien")
+    }
+
+    /// Le presse-papier contient-il quelque chose qui ressemble à une adresse ?
+    ///
+    /// Volontairement littéral : un schéma, ou un `www.`. Deviner plus large
+    /// ferait coller n'importe quelle phrase copiée entre les parenthèses d'un
+    /// lien, ce qui est plus pénible à défaire qu'à taper.
+    static func looksLikeURL(_ candidate: String) -> Bool {
+        let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace) else { return false }
+        return trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://")
+            || trimmed.hasPrefix("mailto:") || trimmed.hasPrefix("www.")
+    }
+
+    // MARK: - Cocher une tâche
+
+    /// Coche ou décoche la case d'un item de tâche.
+    ///
+    /// # Pourquoi c'est une fonction et pas une ligne de vue
+    ///
+    /// La case est **dessinée** : elle n'existe nulle part dans le fichier, où
+    /// il n'y a que `- [ ] `. Cliquer dessus ne peut donc pas « cocher » quoi
+    /// que ce soit — il faut réécrire un caractère du tampon, au bon endroit,
+    /// dans la pile d'annulation, sans déplacer le curseur.
+    ///
+    /// Un seul signe change, jamais la ligne entière : `[x]` est rendu par un
+    /// `x` minuscule, mais un `[X]` déjà écrit se décoche sans être normalisé —
+    /// le §5 vaut aussi pour ce que l'app modifie elle-même.
+    ///
+    /// - Parameters:
+    ///   - marker: le marqueur de l'item, `- [ ] ` d'un seul tenant.
+    ///   - caret: la sélection courante, rendue telle quelle : cocher une tâche
+    ///     ne doit pas faire sauter le curseur ailleurs dans le document.
+    static func toggleTask(in text: String, marker: NSRange, caret: Int) -> Edit? {
+        let units = Array(text.utf16)
+        guard marker.location >= 0, marker.upperBound <= units.count, marker.length >= 3 else { return nil }
+
+        let open = UInt16(UnicodeScalar("[").value)
+        let close = UInt16(UnicodeScalar("]").value)
+        for index in marker.location..<(marker.upperBound - 2)
+        where units[index] == open && units[index + 2] == close {
+            let isChecked = units[index + 1] == UInt16(UnicodeScalar("x").value)
+                || units[index + 1] == UInt16(UnicodeScalar("X").value)
+            return Edit(range: NSRange(location: index + 1, length: 1),
+                        replacement: isChecked ? " " : "x",
+                        caret: caret,
+                        undoName: isChecked ? "Décocher la tâche" : "Cocher la tâche")
+        }
+        return nil
+    }
+
     // MARK: - Reconnaissance à la frappe
 
     /// Les constructions reconnues quand on tape l'espace qui suit leur

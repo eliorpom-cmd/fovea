@@ -148,7 +148,17 @@ enum MainMenu {
         inlineCode.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(inlineCode)
 
-        menu.addItem(item("Lien…", #selector(AppCommands.insertLink(_:)), "k"))
+        // `⌘K` est déjà la palette de commandes (§4.5, décision actée §12). Le
+        // lien prend donc la variante `⌘⌥K` plutôt que de se disputer la touche :
+        // deux entrées sur le même raccourci, c'est la première dans l'ordre des
+        // menus qui gagne, et le perdant devient un raccourci qui ne marche pas
+        // sans que rien ne le dise.
+        let link = item("Lien…", #selector(AppCommands.insertLink(_:)), "k")
+        link.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(link)
+
+        let task = item("Cocher la tâche", #selector(AppCommands.toggleTaskAtCaret(_:)), "\r")
+        menu.addItem(task)
         menu.addItem(.separator())
 
         // ⌘⌃1..6 pour les niveaux de titre, ⌘⌃0 pour revenir au paragraphe.
@@ -253,6 +263,7 @@ enum MainMenu {
     func toggleStrikethrough(_ sender: Any?)
     func toggleInlineCode(_ sender: Any?)
     func insertLink(_ sender: Any?)
+    func toggleTaskAtCaret(_ sender: Any?)
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)
     func toggleOutline(_ sender: Any?)

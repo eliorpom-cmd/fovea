@@ -51,7 +51,10 @@ de reformater ce que vous n'avez pas édité.
   couleurs en option, **sans aucune dépendance**
 - `⏎` continue la liste et en sort sur un item vide, `⇥`/`⇧⇥` changent le
   niveau, `⌘B`/`⌘I`/`⌘⇧X`/`⌘⇧K` encadrent ou retirent le formatage, `⌘⌃0..6`
-  changent le niveau de titre
+  changent le niveau de titre, `⌘⌥K` pose un lien avec l'adresse du
+  presse-papier
+- Un clic sur la case d'une tâche la coche — `⌘⏎` au clavier —, et une tâche
+  faite s'atténue
 - `⌘V` convertit le texte riche collé depuis un navigateur en markdown,
   `⌘⇧V` colle en texte brut
 - `⌘/` bascule tout le document en markdown brut — le filet de sécurité
@@ -76,9 +79,10 @@ de reformater ce que vous n'avez pas édité.
   respectés, en-tête en gras, filets discrets. Le curseur entre dans le tableau
   et la source à pipes réapparaît. Un tableau malformé, ou trop large pour la
   colonne, reste affiché tel qu'il est écrit
-- **Menu slash** : un `/` en début de ligne vide propose les blocs — titre,
-  liste, tâche, citation, code, tableau, filet — et **affiche la syntaxe qu'il
-  pose**. Indispensable quand les marqueurs sont cachés
+- **Menu slash** : un `/` qui commence un mot propose les blocs — titre, liste,
+  tâche, citation, code, tableau, filet — et **affiche la syntaxe qu'il pose**.
+  Indispensable quand les marqueurs sont cachés. Collé à un caractère il ne fait
+  rien : `https://` et `12/03` restent ce qu'ils sont
 - **Import de polices** : déposez un `.otf` ou un `.ttf`, il n'est disponible
   que dans Fovea. Votre système n'est jamais touché, et le retrait est un clic
 - S'installe comme éditeur Markdown par défaut du système

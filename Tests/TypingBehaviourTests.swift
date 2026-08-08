@@ -158,6 +158,76 @@ final class TypingBehaviourTests: XCTestCase {
         XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "du texte ordinaire"))
     }
 
+    // MARK: - Cocher une tâche
+
+    /// La case est dessinée : cocher, c'est réécrire **un signe** du fichier.
+    func testTogglingATaskChangesOneCharacter() throws {
+        let text = "- [ ] à faire"
+        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: text,
+                                                            marker: NSRange(location: 0, length: 6),
+                                                            caret: 9))
+        XCTAssertEqual(edit.range, NSRange(location: 3, length: 1))
+        XCTAssertEqual(edit.replacement, "x")
+        XCTAssertEqual(edit.caret, 9, "Cocher ne déplace pas le curseur")
+    }
+
+    func testTogglingBackClearsTheBox() throws {
+        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: "- [x] fait",
+                                                            marker: NSRange(location: 0, length: 6),
+                                                            caret: 0))
+        XCTAssertEqual(edit.replacement, " ")
+    }
+
+    /// Le §5 vaut aussi pour ce que l'app écrit elle-même : un `[X]` majuscule
+    /// se décoche, il ne se normalise pas.
+    func testAnUppercaseBoxIsRecognisedAndNotRewritten() throws {
+        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: "- [X] fait",
+                                                            marker: NSRange(location: 0, length: 6),
+                                                            caret: 0))
+        XCTAssertEqual(edit.replacement, " ", "Un [X] est bien lu comme coché")
+    }
+
+    func testAPlainListItemHasNothingToToggle() {
+        XCTAssertNil(TypingBehaviour.toggleTask(in: "- un item",
+                                                marker: NSRange(location: 0, length: 2),
+                                                caret: 0))
+    }
+
+    // MARK: - Insérer un lien
+
+    func testALinkWrapsTheSelectionAndTakesTheURLFromTheClipboard() {
+        let edit = TypingBehaviour.link(in: "Voir le site ici",
+                                        selection: NSRange(location: 13, length: 3),
+                                        url: "https://exemple.fr")
+        XCTAssertEqual(edit.replacement, "[ici](https://exemple.fr)")
+        XCTAssertEqual(edit.caret, 38, "Le curseur sort du lien, prêt à continuer la phrase")
+    }
+
+    func testALinkWithoutAnAddressPutsTheCaretWhereOneWritesIt() {
+        let edit = TypingBehaviour.link(in: "Voir le site ici",
+                                        selection: NSRange(location: 13, length: 3),
+                                        url: nil)
+        XCTAssertEqual(edit.replacement, "[ici]()")
+        XCTAssertEqual(edit.caret, 19, "Entre les parenthèses : il ne reste qu'à coller l'adresse")
+    }
+
+    func testALinkWithoutSelectionPutsTheCaretWhereOneWritesTheLabel() {
+        let edit = TypingBehaviour.link(in: "", selection: NSRange(location: 0, length: 0), url: nil)
+        XCTAssertEqual(edit.replacement, "[]()")
+        XCTAssertEqual(edit.caret, 1, "Entre les crochets : on écrit le texte avant l'adresse")
+    }
+
+    /// Deviner large ferait coller n'importe quelle phrase copiée entre les
+    /// parenthèses d'un lien, ce qui est plus pénible à défaire qu'à taper.
+    func testOnlyRealAddressesAreTakenFromTheClipboard() {
+        XCTAssertTrue(TypingBehaviour.looksLikeURL("https://exemple.fr"))
+        XCTAssertTrue(TypingBehaviour.looksLikeURL("www.exemple.fr"))
+        XCTAssertTrue(TypingBehaviour.looksLikeURL("mailto:elior@exemple.fr"))
+        XCTAssertFalse(TypingBehaviour.looksLikeURL("une phrase copiée"))
+        XCTAssertFalse(TypingBehaviour.looksLikeURL("exemple.fr"))
+        XCTAssertFalse(TypingBehaviour.looksLikeURL(""))
+    }
+
     // MARK: - Analyse de ligne
 
     func testLineRangeExcludesTheTerminator() {

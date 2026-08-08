@@ -93,6 +93,21 @@ struct MarkdownRenderer {
         return isBlank(text, before) && isBlank(text, after)
     }
 
+    /// L'adresse d'un lien, quand elle mène quelque part qu'on peut ouvrir.
+    ///
+    /// Volontairement restreint aux schémas qui ont un sens hors du document.
+    /// Une ancre `#section` ou un chemin relatif ne sont pas des adresses à
+    /// confier au Finder ou au navigateur : le premier ne dirait rien, le second
+    /// ouvrirait un fichier au hasard de l'endroit d'où l'app a été lancée.
+    static func openableURL(_ destination: String) -> URL? {
+        let trimmed = destination.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed.hasPrefix("www.") { return URL(string: "https://" + trimmed) }
+        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
+              ["http", "https", "mailto"].contains(scheme) else { return nil }
+        return url
+    }
+
     private static func isBlank(_ text: NSString, _ range: NSRange) -> Bool {
         guard range.length > 0 else { return true }
         let blanks = CharacterSet.whitespacesAndNewlines
@@ -376,12 +391,28 @@ struct MarkdownRenderer {
             storage.addAttributes([.font: typography.inlineCode,
                                    .backgroundColor: Theme.NS.fillQuaternary], range: content)
 
-        case .link:
+        case .link(let destination):
             // Souligné et non coloré : le seul objet coloré autorisé est le
             // contenu de l'utilisateur (§7).
-            storage.addAttributes([.underlineStyle: NSUnderlineStyle.single.rawValue,
-                                   .underlineColor: Theme.NS.labelTertiary,
-                                   .cursor: NSCursor.pointingHand], range: content)
+            var attributes: [NSAttributedString.Key: Any] = [
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+                .underlineColor: Theme.NS.labelTertiary,
+                .cursor: NSCursor.pointingHand,
+            ]
+            // **L'adresse est cachée : il faut donc pouvoir la lire.** Le
+            // `(url)` est un marqueur, donc masqué ; sans infobulle, le seul
+            // moyen de savoir où mène un lien serait d'aller poser le curseur
+            // dessus pour faire réapparaître sa syntaxe.
+            if !destination.isEmpty {
+                attributes[.toolTip] = "\(destination)\n⌘-clic pour ouvrir"
+            }
+            // Et sans cet attribut, `⌘`-clic ne trouvait **rien** : la vue
+            // cherche un `.link` que personne ne posait, et l'ouverture promise
+            // au §2.4 ne s'est jamais produite.
+            if let url = Self.openableURL(destination) {
+                attributes[.link] = url
+            }
+            storage.addAttributes(attributes, range: content)
 
         case .image(let source, _):
             // **Réserver la place, sans insérer un seul caractère.**
@@ -423,6 +454,19 @@ struct MarkdownRenderer {
             style.headIndent = typography.quoteIndent
             storage.addAttributes([.foregroundColor: Theme.NS.labelSecondary,
                                    .paragraphStyle: style], range: whole)
+
+        case .taskItem(_, let checked) where checked:
+            // Une tâche faite s'atténue. C'est la seule information qu'une liste
+            // de tâches doit donner au premier coup d'œil — ce qu'il reste — et
+            // la case cochée seule ne la donne pas : elle se lit item par item.
+            // L'atténuation, pas la rature : le barré a déjà un sens en markdown,
+            // et l'utiliser ici rendrait `~~texte~~` illisible dans une tâche.
+            let style = typography.paragraphStyle()
+            let indent = typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))
+            style.firstLineHeadIndent = indent
+            style.headIndent = indent
+            storage.addAttributes([.paragraphStyle: style,
+                                   .foregroundColor: Theme.NS.labelSecondary], range: whole)
 
         case .listItem, .taskItem:
             // `firstLineHeadIndent` **et** `headIndent`. Le second seul ne

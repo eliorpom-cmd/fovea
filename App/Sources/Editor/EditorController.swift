@@ -86,6 +86,9 @@ final class EditorController: NSObject {
             return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
         }
 
+        textView.handlesTaskToggle = { [weak self] content in
+            self?.toggleTask(atContent: content) ?? false
+        }
         textView.handlesMenuKey = { [weak self] key in
             self?.handleSlashMenuKey(key) ?? false
         }
@@ -471,6 +474,47 @@ final class EditorController: NSObject {
         _ = apply(TypingBehaviour.setHeadingLevel(level, in: text, selection: textView.selectedRange()))
     }
 
+    /// Pose un lien autour de la sélection, l'adresse venant du presse-papier
+    /// s'il en contient une.
+    func insertLink() {
+        guard !isSourceMode else { return }
+        let pasted = NSPasteboard.general.string(forType: .string)
+        let url = pasted.flatMap { TypingBehaviour.looksLikeURL($0) ? $0.trimmingCharacters(in: .whitespacesAndNewlines) : nil }
+        _ = apply(TypingBehaviour.link(in: text, selection: textView.selectedRange(), url: url))
+    }
+
+    /// Coche ou décoche la tâche de la ligne du curseur (`⌘⏎`).
+    ///
+    /// Le clic sur la case suffirait à un utilisateur voyant. Il ne suffit pas
+    /// au §8 : une fonction qui n'existe qu'à la souris n'existe pas pour qui
+    /// n'en tient pas.
+    @discardableResult
+    func toggleTaskAtCaret() -> Bool {
+        let caret = textView.selectedRange().location
+        guard let index = spans.firstIndex(where: { span in
+            guard case .taskItem = span.kind else { return false }
+            return RevealPolicy.contains(span.range, caret)
+        }) else { return false }
+        return toggle(spans[index])
+    }
+
+    /// Coche ou décoche la tâche dont le contenu est cette plage — c'est celle
+    /// que porte la décoration cliquée.
+    private func toggleTask(atContent range: NSRange) -> Bool {
+        guard let index = spans.firstIndex(where: { span in
+            guard case .taskItem = span.kind else { return false }
+            return span.content == range
+        }) else { return false }
+        return toggle(spans[index])
+    }
+
+    private func toggle(_ span: SyntaxSpan) -> Bool {
+        guard !isSourceMode, let marker = span.markers.first else { return false }
+        return apply(TypingBehaviour.toggleTask(in: text,
+                                                marker: marker,
+                                                caret: textView.selectedRange().location))
+    }
+
     /// Applique une édition calculée par `TypingBehaviour`.
     ///
     /// Elle passe par `shouldChangeText(in:replacementString:)`, ce qui est ce
@@ -545,7 +589,7 @@ final class EditorController: NSObject {
     /// de la ligne doit refermer le menu aussi sûrement qu'effacer le `/`.
     private func refreshSlashMenu() {
         let selection = textView.selectedRange()
-        guard AppSettings.shared.slashMenuEnabled, !isSourceMode, selection.length == 0,
+        guard !isSourceMode, selection.length == 0,
               textView.window?.isKeyWindow == true,
               let storage = textView.textStorage
         else {
@@ -561,7 +605,8 @@ final class EditorController: NSObject {
         guard let trigger = TypingBehaviour.slashTrigger(
             inLine: storage.mutableString.substring(with: line),
             lineStart: line.location,
-            caret: selection.location)
+            caret: selection.location,
+            scope: AppSettings.shared.slashMenuScope)
         else {
             slashTrigger = nil
             slashMenu.dismiss()
@@ -592,7 +637,7 @@ final class EditorController: NSObject {
     private func insertBlock(_ command: SlashCommand) {
         guard let trigger = slashTrigger else { return }
         slashTrigger = nil
-        apply(TypingBehaviour.insertion(of: command, replacing: trigger.range))
+        apply(TypingBehaviour.insertion(of: command, replacing: trigger))
     }
 
     // MARK: - Réactions

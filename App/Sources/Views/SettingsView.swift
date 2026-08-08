@@ -152,9 +152,12 @@ private struct EditingSettings: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Toggle("Menu d'insertion sur « / »", isOn: $settings.slashMenuEnabled)
-                Text("Un « / » en début de ligne vide propose les blocs : titre, liste, "
-                     + "citation, code, tableau, filet.")
+                Picker("Menu d'insertion sur « / »", selection: $settings.slashMenuScope) {
+                    ForEach(AppSettings.SlashMenuScope.allCases) { Text($0.label).tag($0) }
+                }
+                Text("Un « / » propose les blocs : titre, liste, citation, code, tableau, "
+                     + "filet. Il n'ouvre le menu que s'il commence un mot, jamais collé à "
+                     + "un caractère — « https:// » et « 12/03 » restent ce qu'ils sont.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 

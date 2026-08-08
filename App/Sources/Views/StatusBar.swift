@@ -18,6 +18,15 @@ final class StatusBar: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
 
+        // **Le fond de la page, pas une capsule.** La barre flotte au-dessus de
+        // la colonne : dans une fenêtre étroite, une ligne longue passait
+        // dessous et les deux textes se superposaient, illisibles. Peindre le
+        // fond de la page rend la barre opaque là où elle recouvre quelque
+        // chose, et parfaitement invisible partout ailleurs — c'est-à-dire
+        // presque toujours.
+        layer?.backgroundColor = Theme.NS.window.cgColor
+        layer?.cornerRadius = Theme.Radius.control
+
         label.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         label.textColor = Theme.NS.labelTertiary
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -64,6 +73,15 @@ final class StatusBar: NSView {
     }
 
     // MARK: - Apparence
+
+    /// Le fond est résolu à la pose : un passage en mode sombre ne le met pas à
+    /// jour tout seul, et la barre resterait blanche sur une page noire.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = Theme.NS.window.cgColor
+        }
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)

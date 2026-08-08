@@ -54,6 +54,10 @@ final class EditorTextView: NSTextView {
     var handlesNewline: (() -> Bool)?
     var handlesIndent: ((_ outdent: Bool) -> Bool)?
 
+    /// Appelé quand on clique la case à cocher d'une tâche. Reçoit la plage du
+    /// contenu de l'item, celle que porte la décoration.
+    var handlesTaskToggle: ((NSRange) -> Bool)?
+
     /// Les touches que le menu slash intercepte quand il est ouvert (§4.5).
     enum MenuKey { case up, down, confirm, cancel }
 
@@ -102,6 +106,12 @@ final class EditorTextView: NSTextView {
         // l'image de l'utilisateur a droit à la couleur, on la neutralise (§7).
         selectedTextAttributes = [.backgroundColor: Theme.NS.selection]
 
+        // Même raison pour les liens : dès qu'une plage porte un `.link`,
+        // `NSTextView` lui applique **ses** attributs — bleu système et
+        // soulignement — par-dessus ceux que le rendu a posés. On les remplace
+        // par rien : le lien est déjà souligné en gris par `MarkdownRenderer`.
+        linkTextAttributes = [:]
+
         drawsBackground = true
         backgroundColor = Theme.NS.window
         insertionPointColor = Theme.NS.label
@@ -131,9 +141,37 @@ final class EditorTextView: NSTextView {
     /// est sélectionnée.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
+        drawPlaceholder(in: rect)
         guard !decorations.isEmpty else { return }
         DecorationPainter(typography: typography, documentURL: documentURL)
             .draw(decorations, in: self, dirtyRect: rect)
+    }
+
+    /// Ce qui s'affiche dans un document vide.
+    ///
+    /// Une page blanche sans un mot est le seul écran de l'app où « faire
+    /// disparaître l'app » (§7) se retourne contre elle : rien n'y indique que
+    /// la touche `/` ouvre les blocs, et c'est précisément la personne qui ne
+    /// connaît pas la syntaxe qu'on vient de lui masquer qui ouvre un document
+    /// vide. Une ligne en gris pâle, à l'endroit exact où le premier mot
+    /// s'écrira, et qui part au premier signe tapé.
+    private func drawPlaceholder(in rect: NSRect) {
+        guard textStorage?.length == 0 else { return }
+        let hint = AppSettings.shared.slashMenuScope == .off
+            ? "Écrivez."
+            : "Écrivez. Tapez « / » pour insérer un titre, une liste, un tableau."
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: typography.body,
+            .foregroundColor: Theme.NS.labelTertiary,
+        ]
+        let origin = textContainerOrigin
+        let size = (hint as NSString).size(withAttributes: attributes)
+        let box = NSRect(x: origin.x + (textContainer?.lineFragmentPadding ?? 0),
+                         y: origin.y,
+                         width: size.width, height: size.height)
+        guard box.intersects(rect) else { return }
+        (hint as NSString).draw(in: box, withAttributes: attributes)
     }
 
     // MARK: - Suppression intelligente
@@ -198,14 +236,26 @@ final class EditorTextView: NSTextView {
     /// riche — ce qu'un tampon `isRichText = false` refuse. On intercepte donc
     /// avant lui, et seulement pour ce qui est une image.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        carriesImage(sender) ? .copy : super.draggingEntered(sender)
+        carriesImage(sender) || !documents(in: sender).isEmpty ? .copy : super.draggingEntered(sender)
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        carriesImage(sender) ? .copy : super.draggingUpdated(sender)
+        carriesImage(sender) || !documents(in: sender).isEmpty ? .copy : super.draggingUpdated(sender)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        // Un fichier texte déposé s'**ouvre**. Sans ce cas, `NSTextView` faisait
+        // ce qu'il fait par défaut d'une URL : il en insérait le chemin dans le
+        // document, ce qui n'est ce que personne n'a jamais voulu en faisant ce
+        // geste — surtout dans un éditeur qui gère les onglets.
+        let files = documents(in: sender)
+        if !files.isEmpty {
+            for url in files {
+                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+            }
+            return true
+        }
+
         guard carriesImage(sender),
               let result = ImageDrop.handle(sender.draggingPasteboard, document: documentURL)
         else { return super.performDragOperation(sender) }
@@ -217,6 +267,19 @@ final class EditorTextView: NSTextView {
         setSelectedRange(NSRange(location: index, length: 0))
         insertText(surrounded(result.markdown, at: index), replacementRange: NSRange(location: index, length: 0))
         return true
+    }
+
+    /// Les fichiers déposés que l'app sait ouvrir : ses propres types de
+    /// document, tels que l'`Info.plist` les déclare.
+    private func documents(in sender: NSDraggingInfo) -> [URL] {
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
+            return []
+        }
+        return urls.filter { url in
+            guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+            return !type.conforms(to: .image)
+                && AppConfig.readableExtensions.contains(url.pathExtension.lowercased())
+        }
     }
 
     private func carriesImage(_ sender: NSDraggingInfo) -> Bool {
@@ -279,11 +342,23 @@ final class EditorTextView: NSTextView {
     /// `⌘`+clic ouvre l'URL. Un clic simple ne le fait pas : dans un éditeur,
     /// cliquer dans un lien sert d'abord à y placer le curseur.
     override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+
+        // Une case à cocher se coche au clic. C'est le pendant du §2.5 pour la
+        // souris : la case est dessinée, donc le seul moyen de la cocher serait
+        // sinon d'aller réécrire à la main un `x` entre deux crochets qu'on a
+        // justement masqués.
+        if !event.modifierFlags.contains(.command),
+           let range = DecorationPainter(typography: typography, documentURL: documentURL)
+               .task(at: point, among: decorations, in: self),
+           handlesTaskToggle?(range) == true {
+            return
+        }
+
         guard event.modifierFlags.contains(.command) else {
             super.mouseDown(with: event)
             return
         }
-        let point = convert(event.locationInWindow, from: nil)
         let index = characterIndexForInsertion(at: point)
         if let storage = textStorage, index < storage.length,
            let link = storage.attribute(.link, at: index, effectiveRange: nil) as? URL {

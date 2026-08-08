@@ -24,6 +24,15 @@ final class OutlinePanel: NSView {
     private let tableView = NSTableView()
     private var items: [Item] = []
 
+    /// Ce que dit le panneau quand il n'a rien à lister.
+    ///
+    /// Un panneau vide et muet se lit comme une panne : on l'ouvre, il ne
+    /// montre rien, et rien ne dit si le plan est cassé ou si le document n'a
+    /// pas de titre. La phrase répond à la question et donne le geste.
+    private let emptyLabel = NSTextField(wrappingLabelWithString:
+        "Aucun titre dans ce document.\n\nLes titres apparaissent ici à mesure "
+        + "que vous les écrivez — « # » en début de ligne, ou ⌘⌃1.")
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -63,7 +72,16 @@ final class OutlinePanel: NSView {
         separator.translatesAutoresizingMaskIntoConstraints = false
         addSubview(separator)
 
+        emptyLabel.font = .systemFont(ofSize: 11)
+        emptyLabel.textColor = Theme.NS.labelTertiary
+        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(emptyLabel)
+
         NSLayoutConstraint.activate([
+            emptyLabel.topAnchor.constraint(equalTo: topAnchor, constant: Theme.Space.s64),
+            emptyLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Space.s16),
+            emptyLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Theme.Space.s16),
+
             scrollView.topAnchor.constraint(equalTo: topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Space.s8),
@@ -93,6 +111,8 @@ final class OutlinePanel: NSView {
             }
             .sorted { $0.location < $1.location }
         tableView.reloadData()
+        emptyLabel.isHidden = !items.isEmpty
+        scrollView.isHidden = items.isEmpty
     }
 
     /// Met en évidence le titre dans lequel se trouve le curseur.
