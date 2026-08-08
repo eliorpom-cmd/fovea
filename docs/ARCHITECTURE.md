@@ -136,6 +136,39 @@ Le filet horizontal est le seul marqueur masqué **sans** réduction de largeur
 normalement ferait s'effondrer sa hauteur, et le filet n'aurait plus où se
 dessiner.
 
+## Les tableaux : une grille faite de crénage
+
+Le cahier des charges (§2.6) visait une grille réellement éditable, avec un
+`firstResponder` par cellule, et armait d'avance un repli. **C'est le repli qui
+est en place, et il s'est révélé meilleur que la cible.** Un éditeur dans
+l'éditeur aurait imposé deux piles d'annulation à tenir synchrones, une
+sélection qui s'arrête aux bords du tableau et un `⌘F` qui n'y entre pas. Ici
+il n'y a toujours qu'un seul tampon.
+
+Le mécanisme est celui du masquage, poussé d'un cran. Chaque `|` est masqué,
+mais reçoit **une avance calculée** — le crénage qu'il faut pour que la cellule
+suivante tombe sur sa colonne (`MarkerMask.hide(in:range:advance:)`). Les
+blancs de remplissage de la source passent à zéro : c'est la grille qui espace,
+plus l'auteur. La ligne `|---|` est masquée entière et sa hauteur réduite à la
+place d'un filet, que `DecorationPainter` y trace.
+
+Trois choses valent d'être sues :
+
+- **Les largeurs sont mesurées, pas comptées.** `**Titre**` rend six signes de
+  moins que sa source ; une colonne calculée sur les signes serait large de six
+  de trop. `applyTable` tourne donc **après** le masquage des marqueurs inline,
+  et mesure le rendu réel.
+- **La géométrie est lue dans la source, pas dans l'arbre.** cmark ne rend ni
+  les `|` ni la ligne de délimitation — qu'il consomme — et ce sont exactement
+  les caractères à masquer. `MarkdownTable.scan` les relève à la main, en
+  appliquant la règle de GFM : la découpe en cellules a lieu **avant** l'analyse
+  inline, donc un `|` dans un `code span` coupe quand même.
+- **Deux cas renoncent à la grille** : un tableau malformé, et un tableau plus
+  large que la colonne. Dans les deux, la source reste affichée telle quelle.
+  Le garde-fou (`fitsAsGrid`) est lu au même endroit par le rendu et par les
+  décorations, sans quoi les filets se dessineraient autour d'un tableau qui
+  n'a pas de grille.
+
 ## Performance : ce qui a été mesuré
 
 Les budgets du §9 étaient **tous** dépassés à la première mesure. `PerformanceTests`
@@ -174,6 +207,32 @@ assez pour le premier écran et termine au tour de boucle suivant.
 Un piège vaut d'être connu : **ne jamais appeler `applyColumnLayout()` depuis le
 cycle de frappe.** Réécrire `textContainerInset` invalide la mise en page de tout
 le document.
+
+## Accessibilité : ce que le SDK interdit
+
+Le §8 du cahier des charges promettait que les plages masquées porteraient un
+`accessibilityLabel` vide, pour que VoiceOver ne lise pas « dièse dièse espace
+Architecture ». **C'est impossible**, et l'en-tête du SDK le dit :
+
+```c
+// NSAccessibilityConstants.h, ligne 133
+NSAccessibilityAttributedStringForRangeParameterizedAttribute;
+//(NSAttributedString *) - does _not_ use attributes from Appkit/AttributedString.h
+```
+
+Les attributs posés dans `NSTextStorage` — dont `foveaMasked` — ne sont jamais
+consultés par la couche d'accessibilité : elle interroge la vue, pas la chaîne.
+
+Le seul contournement serait de redéfinir `accessibilityAttributedString(for:)`
+pour rendre une chaîne **plus courte** que la plage demandée. On retomberait
+exactement sur le mécanisme B écarté au jalon 0 : dès que les longueurs
+divergent, la correspondance entre position lue et position réelle est rompue,
+et c'est le curseur de VoiceOver qui se met à mentir.
+
+Ce qui est fait, et testé : `Accessibility` est le point d'entrée unique des
+réglages système ; les rôles sémantiques ne contiennent jamais de syntaxe ; le
+plan, la palette et le menu slash les portent réellement, là où
+`accessibilityLabel` fonctionne ; la mise en page tient de 11 à 32 points.
 
 ## Contraintes à garder en tête
 

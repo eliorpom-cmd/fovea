@@ -69,12 +69,27 @@ de reformater ce que vous n'avez pas édité.
 - Plan du document (`⌘⌥0`) : toute la structure, hiérarchisée, cliquable
 - Palette de commandes (`⌘K`) : les commandes **et** les titres du document
   dans la même liste, filtrés par sous-séquence — « mdf » trouve « Mode focus »
+- **Tableaux en grille** : colonnes alignées, alignements `:--`/`:-:`/`--:`
+  respectés, en-tête en gras, filets discrets. Le curseur entre dans le tableau
+  et la source à pipes réapparaît. Un tableau malformé, ou trop large pour la
+  colonne, reste affiché tel qu'il est écrit
+- **Menu slash** : un `/` en début de ligne vide propose les blocs — titre,
+  liste, tâche, citation, code, tableau, filet — et **affiche la syntaxe qu'il
+  pose**. Indispensable quand les marqueurs sont cachés
+- **Import de polices** : déposez un `.otf` ou un `.ttf`, il n'est disponible
+  que dans Fovea. Votre système n'est jamais touché, et le retrait est un clic
 - S'installe comme éditeur Markdown par défaut du système
 
 ## Ce qui n'est pas encore là
 
-Tableaux éditables · menu slash · import de fichiers de police · icône ·
-notarisation.
+**VoiceOver lit encore la syntaxe masquée.** Les rôles sémantiques existent et
+les éléments d'interface les portent, mais le tampon de texte, lui, est lu tel
+quel : macOS ne consulte pas les attributs de la chaîne pour l'accessibilité.
+Le détail, et pourquoi le contournement évident est pire que le mal, sont dans
+le §8 du cahier des charges.
+
+Reste aussi : la **notarisation**, qui demande un compte développeur payant,
+et l'**updater intégré**.
 
 ## Installer
 
