@@ -29,6 +29,9 @@ Fovea vise la case vide : AppKit pur, marqueurs qui disparaissent, fichiers
 **Le formatage se voit.** Les marqueurs markdown sont invisibles par défaut et
 réapparaissent, en gris pâle, dès que le curseur touche la construction à
 laquelle ils appartiennent. Le mot reste gras pendant que ses `**` reviennent.
+Un `#`, un `>` ou un `-` de début de ligne, eux, attendent qu'on aille les
+chercher au début de la ligne : sans ça, descendre dans un document ferait
+sauter chaque titre et chaque item qu'on traverse.
 
 **Le fichier ne bouge pas.** Ce que vous n'avez pas touché ressort octet pour
 octet. `*` ne devient jamais `_`, l'indentation des listes n'est jamais

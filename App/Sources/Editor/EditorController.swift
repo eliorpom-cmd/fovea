@@ -225,7 +225,8 @@ final class EditorController: NSObject {
                         in: range)
         textView.typography = typography
         textView.documentURL = documentURL
-        textView.decorations = EditorDecoration.build(from: spans, typography: typography,
+        textView.decorations = EditorDecoration.build(from: spans, text: storage.mutableString,
+                                                      typography: typography,
                                                       revealed: revealed)
     }
 
@@ -269,7 +270,9 @@ final class EditorController: NSObject {
         // droite glissent de la largeur des marqueurs réapparus. On ne repose
         // que les tableaux réellement concernés — il y en a rarement plus d'un.
         let touched = changed.compactMap { $0 < spans.count ? spans[$0].range : nil }
-        var rebuiltDecorations = false
+        var rebuiltDecorations = changed.contains {
+            $0 < spans.count && EditorDecoration.hasRevealDependentMark(spans[$0].kind)
+        }
         for (index, span) in spans.enumerated() where renderer.isTable(span) {
             guard changed.contains(index)
                     || touched.contains(where: { NSIntersectionRange($0, span.range).length > 0 })
@@ -279,10 +282,14 @@ final class EditorController: NSObject {
         }
         storage.endEditing()
 
-        // Les filets suivent l'état du tableau : ils disparaissent quand la
-        // source réapparaît sous le curseur.
+        // Les marques dessinées suivent l'état de révélation : la puce, la case
+        // à cocher, le filet et les cadres de tableau s'effacent quand leur
+        // source réapparaît sous le curseur. On ne reconstruit la couche que
+        // lorsque l'une d'elles est concernée — ce chemin est celui de chaque
+        // flèche du clavier.
         if rebuiltDecorations {
-            textView.decorations = EditorDecoration.build(from: spans, typography: typography,
+            textView.decorations = EditorDecoration.build(from: spans, text: storage.mutableString,
+                                                          typography: typography,
                                                           revealed: next)
         }
     }
@@ -355,9 +362,27 @@ final class EditorController: NSObject {
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
+    /// Le loquet de la portée ligne : voir `RevealPolicy`. On retient le début
+    /// de la ligne et non ses spans, parce qu'une analyse incrémentale renumérote
+    /// les constructions — le début de ligne, lui, ne bouge pas tant qu'on tape
+    /// dedans.
+    private var latchedLineStart: Int?
+
     private func currentRevealedIndices() -> Set<Int> {
         let selection = textView.selectedRange()
-        return RevealPolicy.revealedIndices(index: spanIndex, selection: selection, lineRange: currentLineRange())
+        let line = currentLineRange()
+        if latchedLineStart != line.location { latchedLineStart = nil }
+
+        let revealed = RevealPolicy.revealedIndices(index: spanIndex,
+                                                    selection: selection,
+                                                    lineRange: line,
+                                                    linePrefixesLatched: latchedLineStart != nil)
+        // Le loquet se pose dès qu'un préfixe est révélé, et se relève de
+        // lui-même au prochain appel fait depuis une autre ligne.
+        latchedLineStart = revealed.contains { index in
+            index < spanIndex.spans.count && spanIndex.spans[index].kind.revealScope == .wholeLine
+        } ? line.location : nil
+        return revealed
     }
 
     /// La plage de la ligne du curseur, terminateur exclu.

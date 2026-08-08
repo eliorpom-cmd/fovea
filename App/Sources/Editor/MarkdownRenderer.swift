@@ -64,6 +64,41 @@ struct MarkdownRenderer {
         return false
     }
 
+    /// Cette image occupe-t-elle sa ligne à elle seule ?
+    ///
+    /// C'est la condition pour la rendre **comme un bloc** : hauteur réservée sur
+    /// le paragraphe, source masquée sans réduire cette hauteur, dessin dans la
+    /// place ainsi laissée.
+    ///
+    /// Le cas contraire est fréquent et n'avait pas été prévu — `du texte
+    /// ![une image](a.png) et la suite`. La hauteur réservée écartait alors la
+    /// ligne entière, et l'image, dessinée sur toute la largeur qu'on lui
+    /// accordait, passait **par-dessus les mots voisins**. Une image au fil du
+    /// texte est donc laissée telle quelle : ses crochets disparaissent, son
+    /// texte alternatif reste, et rien ne bouge autour.
+    ///
+    /// La mesure se fait sur la source et non sur le rendu : elle est appelée
+    /// pendant la pose des attributs, avant que TextKit n'ait mis quoi que ce
+    /// soit en page.
+    static func isBlockImage(_ span: SyntaxSpan, in text: NSString) -> Bool {
+        guard case .image = span.kind,
+              span.range.length > 0, span.range.upperBound <= text.length else { return false }
+
+        let line = text.lineRange(for: NSRange(location: span.range.location, length: 0))
+        guard span.range.upperBound <= line.upperBound else { return false }
+
+        let before = NSRange(location: line.location, length: span.range.location - line.location)
+        let after = NSRange(location: span.range.upperBound,
+                            length: line.upperBound - span.range.upperBound)
+        return isBlank(text, before) && isBlank(text, after)
+    }
+
+    private static func isBlank(_ text: NSString, _ range: NSRange) -> Bool {
+        guard range.length > 0 else { return true }
+        let blanks = CharacterSet.whitespacesAndNewlines
+        return text.rangeOfCharacter(from: blanks.inverted, options: [], range: range).location == NSNotFound
+    }
+
     /// Bascule les marqueurs d'une seule construction, **sans toucher au reste
     /// de son rendu**.
     ///
@@ -78,10 +113,15 @@ struct MarkdownRenderer {
             applyTable(storage, span: span, revealed: revealed)
             return
         }
-        // Le texte alternatif d'une image fait partie de ce qui disparaît :
-        // l'image le remplace à l'écran, et le laisser visible superposerait
-        // deux fois la même information.
-        if case .image = span.kind, !revealed, span.content.length > 0,
+        // Une image au fil d'une phrase n'est pas un bloc : voir `isBlockImage`.
+        // Elle garde son texte alternatif — rien ne viendra le remplacer — et
+        // ses marqueurs se masquent à largeur nulle comme n'importe quels autres.
+        let blockImage = Self.isBlockImage(span, in: storage.mutableString)
+
+        // Le texte alternatif d'une image en bloc, lui, fait partie de ce qui
+        // disparaît : l'image le remplace à l'écran, et le laisser visible
+        // superposerait deux fois la même information.
+        if blockImage, !revealed, span.content.length > 0,
            span.content.upperBound <= storage.length {
             MarkerMask.hideKeepingMetrics(in: storage, range: span.content, font: typography.body)
         }
@@ -89,7 +129,7 @@ struct MarkdownRenderer {
             guard marker.length > 0, marker.upperBound <= storage.length else { continue }
             if revealed {
                 MarkerMask.reveal(in: storage, range: marker, font: markerFont(for: span))
-            } else if case .image = span.kind {
+            } else if blockImage {
                 // La source est masquée **sans réduire la hauteur** : la ligne
                 // doit garder la place réservée à l'image, sinon le dessin
                 // n'aurait nulle part où aller.
@@ -352,6 +392,11 @@ struct MarkdownRenderer {
             // paragraphe, la source est masquée à largeur nulle comme n'importe
             // quel marqueur, et `DecorationPainter` peint dans la place ainsi
             // laissée.
+            //
+            // Rien de tout cela pour une image au fil du texte : réserver la
+            // hauteur écarterait la ligne où elle se trouve, et le dessin se
+            // poserait par-dessus les mots qui l'entourent.
+            guard Self.isBlockImage(span, in: storage.mutableString) else { break }
             let style = typography.paragraphStyle()
             style.minimumLineHeight = reservedHeight(for: source)
             style.lineHeightMultiple = 1

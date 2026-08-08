@@ -90,10 +90,21 @@ cette construction est révélée, donc ses marqueurs sont visibles :
 
 > **Quand un marqueur est masqué, le curseur ne peut pas s'y trouver.**
 
-`RevealPolicyTests.testCaretIsNeverInsideAHiddenMarker` le vérifie sur toutes
-les positions d'un document témoin. Le choix de bornes inclusives rend aussi la
-navigation réversible : une flèche droite suivie d'une flèche gauche ramène
-exactement à l'état de départ, ce qui serait faux avec un intervalle ouvert.
+Le choix de bornes inclusives rend aussi la navigation réversible : une flèche
+droite suivie d'une flèche gauche ramène exactement à l'état de départ, ce qui
+serait faux avec un intervalle ouvert.
+
+**Le raisonnement est juste et il ne suffisait pas.** « Par construction »
+supposait qu'une seule construction puisse gagner, et la règle « la plus
+intérieure gagne » en désignait parfois une qui n'était pas celle du marqueur —
+sur `***gras***`, où l'emphase enveloppante n'a aucun marqueur mais la même
+longueur, et sur `[lien **gras**](url)`, où le curseur touche la fin du gras et
+le début du `](…)` en même temps. Dans les deux cas le curseur se retrouvait
+dans un marqueur masqué. `RevealPolicy` pose donc l'invariant en premier — un
+marqueur qui contient le curseur est révélé, quoi qu'il arrive — et
+`FidelityTests.testNoCaretPositionFallsInsideAHiddenMarker` le vérifie sur
+chaque position de chaque document du corpus, ce que le test d'origine, limité à
+un seul `**gras**`, ne pouvait pas faire.
 
 ## `swift-markdown` : trois faits vérifiés
 
@@ -123,13 +134,32 @@ représentent : puces et numéros, cases à cocher, barre de citation, filet
 horizontal, fond des blocs de code. Ces marques n'existent nulle part dans le
 document, au même titre qu'un curseur.
 
-Deux pièges y ont coûté du temps :
+**Une marque dessinée remplace une source masquée**, donc elle s'efface dès que
+cette source revient. C'est la règle, et elle manquait : sous le curseur, un
+item de liste affichait `• - Un item`, la puce de l'éditeur juste à côté du
+tiret du fichier, et le filet horizontal barrait ses `---` redevenus visibles.
+Seules la barre de citation et le fond des blocs de code y échappent — ils ne
+remplacent rien, ils cadrent un bloc, et ce bloc existe aussi sous le curseur.
+
+Trois pièges y ont coûté du temps :
 
 - **Un retrait est nécessaire.** `headIndent` seul ne décale que les lignes de
   continuation ; la première restait à la marge et la puce, dessinée à sa
   gauche, tombait à une abscisse négative — donc hors de la vue.
 - **`NSTextView` est une vue retournée.** Un tracé lu « vers le haut » y dessine
   à l'envers : la première coche était un chevron.
+- **Deux repères de coordonnées se mélangent.** `boundingFrame` rend des
+  coordonnées du **conteneur**, qu'on décale de `textContainerOrigin` pour
+  peindre dans la **vue** ; mais la largeur de colonne, elle, reste celle du
+  conteneur. Tout ce qui s'étend sur la colonne — filet horizontal, filets de
+  tableau, fond des blocs de code — se calculait `columnWidth - frame.minX * 2`
+  en mélangeant les deux, donc en comptant deux fois la marge de centrage. Dans
+  une fenêtre de 1512 points avec une colonne de 612, cette largeur valait
+  **−288** : les filets et les fonds se dessinaient à l'envers, entièrement dans
+  la marge gauche. Le défaut restait invisible dans la fenêtre par défaut, assez
+  étroite pour que le compte reste positif — c'est le genre de bug qu'on ne voit
+  qu'en plein écran. `DecorationPainter` reçoit maintenant le bord gauche de la
+  colonne et calcule le retrait par rapport à lui.
 
 Le filet horizontal est le seul marqueur masqué **sans** réduction de largeur
 (`MarkerMask.hideKeepingMetrics`) : toute la ligne étant syntaxe, la masquer

@@ -145,6 +145,7 @@ final class AccessibilityTests: XCTestCase {
                                                                 range: NSRange(location: 0, length: utf16.count),
                                                                 markers: table.markerRanges,
                                                                 content: NSRange(location: 0, length: utf16.count))],
+                                              text: source as NSString,
                                               typography: typography).isEmpty == false)
     }
 

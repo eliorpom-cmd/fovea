@@ -65,37 +65,49 @@ extension EditorDecoration {
 
     /// Construit les décorations à partir des constructions repérées.
     ///
-    /// - Parameter revealed: les constructions que le curseur touche. Seuls les
-    ///   tableaux s'en servent : sous le curseur, la source à pipes réapparaît
-    ///   et les filets n'auraient plus rien à cadrer — le filet d'en-tête
-    ///   barrerait même la ligne `|---|`, redevenue visible.
+    /// - Parameter revealed: les constructions que le curseur touche.
+    ///
+    /// # La règle : une marque dessinée **remplace** une source masquée
+    ///
+    /// Une marque n'existe que parce que sa syntaxe est cachée. Dès que la
+    /// source réapparaît, la marque doit donc s'effacer, sans quoi l'écran
+    /// affiche deux fois la même chose — et c'était le cas : un item de liste
+    /// sous le curseur montrait `• - Un item`, la puce dessinée par l'éditeur
+    /// juste à côté du tiret du fichier. Voir aussi la puce et le tiret dans un
+    /// filet horizontal, dont le trait barrait les `---` revenus.
+    ///
+    /// Deux exceptions, et elles se justifient : la barre d'une citation et le
+    /// fond d'un bloc de code ne **remplacent** rien — ils cadrent un bloc, et
+    /// ce bloc existe autant sous le curseur qu'ailleurs.
     @MainActor
     static func build(from spans: [SyntaxSpan],
+                      text: NSString,
                       typography: EditorTypography,
                       revealed: Set<Int> = []) -> [EditorDecoration] {
         var decorations: [EditorDecoration] = []
         for (index, span) in spans.enumerated() {
+            let isRevealed = revealed.contains(index)
             switch span.kind {
-            case .table(let table?) where !revealed.contains(index):
+            case .table(let table?) where !isRevealed:
                 decorations.append(contentsOf: rules(for: table, typography: typography))
             case .blockQuote:
                 decorations.append(EditorDecoration(kind: .quoteBar,
                                                     range: span.range,
                                                     indent: typography.quoteIndent))
 
-            case .listItem(let marker):
+            case .listItem(let marker) where !isRevealed:
                 decorations.append(EditorDecoration(
                     kind: .listMarker(symbol(for: marker)),
                     range: span.content,
                     indent: typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))))
 
-            case .taskItem(_, let checked):
+            case .taskItem(_, let checked) where !isRevealed:
                 decorations.append(EditorDecoration(
                     kind: .checkbox(checked: checked),
                     range: span.content,
                     indent: typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))))
 
-            case .thematicBreak:
+            case .thematicBreak where !isRevealed:
                 decorations.append(EditorDecoration(kind: .rule, range: span.range, indent: 0))
 
             case .codeBlock:
@@ -103,7 +115,10 @@ extension EditorDecoration {
                                                     range: span.range,
                                                     indent: typography.codeBlockIndent))
 
-            case .image(let source, let alt):
+            // Une image au fil du texte ne se dessine pas : il n'y a pas de place
+            // réservée où la mettre. Voir `MarkdownRenderer.isBlockImage`.
+            case .image(let source, let alt)
+                where !isRevealed && MarkdownRenderer.isBlockImage(span, in: text):
                 decorations.append(EditorDecoration(kind: .image(source: source, alt: alt),
                                                     range: span.range,
                                                     indent: 0))
@@ -113,6 +128,19 @@ extension EditorDecoration {
             }
         }
         return decorations
+    }
+
+    /// Cette construction a-t-elle une marque dessinée qui dépend de son état de
+    /// révélation ?
+    ///
+    /// Sert au cycle de déplacement du curseur, qui ne doit reconstruire la
+    /// couche de décoration que lorsqu'elle a réellement changé — c'est
+    /// l'opération la plus fréquente de l'app (§9).
+    static func hasRevealDependentMark(_ kind: SyntaxSpan.Kind) -> Bool {
+        switch kind {
+        case .table, .listItem, .taskItem, .thematicBreak, .image: true
+        default: false
+        }
     }
 
     /// Les trois filets d'un tableau, ou aucun si la grille ne tient pas dans
@@ -166,15 +194,37 @@ struct DecorationPainter {
               let content = view.textContentStorage else { return }
 
         let origin = view.textContainerOrigin
+        let columnWidth = view.textContainer?.size.width ?? view.bounds.width
         for decoration in decorations {
             guard let frame = boundingFrame(of: decoration.range, layout: layout, content: content) else { continue }
             let placed = frame.offsetBy(dx: origin.x, dy: origin.y)
             guard placed.intersects(dirtyRect) else { continue }
-            paint(decoration, at: placed, columnWidth: view.textContainer?.size.width ?? placed.width)
+            paint(decoration, at: placed, columnLeft: origin.x, columnWidth: columnWidth)
         }
     }
 
-    private func paint(_ decoration: EditorDecoration, at frame: NSRect, columnWidth: CGFloat) {
+    /// - Parameters:
+    ///   - frame: la place du texte porteur, **en coordonnées de la vue**.
+    ///   - columnLeft: l'abscisse du bord gauche de la colonne, dans les mêmes
+    ///     coordonnées. Sans elle, tout ce qui doit s'étendre sur la largeur de
+    ///     la colonne se calculait en mélangeant deux repères : les filets et le
+    ///     fond des blocs de code recevaient `columnWidth - frame.minX * 2`, où
+    ///     `frame.minX` comptait déjà la marge de centrage. Dans une fenêtre
+    ///     large — 1512 points, colonne de 612 —, cette largeur valait **−288** :
+    ///     les trois filets d'un tableau, le filet horizontal et le fond des
+    ///     blocs de code se dessinaient à l'envers, entièrement dans la marge
+    ///     gauche. Le défaut ne se voyait pas dans la fenêtre par défaut, où la
+    ///     marge est assez étroite pour que le compte reste positif.
+    ///   - columnWidth: la largeur du conteneur de texte.
+    private func paint(_ decoration: EditorDecoration, at frame: NSRect,
+                       columnLeft: CGFloat, columnWidth: CGFloat) {
+        /// La bande occupée par la colonne à la hauteur du texte porteur, une
+        /// fois retiré de chaque côté le retrait du paragraphe porteur.
+        func columnSpan(inset: CGFloat) -> (x: CGFloat, width: CGFloat) {
+            let indent = max(0, frame.minX - inset - columnLeft)
+            return (columnLeft + indent, max(0, columnWidth - indent * 2))
+        }
+
         switch decoration.kind {
         case .quoteBar:
             // Le texte est retiré de `indent` ; la barre se pose au tiers de
@@ -239,10 +289,8 @@ struct DecorationPainter {
         case .rule:
             // Le filet occupe toute la colonne, pas la largeur des trois tirets
             // invisibles sur lesquels il s'appuie.
-            let rule = NSRect(x: frame.minX,
-                              y: frame.midY - 0.5,
-                              width: columnWidth - frame.minX * 2,
-                              height: 1)
+            let span = columnSpan(inset: 0)
+            let rule = NSRect(x: span.x, y: frame.midY - 0.5, width: span.width, height: 1)
             Theme.NS.separator.setFill()
             NSBezierPath(rect: rule).fill()
 
@@ -258,16 +306,17 @@ struct DecorationPainter {
             case .header: (frame.midY - 0.5).rounded()
             case .bottom: frame.maxY - 1
             }
-            let rule = NSRect(x: frame.minX, y: y, width: columnWidth - frame.minX * 2, height: 1)
+            let span = columnSpan(inset: 0)
+            let rule = NSRect(x: span.x, y: y, width: span.width, height: 1)
             (position == .header ? Theme.NS.labelTertiary : Theme.NS.separator).setFill()
             NSBezierPath(rect: rule).fill()
 
         case .codeBackground:
             let padding = typography.bodySize * 0.5
-            let left = frame.minX - decoration.indent
-            let box = NSRect(x: left,
+            let span = columnSpan(inset: decoration.indent)
+            let box = NSRect(x: span.x,
                              y: frame.minY - padding,
-                             width: columnWidth - left * 2,
+                             width: span.width,
                              height: frame.height + padding * 2)
             Theme.NS.fillQuaternary.setFill()
             NSBezierPath(roundedRect: box,

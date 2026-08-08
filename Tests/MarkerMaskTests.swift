@@ -112,6 +112,74 @@ final class MarkerMaskTests: XCTestCase {
         XCTAssertFalse(MarkerMask.isMasked(storage, at: 6), "« crucial » commence à l'offset 6")
     }
 
+    // MARK: - Une marque dessinée remplace une source masquée
+
+    /// Le défaut le plus visible de l'éditeur : sous le curseur, un item de
+    /// liste affichait `• - Un item` — la puce dessinée par l'éditeur **et** le
+    /// tiret du fichier, l'un à côté de l'autre.
+    ///
+    /// La puce n'existe que parce que le tiret est caché. Dès que le tiret
+    /// revient, elle doit partir.
+    func testTheDrawnBulletDisappearsWhenItsDashComesBack() throws {
+        let source = "- Un item de liste"
+        let parsed = MarkdownParser.parse(source)
+        let line = NSRange(location: 0, length: (source as NSString).length)
+
+        let atPrefix = RevealPolicy.revealedIndices(spans: parsed.spans,
+                                                    selection: NSRange(location: 1, length: 0),
+                                                    lineRange: line)
+        XCTAssertFalse(atPrefix.isEmpty, "Le curseur est dans le `- ` : il doit se montrer")
+        XCTAssertTrue(marks(parsed.spans, source, revealed: atPrefix).isEmpty,
+                      "La puce dessinée doit s'effacer pendant que le tiret est visible")
+
+        let inTheText = RevealPolicy.revealedIndices(spans: parsed.spans,
+                                                     selection: NSRange(location: 8, length: 0),
+                                                     lineRange: line)
+        XCTAssertTrue(inTheText.isEmpty, "Au milieu du texte, le tiret reste caché")
+        XCTAssertEqual(marks(parsed.spans, source, revealed: inTheText).count, 1,
+                       "…et c'est la puce qui le remplace")
+    }
+
+    /// Le pendant pour un filet horizontal, dont le trait barrait ses `---`
+    /// revenus, et pour une case à cocher.
+    func testDrawnMarksYieldToTheirSourceEverywhere() throws {
+        for source in ["---", "- [x] Une tâche faite"] {
+            let parsed = MarkdownParser.parse(source)
+            let line = NSRange(location: 0, length: (source as NSString).length)
+            let revealed = RevealPolicy.revealedIndices(spans: parsed.spans,
+                                                        selection: NSRange(location: 1, length: 0),
+                                                        lineRange: line)
+            XCTAssertTrue(marks(parsed.spans, source, revealed: revealed).isEmpty,
+                          "« \(source) » : la marque dessinée doublonne avec sa source")
+            XCTAssertFalse(marks(parsed.spans, source, revealed: []).isEmpty,
+                           "« \(source) » : sans curseur, la marque doit être là")
+        }
+    }
+
+    /// Une image au fil d'une phrase n'est pas un bloc : lui réserver une
+    /// hauteur écartait la ligne, et le dessin passait **par-dessus les mots**
+    /// qui l'entouraient.
+    func testAnImageInsideASentenceIsNotDrawnAsABlock() throws {
+        let inline = "Du texte ![une image](a.png) et la suite."
+        let alone = "![une image](a.png)"
+
+        for (source, expected) in [(inline, 0), (alone, 1)] {
+            let parsed = MarkdownParser.parse(source)
+            let images = marks(parsed.spans, source, revealed: []).filter {
+                if case .image = $0.kind { return true } else { return false }
+            }
+            XCTAssertEqual(images.count, expected, "« \(source) »")
+        }
+    }
+
+    private func marks(_ spans: [SyntaxSpan], _ text: String, revealed: Set<Int>) -> [EditorDecoration] {
+        // La barre de citation et le fond des blocs de code ne remplacent rien :
+        // ils cadrent un bloc, et ce bloc existe aussi sous le curseur.
+        EditorDecoration.build(from: spans, text: text as NSString,
+                               typography: .default, revealed: revealed)
+            .filter { $0.kind != .quoteBar && $0.kind != .codeBackground }
+    }
+
     // MARK: - Instruments de mesure
 
     /// Construit une vue rendue, hors écran mais avec une vraie mise en page.

@@ -65,6 +65,33 @@ final class FidelityTests: XCTestCase {
         }
     }
 
+    /// **L'invariant du §2.3, vérifié sur de vrais documents.**
+    ///
+    /// Il n'y a pas de « position de curseur invisible » : quand un marqueur est
+    /// masqué, le curseur ne peut pas s'y trouver. Ce test est ici et pas dans
+    /// `RevealPolicyTests` parce que c'est sur du markdown réel qu'il a de la
+    /// valeur — titres, citations imbriquées, listes de tâches, clôtures de
+    /// blocs —, et parce que c'est lui qui protège la règle de révélation des
+    /// préfixes contre une régression : elle porte sur les marqueurs, bornes
+    /// comprises, et c'est exactement ce qui rend l'invariant vrai.
+    func testNoCaretPositionFallsInsideAHiddenMarker() throws {
+        for (name, source) in Corpus.documents {
+            let parsed = MarkdownParser.parse(source)
+            for caret in 0...source.utf16.count {
+                let line = parsed.positions.lineRange(containing: caret)
+                let revealed = RevealPolicy.revealedIndices(spans: parsed.spans,
+                                                            selection: NSRange(location: caret, length: 0),
+                                                            lineRange: line)
+                for (index, span) in parsed.spans.enumerated() {
+                    for marker in span.markers where NSLocationInRange(caret, marker) {
+                        XCTAssertTrue(revealed.contains(index),
+                                      "\(name), position \(caret) : dans un marqueur masqué de \(span.kind)")
+                    }
+                }
+            }
+        }
+    }
+
     /// Aucune position du document ne doit faire planter le parcours : c'est le
     /// test qui attrape les erreurs de conversion de plages sur les cas que
     /// personne n'a prévus.
