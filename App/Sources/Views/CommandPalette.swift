@@ -151,7 +151,9 @@ final class CommandPalette: NSPanel {
     ///
     /// Les correspondances **en début de mot** valent plus : chercher « mf »
     /// doit remonter « Mode focus » avant « Rechercher un format ».
-    static func score(_ text: String, query: String) -> Int? {
+    /// `nonisolated` parce qu'elle est pure : elle ne touche ni à la vue ni à
+    /// AppKit, et le menu slash s'en sert depuis la couche sans interface.
+    nonisolated static func score(_ text: String, query: String) -> Int? {
         let haystack = Array(text.lowercased())
         let needle = Array(query.lowercased().filter { !$0.isWhitespace })
         guard !needle.isEmpty else { return 0 }

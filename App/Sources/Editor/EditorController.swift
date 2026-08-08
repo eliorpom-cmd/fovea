@@ -42,6 +42,10 @@ final class EditorController: NSObject {
     /// Mode source (§4.2) : le même tampon, sans la couche de style.
     private(set) var isSourceMode = false
 
+    /// Le menu d'insertion de bloc (§4.5), et ce qui l'a déclenché.
+    private let slashMenu = SlashMenu()
+    private var slashTrigger: TypingBehaviour.SlashTrigger?
+
     /// Appelé après chaque modification du texte, pour que le document sache
     /// qu'il est sale et que la barre d'état se rafraîchisse.
     var onTextChanged: (() -> Void)?
@@ -80,6 +84,13 @@ final class EditorController: NSObject {
         textView.handlesIndent = { [weak self] outdent in
             guard let self, AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
+        }
+
+        textView.handlesMenuKey = { [weak self] key in
+            self?.handleSlashMenuKey(key) ?? false
+        }
+        slashMenu.onChoose = { [weak self] command in
+            self?.insertBlock(command)
         }
 
         NotificationCenter.default.addObserver(
@@ -476,6 +487,64 @@ final class EditorController: NSObject {
         span.markers.filter { $0.location < span.content.location }.reduce(0) { $0 + $1.length }
     }
 
+    // MARK: - Menu slash (§4.5)
+
+    /// Ouvre, met à jour ou referme le menu selon ce qui vient d'être tapé.
+    ///
+    /// Appelé après chaque frappe **et** chaque déplacement du curseur : sortir
+    /// de la ligne doit refermer le menu aussi sûrement qu'effacer le `/`.
+    private func refreshSlashMenu() {
+        let selection = textView.selectedRange()
+        guard AppSettings.shared.slashMenuEnabled, !isSourceMode, selection.length == 0,
+              textView.window?.isKeyWindow == true,
+              let storage = textView.textStorage
+        else {
+            slashTrigger = nil
+            slashMenu.dismiss()
+            return
+        }
+
+        // `currentLineRange()` coûte la longueur d'une ligne, pas celle du
+        // document : le menu peut donc être réévalué à chaque frappe sans
+        // entamer le budget du §9.
+        let line = currentLineRange()
+        guard let trigger = TypingBehaviour.slashTrigger(
+            inLine: storage.mutableString.substring(with: line),
+            lineStart: line.location,
+            caret: selection.location)
+        else {
+            slashTrigger = nil
+            slashMenu.dismiss()
+            return
+        }
+        slashTrigger = trigger
+        // Le rectangle du curseur est demandé en coordonnées écran, que le
+        // panneau attend telles quelles.
+        let caretRect = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
+        if !slashMenu.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
+            slashTrigger = nil
+        }
+    }
+
+    private func handleSlashMenuKey(_ key: EditorTextView.MenuKey) -> Bool {
+        guard slashMenu.isOpen else { return false }
+        switch key {
+        case .up: slashMenu.moveSelection(by: -1)
+        case .down: slashMenu.moveSelection(by: 1)
+        case .confirm: slashMenu.confirmSelection()
+        case .cancel:
+            slashTrigger = nil
+            slashMenu.dismiss()
+        }
+        return true
+    }
+
+    private func insertBlock(_ command: SlashCommand) {
+        guard let trigger = slashTrigger else { return }
+        slashTrigger = nil
+        apply(TypingBehaviour.insertion(of: command, replacing: trigger.range))
+    }
+
     // MARK: - Réactions
 
     private func handleTextChange() {
@@ -488,6 +557,7 @@ final class EditorController: NSObject {
         render(in: scope)
         applyFocus()
         applyTypewriterScrolling()
+        refreshSlashMenu()
         onTextChanged?()
     }
 
@@ -519,6 +589,7 @@ extension EditorController: NSTextViewDelegate {
         updateReveal()
         applyFocus()
         applyTypewriterScrolling()
+        refreshSlashMenu()
         onSelectionChanged?()
     }
 }

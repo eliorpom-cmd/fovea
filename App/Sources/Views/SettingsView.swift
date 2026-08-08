@@ -142,6 +142,12 @@ private struct EditingSettings: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
+                Toggle("Menu d'insertion sur « / »", isOn: $settings.slashMenuEnabled)
+                Text("Un « / » en début de ligne vide propose les blocs : titre, liste, "
+                     + "citation, code, tableau, filet.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 LabeledContent("Dossier des images") {
                     TextField("", text: $settings.assetsFolderName)
                         .labelsHidden()

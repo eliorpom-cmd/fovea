@@ -54,6 +54,15 @@ final class EditorTextView: NSTextView {
     var handlesNewline: (() -> Bool)?
     var handlesIndent: ((_ outdent: Bool) -> Bool)?
 
+    /// Les touches que le menu slash intercepte quand il est ouvert (§4.5).
+    enum MenuKey { case up, down, confirm, cancel }
+
+    /// Renvoie `true` si le menu slash a pris la touche. Il ne devient jamais
+    /// fenêtre clé — c'est ce qui permet de continuer à taper dans le texte
+    /// pendant qu'il filtre — donc c'est la vue de texte qui reçoit les flèches
+    /// et les lui transmet.
+    var handlesMenuKey: ((MenuKey) -> Bool)?
+
     // MARK: - Construction
 
     static func make() -> EditorTextView {
@@ -139,6 +148,23 @@ final class EditorTextView: NSTextView {
             return
         }
         super.deleteBackward(sender)
+    }
+
+    // MARK: - Menu slash
+
+    /// Les touches de navigation sont détournées **avant** l'interprétation
+    /// habituelle : `⏎` doit valider l'entrée choisie, pas insérer un saut de
+    /// ligne, et `⎋` doit refermer le menu sans rien faire d'autre.
+    override func keyDown(with event: NSEvent) {
+        let key: MenuKey? = switch event.keyCode {
+        case 126: .up
+        case 125: .down
+        case 36, 76: .confirm
+        case 53: .cancel
+        default: nil
+        }
+        if let key, handlesMenuKey?(key) == true { return }
+        super.keyDown(with: event)
     }
 
     // MARK: - Listes
