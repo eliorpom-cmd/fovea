@@ -43,6 +43,10 @@ targets:
     platform: macOS
     sources:
       - path: App/Sources
+      # L'icône, produite par scripts/icon.sh. Sans ce chemin, le .icns ne
+      # serait pas copié dans le bundle et le Finder afficherait l'icône
+      # générique.
+      - path: App/Resources
     dependencies:
       - package: Markdown
     settings:

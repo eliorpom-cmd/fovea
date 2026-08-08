@@ -14,7 +14,11 @@
 	<string>Fovea</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<key>CFBundleIconName</key>
+	<!-- CFBundleIconFile et non CFBundleIconName : le second attend un
+	     catalogue d'assets, alors que l'icône de Fovea est un .icns produit
+	     par scripts/icon.sh — du code relisible dans un diff plutôt qu'un
+	     binaire opaque déposé dans le dépôt. -->
+	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
