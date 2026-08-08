@@ -274,10 +274,12 @@ final class TableEditingInTheEditorTests: XCTestCase {
         XCTAssertEqual(controller.textView.selectedRange(), table.rows[1].cells[1].content)
     }
 
-    /// `⏎` sur la dernière ligne ajoute une ligne — et le document doit rester
-    /// un tableau valide après coup, sans quoi la grille disparaîtrait sous les
-    /// doigts de l'utilisateur.
-    func testReturnOnTheLastRowAppendsARowThatParsesBack() throws {
+    /// `⏎` sur la dernière ligne **sort du tableau**.
+    ///
+    /// C'est `⇥` qui ajoute une ligne. Si `⏎` le faisait aussi, il n'existerait
+    /// aucun moyen de quitter un tableau par la touche qu'on essaie en premier :
+    /// chaque tentative de sortie en aurait ajouté une.
+    func testReturnOnTheLastRowLeavesTheTable() throws {
         let controller = editor()
         let table = try grid(controller)
         let last = try XCTUnwrap(table.rows.last?.cells.first?.content)
@@ -285,10 +287,23 @@ final class TableEditingInTheEditorTests: XCTestCase {
         controller.textView.setSelectedRange(NSRange(location: last.location, length: 0))
         XCTAssertTrue(controller.textView.handlesNewline?() ?? false)
 
-        let grown = try grid(controller)
-        XCTAssertEqual(grown.rows.count, table.rows.count + 1)
-        XCTAssertTrue(TableEditing.isEditable(controller.textView.selectedRange().location, in: grown),
-                      "Le curseur doit atterrir dans la cellule neuve")
+        XCTAssertEqual(controller.text, source, "Sortir ne doit rien écrire quand il y a déjà une ligne après")
+        XCTAssertGreaterThan(controller.textView.selectedRange().location, table.rows.last!.line.upperBound - 1)
+        XCTAssertNil(TableEditing.position(of: controller.textView.selectedRange().location, in: table),
+                     "Le curseur doit être hors du tableau")
+    }
+
+    /// Et quand le tableau finit le document, il faut bien lui écrire une sortie.
+    func testReturnLeavesATableThatEndsTheDocument() throws {
+        let controller = editor()
+        controller.setText("| a | b |\n|---|---|\n| c | d |")
+        let table = try grid(controller)
+        let last = try XCTUnwrap(table.rows.last?.cells.first?.content)
+
+        controller.textView.setSelectedRange(NSRange(location: last.location, length: 0))
+        XCTAssertTrue(controller.textView.handlesNewline?() ?? false)
+        XCTAssertTrue(controller.text.hasSuffix("\n\n"), "Une ligne où écrire doit apparaître")
+        XCTAssertNil(TableEditing.position(of: controller.textView.selectedRange().location, in: table))
     }
 
     /// `⌫` au début d'une cellule mangerait le `|` qui précède, donc fusionnerait

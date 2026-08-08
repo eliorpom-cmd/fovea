@@ -442,8 +442,13 @@ final class EditorController: NSObject {
         return appendRow(to: table)
     }
 
-    /// `⏎` descend d'une ligne dans la même colonne, et crée la ligne si l'on
-    /// était sur la dernière.
+    /// `⏎` descend d'une ligne dans la même colonne, et **sort du tableau**
+    /// quand on est sur la dernière.
+    ///
+    /// Sortir plutôt qu'ajouter une ligne : `⇥` ajoute déjà, et sans ça il n'y
+    /// aurait littéralement aucun moyen de quitter un tableau au clavier par la
+    /// touche qu'on essaie en premier — on en ajouterait une ligne à chaque
+    /// tentative. C'est le choix de MarkText, et il est juste.
     private func moveToRowBelow() -> Bool {
         let caret = textView.selectedRange().location
         guard !isSourceMode, let table = grid(at: caret) else { return false }
@@ -452,7 +457,24 @@ final class EditorController: NSObject {
             textView.setSelectedRange(cell)
             return true
         }
-        return appendRow(to: table)
+        return leaveTable(table)
+    }
+
+    /// Pose le curseur sous le tableau, en créant la ligne vide qui manque.
+    private func leaveTable(_ table: MarkdownTable) -> Bool {
+        guard let storage = textView.textStorage, let last = table.rows.last else { return false }
+        let end = min(last.line.upperBound, storage.length)
+
+        // Un tableau en fin de document n'a pas de ligne où aller : on en écrit
+        // une, sinon la touche ne ferait rien et l'utilisateur serait enfermé.
+        guard end < storage.length else {
+            return apply(TypingBehaviour.Edit(range: NSRange(location: end, length: 0),
+                                              replacement: "\n\n",
+                                              caret: end + 2,
+                                              undoName: "Sortir du tableau"))
+        }
+        textView.setSelectedRange(NSRange(location: end + 1, length: 0))
+        return true
     }
 
     private func appendRow(to table: MarkdownTable) -> Bool {
