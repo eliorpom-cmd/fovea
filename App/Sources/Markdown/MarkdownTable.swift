@@ -53,6 +53,14 @@ struct MarkdownTable: Equatable, Sendable {
     /// La ligne `|---|:--:|`. Elle ne porte aucun contenu : entièrement masquée
     /// en lecture, elle laisse la place au filet d'en-tête.
     var delimiter: NSRange
+    /// Les plages des `---` de cette ligne, une par colonne.
+    ///
+    /// Elles ne se rendent jamais. Elles servent à **la navigation** : la ligne
+    /// est invisible mais reste une ligne, donc une flèche vers le bas y tombe.
+    /// Savoir dans quelle colonne elle est tombée permet de la faire ressortir
+    /// dans la même colonne de la ligne suivante, au lieu de la renvoyer au
+    /// début du tableau. Voir `TableEditing`.
+    var delimiterCells: [NSRange]
     /// L'en-tête puis le corps. La ligne de délimitation n'en fait pas partie.
     var rows: [Row]
     var alignments: [Alignment]
@@ -92,6 +100,7 @@ struct MarkdownTable: Equatable, Sendable {
         }
         var copy = self
         copy.delimiter = move(delimiter)
+        copy.delimiterCells = delimiterCells.map(move)
         copy.rows = rows.map { row in
             var moved = row
             moved.line = move(row.line)
@@ -131,6 +140,7 @@ struct MarkdownTable: Equatable, Sendable {
         }
 
         return MarkdownTable(delimiter: lines[1],
+                             delimiterCells: parsed[1].cells.map(\.content),
                              rows: content,
                              alignments: alignments,
                              columnWidths: widths)

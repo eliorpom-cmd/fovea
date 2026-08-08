@@ -75,10 +75,12 @@ de reformater ce que vous n'avez pas édité.
 - Plan du document (`⌘⌥0`) : toute la structure, hiérarchisée, cliquable
 - Palette de commandes (`⌘K`) : les commandes **et** les titres du document
   dans la même liste, filtrés par sous-séquence — « mdf » trouve « Mode focus »
-- **Tableaux en grille** : colonnes alignées, alignements `:--`/`:-:`/`--:`
-  respectés, en-tête en gras, filets discrets. Le curseur entre dans le tableau
-  et la source à pipes réapparaît. Un tableau malformé, ou trop large pour la
-  colonne, reste affiché tel qu'il est écrit
+- **Tableaux éditables en place** : colonnes alignées, alignements
+  `:--`/`:-:`/`--:` respectés, en-tête en gras, filets discrets. **On écrit dans
+  la grille sans jamais voir les `|`** : `⇥` passe à la cellule suivante et
+  sélectionne son contenu, `⏎` descend d'une ligne et en crée une au bout, `⌫`
+  au début d'une cellule recule au lieu de casser la colonne. Un tableau
+  malformé, ou trop large pour la colonne, reste affiché tel qu'il est écrit
 - **Menu slash** : un `/` qui commence un mot propose les blocs — titre, liste,
   tâche, citation, code, tableau, filet — et **affiche la syntaxe qu'il pose**.
   Indispensable quand les marqueurs sont cachés. Collé à un caractère il ne fait

@@ -18,7 +18,12 @@ final class EditorTextView: NSTextView {
     /// Les marques dessinées derrière le texte : puces, barres de citation,
     /// filets, fonds de blocs de code. Voir `EditorDecoration`.
     var decorations: [EditorDecoration] = [] {
-        didSet { needsDisplay = true }
+        didSet {
+            needsDisplay = true
+            // Les cases à cocher posent des zones de pointeur : elles bougent
+            // dès que le texte change, donc AppKit doit les redemander.
+            window?.invalidateCursorRects(for: self)
+        }
     }
 
     var typography: EditorTypography = .default
@@ -172,6 +177,20 @@ final class EditorTextView: NSTextView {
                          width: size.width, height: size.height)
         guard box.intersects(rect) else { return }
         (hint as NSString).draw(in: box, withAttributes: attributes)
+    }
+
+    /// Le pointeur devient une main au-dessus d'une case à cocher.
+    ///
+    /// Sans ça, la case est cliquable sans que rien ne le dise : dans un
+    /// éditeur, tout le reste de la surface est du texte où le pointeur reste
+    /// en I, et une zone qui répond au clic sans le montrer ne se découvre que
+    /// par accident.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for target in DecorationPainter(typography: typography, documentURL: documentURL)
+            .checkboxTargets(among: decorations, in: self) {
+            addCursorRect(target.box, cursor: .pointingHand)
+        }
     }
 
     // MARK: - Suppression intelligente

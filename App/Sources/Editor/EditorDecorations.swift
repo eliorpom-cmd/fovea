@@ -88,7 +88,9 @@ extension EditorDecoration {
         for (index, span) in spans.enumerated() {
             let isRevealed = revealed.contains(index)
             switch span.kind {
-            case .table(let table?) where !isRevealed:
+            // Les filets ne s'effacent plus sous le curseur : la grille non plus.
+            // On écrit dedans, elle doit donc rester cadrée pendant qu'on écrit.
+            case .table(let table?):
                 decorations.append(contentsOf: rules(for: table, typography: typography))
             case .blockQuote:
                 decorations.append(EditorDecoration(kind: .quoteBar,
@@ -229,10 +231,19 @@ struct DecorationPainter {
         case .quoteBar:
             // Le texte est retiré de `indent` ; la barre se pose au tiers de
             // cet espace, ce qui lui laisse de l'air des deux côtés.
+            //
+            // **La hauteur n'est pas celle du cadre.** Avec un interlignage
+            // supérieur à 1, TextKit ajoute tout son surplus **au-dessus** du
+            // texte : le rectangle d'une ligne commence donc bien plus haut que
+            // la première lettre, et la barre dépassait d'autant — très visible
+            // sur une citation d'une seule ligne, où il n'y a rien pour
+            // rattraper l'œil. On retire ce surplus en haut ; en bas, le cadre
+            // s'arrête déjà sur le jambage.
+            let leading = max(0, typography.lineHeight - (typography.body.ascender - typography.body.descender))
             let bar = NSRect(x: frame.minX - decoration.indent + (decoration.indent - 2) / 3,
-                             y: frame.minY,
+                             y: frame.minY + leading,
                              width: 2,
-                             height: frame.height)
+                             height: max(1, frame.height - leading))
             Theme.NS.quoteBar.setFill()
             NSBezierPath(roundedRect: bar, xRadius: 1, yRadius: 1).fill()
 
@@ -416,24 +427,32 @@ struct DecorationPainter {
                       width: side, height: side)
     }
 
-    /// La tâche dont la case se trouve sous ce point, en coordonnées de la vue.
+    /// Les cases à cocher affichées, avec la plage de la tâche qu'elles portent.
     ///
     /// La zone sensible est élargie de quelques points autour du dessin : une
     /// case fait treize points de côté à la taille par défaut, et viser
-    /// treize points à la souris n'est pas une expérience qu'on inflige.
-    func task(at point: NSPoint, among decorations: [EditorDecoration],
-              in view: NSTextView) -> NSRange? {
-        guard let layout = view.textLayoutManager, let content = view.textContentStorage else { return nil }
+    /// treize points à la souris n'est pas une expérience qu'on inflige. Elle
+    /// sert au clic **et** au pointeur, qui doivent répondre exactement à la
+    /// même surface — un pointeur qui change sans que le clic ne fasse rien est
+    /// pire que pas de pointeur du tout.
+    func checkboxTargets(among decorations: [EditorDecoration],
+                         in view: NSTextView) -> [(range: NSRange, box: NSRect)] {
+        guard let layout = view.textLayoutManager, let content = view.textContentStorage else { return [] }
         let origin = view.textContainerOrigin
 
-        for decoration in decorations {
+        return decorations.compactMap { decoration in
             guard case .checkbox = decoration.kind,
                   let frame = boundingFrame(of: decoration.range, layout: layout, content: content)
-            else { continue }
+            else { return nil }
             let box = checkboxBox(at: frame.offsetBy(dx: origin.x, dy: origin.y))
-            if box.insetBy(dx: -5, dy: -5).contains(point) { return decoration.range }
+            return (decoration.range, box.insetBy(dx: -5, dy: -5))
         }
-        return nil
+    }
+
+    /// La tâche dont la case se trouve sous ce point, en coordonnées de la vue.
+    func task(at point: NSPoint, among decorations: [EditorDecoration],
+              in view: NSTextView) -> NSRange? {
+        checkboxTargets(among: decorations, in: view).first { $0.box.contains(point) }?.range
     }
 
     /// Rectangle englobant d'une plage, en coordonnées du conteneur de texte.

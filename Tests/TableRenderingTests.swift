@@ -100,15 +100,22 @@ final class TableRenderingTests: XCTestCase {
         XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "« a » est du contenu")
     }
 
-    func testTheSourceComesBackWhenTheCaretEntersTheTable() throws {
-        // Le repli du §2.6 : sous le curseur, on retombe sur du markdown à
-        // pipes. C'est ce qui rend le tableau modifiable sans éditeur imbriqué.
+    /// **La grille ne se replie plus sous le curseur.**
+    ///
+    /// C'était le repli du §2.6 : le curseur entrait, `| a | b |` réapparaissait,
+    /// on éditait la source. Honnête, mais cela revient à demander de connaître
+    /// la syntaxe d'un tableau markdown pour changer une cellule — c'est-à-dire
+    /// exactement ce que l'app promet d'éviter, et ce que personne ne fait à la
+    /// main. On écrit maintenant dans la grille ; `TableEditing` s'occupe des
+    /// positions de curseur que plus rien n'affiche.
+    func testTheGridStaysWhenTheCaretEntersTheTable() throws {
         let source = "| a | b |\n|---|---|\n| c | d |"
         let view = try render(source, caret: 2)
         let storage = try XCTUnwrap(view.textStorage)
 
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 0), "Le `|` doit réapparaître")
-        XCTAssertNotNil(storage.attribute(.foveaRevealed, at: 0, effectiveRange: nil))
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: 0), "Le `|` doit rester masqué")
+        XCTAssertNil(storage.attribute(.foveaRevealed, at: 0, effectiveRange: nil))
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "…et « a » rester du contenu")
     }
 
     func testTheDelimiterLineIsShorterThanARow() throws {

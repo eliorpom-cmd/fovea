@@ -75,14 +75,21 @@ final class EditorController: NSObject {
         textView.delegate = self
         textView.textStorage?.delegate = self
         textView.handlesDeleteBackward = { [weak self] selection in
-            self?.deleteConstruct(at: selection) ?? false
+            guard let self else { return false }
+            return stepBackInsteadOfBreakingTheGrid(at: selection) || deleteConstruct(at: selection)
         }
         textView.handlesNewline = { [weak self] in
-            guard let self, AppSettings.shared.markdownShortcutsWhileTyping else { return false }
+            guard let self else { return false }
+            // Le tableau d'abord : dedans, `⏎` descend d'une ligne au lieu
+            // d'insérer un retour qui couperait la grille en deux.
+            if moveToRowBelow() { return true }
+            guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.newline(in: text, selection: textView.selectedRange()))
         }
         textView.handlesIndent = { [weak self] outdent in
-            guard let self, AppSettings.shared.markdownShortcutsWhileTyping else { return false }
+            guard let self else { return false }
+            if moveBetweenCells(outdent: outdent) { return true }
+            guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
         }
 
@@ -363,6 +370,111 @@ final class EditorController: NSObject {
         scrollView.contentView.setBoundsOrigin(NSPoint(x: visible.origin.x,
                                                        y: max(0, target)))
         scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    // MARK: - Écrire dans un tableau (§2.6)
+
+    /// La dernière position connue du curseur, pour savoir dans quel sens il
+    /// allait quand il est tombé entre deux cellules.
+    private var previousCaret = 0
+    /// Empêche la correction de se rappeler elle-même : reposer la sélection
+    /// renvoie `textViewDidChangeSelection`.
+    private var isCorrectingCaret = false
+
+    /// Le tableau qui contient cette position, s'il est rendu en grille.
+    private func grid(at location: Int) -> MarkdownTable? {
+        for span in spans {
+            guard case .table(let table?) = span.kind,
+                  RevealPolicy.contains(span.range, location) else { continue }
+            return MarkdownRenderer(typography: typography).fitsAsGrid(table) ? table : nil
+        }
+        return nil
+    }
+
+    /// Ramène le curseur dans une cellule quand il est tombé dans ce que la
+    /// grille ne montre pas.
+    ///
+    /// Corriger **après** le déplacement plutôt qu'intercepter chaque commande :
+    /// il y en a une trentaine avec leurs variantes, et il en manquerait une.
+    /// Ici, tout ce qui bouge le curseur passe par le même point — flèches,
+    /// clic, `⌘↓`, dictée, recherche.
+    private func correctCaretInsideTable() {
+        guard !isSourceMode, !isCorrectingCaret else { return }
+        let selection = textView.selectedRange()
+        // Une sélection est un geste en cours : on ne la déplace pas sous la
+        // main de l'utilisateur.
+        guard selection.length == 0, let table = grid(at: selection.location) else {
+            previousCaret = selection.location
+            return
+        }
+
+        let forward = selection.location >= previousCaret
+        previousCaret = selection.location
+        guard let corrected = TableEditing.correctedCaret(selection.location, in: table, forward: forward),
+              corrected != selection.location
+        else { return }
+
+        isCorrectingCaret = true
+        textView.setSelectedRange(NSRange(location: corrected, length: 0))
+        previousCaret = corrected
+        isCorrectingCaret = false
+    }
+
+    /// `⇥` passe à la cellule suivante et **sélectionne son contenu**, comme
+    /// dans un tableur : on remplace en tapant. Au-delà de la dernière, une
+    /// ligne est ajoutée.
+    private func moveBetweenCells(outdent: Bool) -> Bool {
+        let caret = textView.selectedRange().location
+        guard !isSourceMode, let table = grid(at: caret) else { return false }
+
+        if let cell = TableEditing.neighbouringCell(from: caret, in: table, forward: !outdent) {
+            textView.setSelectedRange(cell)
+            return true
+        }
+        // Reculer depuis la première cellule ne fait rien ; avancer depuis la
+        // dernière ajoute une ligne, qui est ce qu'on voulait en arrivant là.
+        guard !outdent else { return true }
+        return appendRow(to: table)
+    }
+
+    /// `⏎` descend d'une ligne dans la même colonne, et crée la ligne si l'on
+    /// était sur la dernière.
+    private func moveToRowBelow() -> Bool {
+        let caret = textView.selectedRange().location
+        guard !isSourceMode, let table = grid(at: caret) else { return false }
+
+        if let cell = TableEditing.cellBelow(caret, in: table) {
+            textView.setSelectedRange(cell)
+            return true
+        }
+        return appendRow(to: table)
+    }
+
+    private func appendRow(to table: MarkdownTable) -> Bool {
+        guard let last = table.rows.last,
+              let row = TableEditing.newRow(below: table.rows.count - 1, in: table)
+        else { return false }
+        return apply(TypingBehaviour.Edit(range: NSRange(location: last.line.upperBound, length: 0),
+                                          replacement: row.text,
+                                          caret: last.line.upperBound + row.caret,
+                                          undoName: "Ajouter une ligne"))
+    }
+
+    /// `⌫` au début d'une cellule ne supprime rien : il recule d'une cellule.
+    ///
+    /// Le caractère qui précède est un `|` que personne ne voit ; l'effacer
+    /// fusionnerait deux colonnes sans que rien ne l'ait demandé, et le tableau
+    /// entier se réécrirait sous les yeux de l'utilisateur.
+    private func stepBackInsteadOfBreakingTheGrid(at selection: NSRange) -> Bool {
+        guard !isSourceMode, selection.length == 0,
+              let table = grid(at: selection.location),
+              TableEditing.isAtCellStart(selection.location, in: table)
+        else { return false }
+
+        if let previous = TableEditing.neighbouringCell(from: selection.location, in: table, forward: false) {
+            textView.setSelectedRange(NSRange(location: previous.upperBound, length: 0))
+        }
+        return true
     }
 
     /// Le loquet de la portée ligne : voir `RevealPolicy`. On retient le début
@@ -681,6 +793,10 @@ extension EditorController: NSTextViewDelegate {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
+        // Avant tout le reste : le curseur doit être quelque part où l'on peut
+        // écrire, sans quoi le rendu se calculerait pour une position qui
+        // n'existe pas à l'écran.
+        correctCaretInsideTable()
         updateReveal()
         applyFocus()
         applyTypewriterScrolling()

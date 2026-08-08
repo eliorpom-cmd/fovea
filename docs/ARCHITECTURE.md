@@ -182,6 +182,41 @@ blancs de remplissage de la source passent à zéro : c'est la grille qui espace
 plus l'auteur. La ligne `|---|` est masquée entière et sa hauteur réduite à la
 place d'un filet, que `DecorationPainter` y trace.
 
+**Puis le repli est tombé, et c'est l'usage qui l'a fait tomber.** « Source à
+l'édition » veut dire : pour changer une cellule, il faut savoir écrire un
+tableau markdown. C'est exactement ce que l'app promet d'éviter, et personne
+n'écrit un tableau à la main. La grille **ne se replie plus** : on écrit dedans,
+les `|` ne réapparaissent jamais.
+
+Ce que ça coûte est précis, et c'est `TableEditing` qui le paie. Le §2.3 démontre
+que le curseur ne peut jamais tomber dans un marqueur masqué — mais la
+démonstration repose sur le fait qu'une construction se révèle quand on la
+touche. Une grille qui ne se replie jamais sort de ce raisonnement : le tampon
+contient des `|`, des blancs de remplissage et une ligne `|---|` que plus rien
+ne montrera.
+
+La réponse n'est pas d'intercepter les commandes de déplacement — il y en a une
+trentaine avec leurs variantes de sélection, et un jour l'une manquerait. C'est
+de **corriger le curseur après coup**, en un seul point
+(`textViewDidChangeSelection`) : quel que soit le geste — flèche, clic, `⌘↓`,
+dictée, recherche —, s'il atterrit hors d'une cellule il est ramené dans la plus
+proche, dans le sens où il allait. Une sélection, elle, n'est jamais corrigée :
+c'est un geste en cours.
+
+Deux détails qui font la différence à l'usage :
+
+- **La ligne `|---|` garde la colonne.** Elle est invisible mais reste une
+  ligne, donc une flèche vers le bas y tombe. `MarkdownTable` retient la plage
+  de chaque `---` pour savoir dans quelle colonne on est entré et ressortir dans
+  la même, une ligne plus bas — sinon la colonne qu'on suivait des yeux serait
+  perdue à chaque traversée.
+- **`⌫` au début d'une cellule ne supprime rien**, il recule d'une cellule. Le
+  caractère qui précède est un `|` que personne ne voit ; l'effacer fusionnerait
+  deux colonnes et réécrirait le tableau entier sous les yeux de l'utilisateur.
+
+`TableEditingTests` vérifie l'invariant sur **toutes** les positions d'un tableau
+réel, ce qu'aucune interception ne saurait démontrer.
+
 Trois choses valent d'être sues :
 
 - **Les largeurs sont mesurées, pas comptées.** `**Titre**` rend six signes de

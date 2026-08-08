@@ -217,10 +217,17 @@ struct MarkdownRenderer {
         let advance = ("0" as NSString).size(withAttributes: [.font: font]).width
         guard advance > 0 else { return }
 
-        // Un tableau plus large que la colonne de texte se replierait ligne à
-        // ligne, et une grille repliée ne se lit plus du tout. On renonce alors
-        // à la grille et on montre la source, comme pour un tableau malformé.
-        guard fitsAsGrid(table), !revealed else {
+        // **La grille ne se replie plus sous le curseur.** Elle le faisait —
+        // c'était le repli du §2.6 — et cela revenait à demander de connaître la
+        // syntaxe d'un tableau markdown pour modifier une cellule, c'est-à-dire
+        // précisément ce que l'app promet d'éviter. On écrit maintenant dans la
+        // grille ; `TableEditing` s'occupe des positions de curseur que plus
+        // rien n'affiche.
+        //
+        // Le repli reste pour ce qu'on ne sait pas dessiner : un tableau
+        // malformé, et un tableau plus large que la colonne — qui se replierait
+        // ligne à ligne, et une grille repliée ne se lit plus du tout.
+        guard fitsAsGrid(table) else {
             showTableSource(storage, table: table, font: font)
             return
         }
