@@ -248,13 +248,11 @@ extension DocumentWindowController: NSMenuItemValidation {
         }
 
         // « Réduire les animations » est un besoin, pas une préférence (§8) :
-        // le panneau s'ouvre quand même, il ne glisse simplement pas.
-        let reduced = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = reduced ? 0 : 0.2
-            context.allowsImplicitAnimation = true
+        // le panneau s'ouvre quand même, il ne glisse simplement pas. Le
+        // réglage est lu par `Accessibility`, seul point d'entrée.
+        Accessibility.animate(0.2) {
             window?.contentView?.layoutSubtreeIfNeeded()
-        } completionHandler: {
+        } completion: {
             // Le bloc de fin est appelé par AppKit sans isolement déclaré, mais
             // toujours sur le thread principal — c'est lui qui anime.
             MainActor.assumeIsolated { [weak self] in self?.editor.applyColumnLayout() }

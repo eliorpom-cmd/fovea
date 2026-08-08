@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // doit exister avant qu'AppKit ne restaure les fenêtres.
         _ = NSDocumentController.shared
 
+        // Les polices apportées par l'utilisateur (§4.7) sont enregistrées en
+        // portée `.process` : elles n'existent que pendant que Fovea tourne, ce
+        // qui impose de recommencer à chaque lancement — et avant que la
+        // première fenêtre ne réclame une fonte.
+        FontLibrary.registerAll()
+
         // La proposition attend que l'app soit posée : affichée avant que la
         // première fenêtre existe, l'alerte apparaîtrait devant un écran vide.
         Task { @MainActor in DefaultHandler.offerOnceIfNeeded() }

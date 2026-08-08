@@ -132,6 +132,11 @@ extension OutlinePanel: NSTableViewDataSource, NSTableViewDelegate {
         label.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
+        // §8 : le niveau se lit au retrait et à la graisse, deux choses qu'un
+        // lecteur d'écran ne voit pas. Il faut donc le dire.
+        container.setAccessibilityElement(true)
+        container.setAccessibilityRole(.staticText)
+        container.setAccessibilityLabel("Titre, niveau \(item.level), \(item.title)")
         container.addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor,

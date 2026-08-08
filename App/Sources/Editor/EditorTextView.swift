@@ -344,7 +344,7 @@ private final class FocusOverlayView: NSView {
         guard let union else { return }
         let active = union.offsetBy(dx: owner.textContainerOrigin.x, dy: owner.textContainerOrigin.y)
 
-        Theme.NS.window.withAlphaComponent(0.74).setFill()
+        Theme.NS.window.withAlphaComponent(Accessibility.focusVeilOpacity).setFill()
         NSRect(x: bounds.minX, y: bounds.minY,
                width: bounds.width, height: max(0, active.minY - bounds.minY))
             .intersection(dirtyRect).fill()

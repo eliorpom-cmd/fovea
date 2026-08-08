@@ -179,6 +179,11 @@ extension SlashMenu: NSTableViewDataSource, NSTableViewDelegate {
         stack.orientation = .horizontal
         stack.spacing = Theme.Space.s12
         stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.Space.s12, bottom: 0, right: Theme.Space.s12)
+        // La syntaxe affichée à droite ne s'énonce pas : « dièse dièse » n'aide
+        // personne à l'oral. Seul le nom du bloc est lu.
+        stack.setAccessibilityElement(true)
+        stack.setAccessibilityRole(.staticText)
+        stack.setAccessibilityLabel(command.title)
         return stack
     }
 }

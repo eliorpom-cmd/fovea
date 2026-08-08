@@ -36,6 +36,10 @@ struct SettingsView: View {
 
 private struct AppearanceSettings: View {
     @Bindable var settings: AppSettings
+    /// Incrémenté à chaque import ou retrait, pour que les listes se
+    /// reconstruisent : la bibliothèque vit sur le disque, pas dans un modèle
+    /// observable.
+    @State private var fontLibraryVersion = 0
 
     var body: some View {
         Form {
@@ -47,8 +51,10 @@ private struct AppearanceSettings: View {
             }
 
             Section("Texte") {
-                FontPicker(title: "Police du corps", selection: $settings.bodyFontName, monospaced: false)
-                FontPicker(title: "Police du code", selection: $settings.monoFontName, monospaced: true)
+                FontPicker(title: "Police du corps", selection: $settings.bodyFontName,
+                           monospaced: false, libraryVersion: fontLibraryVersion)
+                FontPicker(title: "Police du code", selection: $settings.monoFontName,
+                           monospaced: true, libraryVersion: fontLibraryVersion)
 
                 // Une taille en points ne dit rien à personne ; ce qu'on juge,
                 // c'est le résultat. Le pas de 1 pt suffit — un demi-point ne
@@ -87,6 +93,10 @@ private struct AppearanceSettings: View {
                     }
                 }
             }
+
+            FontLibrarySection(version: $fontLibraryVersion,
+                               bodyFontName: $settings.bodyFontName,
+                               monoFontName: $settings.monoFontName)
 
             Section("Blocs de code") {
                 Toggle("Coloration en couleurs", isOn: $settings.colorfulCodeBlocks)
@@ -221,32 +231,123 @@ private struct AboutSettings: View {
 /// La liste complète des polices installées compte des centaines d'entrées,
 /// dont les dingbats et les alphabets non latins. On ne montre que les familles
 /// **lisibles pour du texte suivi**, et pour le code, que les chasses fixes.
+///
+/// Les polices apportées par l'utilisateur (§4.7) sont présentées **en tête**,
+/// avant les installées : quelqu'un qui prend la peine d'en déposer une la
+/// cherchera en premier, pas au milieu de trois cents familles système.
 private struct FontPicker: View {
     let title: String
     @Binding var selection: String?
     let monospaced: Bool
+    /// Change quand une police est importée ou retirée, pour reconstruire la
+    /// liste sans relancer l'app.
+    var libraryVersion: Int = 0
 
     var body: some View {
         Picker(title, selection: $selection) {
             Text(monospaced ? "SF Mono (système)" : "SF Pro (système)").tag(String?.none)
+            if !imported.isEmpty {
+                Divider()
+                ForEach(imported, id: \.self) { family in
+                    Text(family).tag(String?.some(family))
+                }
+            }
             Divider()
-            ForEach(families, id: \.self) { family in
+            ForEach(installed, id: \.self) { family in
                 Text(family).tag(String?.some(family))
+            }
+        }
+        .id(libraryVersion)
+    }
+
+    private var imported: [String] {
+        FontLibrary.importedFamilies().filter(isSuitable)
+    }
+
+    private var installed: [String] {
+        let added = Set(imported)
+        return NSFontManager.shared.availableFontFamilies
+            .filter { !added.contains($0) && isSuitable($0) }
+            .sorted()
+    }
+
+    private func isSuitable(_ family: String) -> Bool {
+        // Les familles à nom préfixé d'un point sont internes au système ; les
+        // proposer n'apporterait que de la confusion.
+        guard !family.hasPrefix(".") else { return false }
+        guard let font = NSFont(name: family, size: 12) else { return false }
+        return monospaced ? font.isFixedPitch : true
+    }
+}
+
+// MARK: - Bibliothèque de polices
+
+/// Déposer un fichier `.otf` ou `.ttf`, et le retirer.
+///
+/// Le retrait est offert ici parce que la portée `.process` le rend
+/// **réversible sans trace** : la police n'a jamais été installée dans le
+/// système, la retirer est supprimer un fichier. C'est ce qui permet d'essayer
+/// une police sans conséquence.
+private struct FontLibrarySection: View {
+    @Binding var version: Int
+    @Binding var bodyFontName: String?
+    @Binding var monoFontName: String?
+    @State private var failure: String?
+
+    var body: some View {
+        Section("Vos polices") {
+            let families = FontLibrary.importedFamilies()
+            if families.isEmpty {
+                Text("Aucune police importée. Les fichiers déposés ici ne sont "
+                     + "disponibles que dans Fovea : votre système n'est pas touché.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(families, id: \.self) { family in
+                    HStack {
+                        Text(family)
+                        Spacer()
+                        Button("Retirer") { remove(family) }
+                            .buttonStyle(.link)
+                    }
+                }
+            }
+
+            Button("Importer une police…") { pick() }
+
+            if let failure {
+                Text(failure)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
-    private var families: [String] {
-        let manager = NSFontManager.shared
-        return manager.availableFontFamilies
-            .filter { family in
-                // Les familles à nom préfixé d'un point sont internes au
-                // système ; les proposer n'apporterait que de la confusion.
-                guard !family.hasPrefix(".") else { return false }
-                guard let font = NSFont(name: family, size: 12) else { return false }
-                return monospaced ? font.isFixedPitch : true
+    private func pick() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = FontLibrary.acceptedContentTypes
+        panel.allowsMultipleSelection = true
+        panel.message = "Les polices sont copiées dans Fovea, pas installées dans le système."
+        guard panel.runModal() == .OK else { return }
+
+        failure = nil
+        for url in panel.urls {
+            do {
+                try FontLibrary.importFont(at: url)
+            } catch {
+                failure = error.localizedDescription
             }
-            .sorted()
+        }
+        version += 1
+    }
+
+    private func remove(_ family: String) {
+        // Une police retirée ne doit pas rester sélectionnée : le texte
+        // retomberait sur la police système sans que le réglage le dise.
+        if bodyFontName == family { bodyFontName = nil }
+        if monoFontName == family { monoFontName = nil }
+        FontLibrary.remove(family: family)
+        version += 1
     }
 }
 

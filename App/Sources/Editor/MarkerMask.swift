@@ -45,6 +45,12 @@ extension NSAttributedString.Key {
 ///
 /// Voir `RevealPolicy` pour la démonstration, et `MarkerMaskTests` pour la
 /// vérification exhaustive sur un document réel.
+///
+/// `@MainActor` parce que le masquage résout des `NSFont` et lit les réglages
+/// d'accessibilité du système : AppKit n'est pas thread-safe, et cette couche
+/// n'est de toute façon appelée que depuis le rendu, lui-même sur le thread
+/// principal.
+@MainActor
 enum MarkerMask {
 
     /// Pas zéro : `NSFont` accepte 0 mais TextKit produit alors des métriques
@@ -120,7 +126,10 @@ enum MarkerMask {
         guard range.length > 0 else { return }
         storage.addAttributes([
             .font: font,
-            .foregroundColor: Theme.NS.labelTertiary,
+            // §8 : sous le seuil AA, et assumé — ce sont des repères, pas du
+            // contenu. Quand « Augmenter le contraste » est actif, l'utilisateur
+            // a dit qu'il ne voulait pas de ce compromis.
+            .foregroundColor: Accessibility.markerColor,
             .kern: 0,
             .foveaRevealed: true,
         ], range: range)

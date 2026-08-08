@@ -254,6 +254,11 @@ extension CommandPalette: NSTableViewDataSource, NSTableViewDelegate {
         stack.orientation = .horizontal
         stack.spacing = Theme.Space.s12
         stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.Space.s12, bottom: 0, right: Theme.Space.s12)
+        // Le raccourci en symboles — « ⌘⌥0 » — ne s'énonce pas ; le nom de la
+        // commande, si.
+        stack.setAccessibilityElement(true)
+        stack.setAccessibilityRole(.staticText)
+        stack.setAccessibilityLabel(entry.title)
         return stack
     }
 }
