@@ -34,22 +34,38 @@ struct EditorDecoration {
         case codeBackground
         /// Une image rendue dans le flux (§4.4).
         case image(source: String, alt: String)
-        /// Un des trois filets qui cadrent un tableau (§2.6).
-        case tableRule(TableRule)
+        /// Un des filets horizontaux d'un tableau (§2.6).
+        case tableRule(TableRule, width: CGFloat)
+        /// Les filets verticaux entre les colonnes, sur toute la hauteur du
+        /// tableau. Les abscisses viennent de `TableLayout`, celle-là même qui a
+        /// posé le crénage : les filets tombent donc exactement entre les
+        /// colonnes, et non à côté.
+        case tableColumns(x: [CGFloat], width: CGFloat)
     }
 
-    /// Où se pose un filet de tableau dans la plage qui le porte.
+    /// Où se pose un filet horizontal dans la plage qui le porte.
     ///
-    /// Trois filets et pas un de plus : un cadre complet avec ses traits
-    /// verticaux donnerait une feuille de calcul au milieu d'un texte. Les
-    /// colonnes sont déjà alignées ; ce qu'il reste à dire, c'est où le tableau
-    /// commence, où s'arrête son en-tête, et où il finit.
+    /// # Ce qui a changé, et pourquoi
+    ///
+    /// Il n'y en avait que trois — en haut, sous l'en-tête, en bas — au motif
+    /// qu'« un cadre complet avec ses traits verticaux donnerait une feuille de
+    /// calcul au milieu d'un texte ». L'intention était bonne, le résultat ne
+    /// l'était pas : sans séparation, on ne voit **pas les cellules**. Trois
+    /// colonnes alignées sans rien entre elles se lisent comme trois listes
+    /// posées côte à côte, pas comme un tableau.
+    ///
+    /// La grille est donc complète — un filet sous chaque rangée, un entre
+    /// chaque colonne — mais tracée dans la couleur des séparateurs, à 10 % :
+    /// assez pour structurer, trop peu pour faire du bruit. La discrétion se
+    /// joue sur la valeur du trait, pas sur son absence.
     enum TableRule: Equatable {
         /// Au sommet de la première ligne.
         case top
         /// Au milieu de la ligne de délimitation, dont la hauteur a été réduite
-        /// pour lui faire exactement cette place.
+        /// pour lui faire exactement cette place. Plus appuyé que les autres.
         case header
+        /// Sous une rangée de contenu.
+        case row
         /// Sous la dernière ligne.
         case bottom
     }
@@ -81,9 +97,10 @@ extension EditorDecoration {
     /// ce bloc existe autant sous le curseur qu'ailleurs.
     @MainActor
     static func build(from spans: [SyntaxSpan],
-                      text: NSString,
+                      in storage: NSTextStorage,
                       typography: EditorTypography,
                       revealed: Set<Int> = []) -> [EditorDecoration] {
+        let text = storage.mutableString
         var decorations: [EditorDecoration] = []
         for (index, span) in spans.enumerated() {
             let isRevealed = revealed.contains(index)
@@ -91,7 +108,7 @@ extension EditorDecoration {
             // Les filets ne s'effacent plus sous le curseur : la grille non plus.
             // On écrit dedans, elle doit donc rester cadrée pendant qu'on écrit.
             case .table(let table?):
-                decorations.append(contentsOf: rules(for: table, typography: typography))
+                decorations.append(contentsOf: rules(for: table, in: storage, typography: typography))
             case .blockQuote:
                 decorations.append(EditorDecoration(kind: .quoteBar,
                                                     range: span.range,
@@ -145,20 +162,38 @@ extension EditorDecoration {
         }
     }
 
-    /// Les trois filets d'un tableau, ou aucun si la grille ne tient pas dans
-    /// la colonne — auquel cas le rendu montre la source, qu'il ne faut pas
-    /// cadrer comme une grille.
+    /// La grille d'un tableau, ou rien si elle ne tient pas dans la colonne —
+    /// auquel cas le rendu montre la source, qu'il ne faut pas cadrer comme une
+    /// grille.
     @MainActor
     private static func rules(for table: MarkdownTable,
+                              in storage: NSTextStorage,
                               typography: EditorTypography) -> [EditorDecoration] {
-        guard MarkdownRenderer(typography: typography).fitsAsGrid(table),
+        guard let layout = MarkdownRenderer(typography: typography).gridLayout(for: table, in: storage),
               let first = table.rows.first, let last = table.rows.last else { return [] }
 
-        return [
-            EditorDecoration(kind: .tableRule(.top), range: first.line, indent: 0),
-            EditorDecoration(kind: .tableRule(.header), range: table.delimiter, indent: 0),
-            EditorDecoration(kind: .tableRule(.bottom), range: last.line, indent: 0),
+        let width = layout.width
+        var decorations = [
+            EditorDecoration(kind: .tableRule(.top, width: width), range: first.line, indent: 0),
+            EditorDecoration(kind: .tableRule(.header, width: width), range: table.delimiter, indent: 0),
+            EditorDecoration(kind: .tableRule(.bottom, width: width), range: last.line, indent: 0),
         ]
+
+        // Un filet sous chaque rangée, sauf la dernière — le filet du bas y est
+        // déjà, et deux traits au même endroit se voient.
+        for row in table.rows.dropFirst().dropLast() {
+            decorations.append(EditorDecoration(kind: .tableRule(.row, width: width),
+                                                range: row.line, indent: 0))
+        }
+
+        let separators = table.alignments.indices.compactMap { layout.separatorX(before: $0) }
+        if !separators.isEmpty {
+            decorations.append(EditorDecoration(kind: .tableColumns(x: separators, width: width),
+                                                range: NSRange(location: first.line.location,
+                                                               length: last.line.upperBound - first.line.location),
+                                                indent: 0))
+        }
+        return decorations
     }
 
     /// La puce d'une liste à puces est toujours `•`, quel que soit le signe
@@ -304,19 +339,28 @@ struct DecorationPainter {
         case .image(let source, let alt):
             paint(image: source, alt: alt, at: frame, columnWidth: columnWidth)
 
-        case .tableRule(let position):
-            // Le filet d'en-tête est plus appuyé que les deux bords : c'est lui
-            // qui sépare les titres des données, et c'est la seule séparation
-            // dont un tableau de prose a vraiment besoin.
+        case .tableRule(let position, let width):
+            // Le filet d'en-tête est plus appuyé que les autres : c'est lui qui
+            // sépare les titres des données, et c'est la séparation dont un
+            // tableau de prose a le plus besoin.
             let y: CGFloat = switch position {
             case .top: frame.minY
             case .header: (frame.midY - 0.5).rounded()
-            case .bottom: frame.maxY - 1
+            case .row, .bottom: frame.maxY - 1
             }
-            let span = columnSpan(inset: 0)
-            let rule = NSRect(x: span.x, y: y, width: span.width, height: 1)
+            // La largeur est celle de la **grille**, pas celle de la colonne de
+            // texte : un filet qui court jusqu'au bord droit autour d'un tableau
+            // de trois mots ne cadre rien, il souligne du vide.
+            let rule = NSRect(x: frame.minX, y: y, width: width, height: 1)
             (position == .header ? Theme.NS.labelTertiary : Theme.NS.separator).setFill()
             NSBezierPath(rect: rule).fill()
+
+        case .tableColumns(let positions, _):
+            Theme.NS.separator.setFill()
+            for x in positions {
+                NSBezierPath(rect: NSRect(x: (frame.minX + x).rounded(), y: frame.minY,
+                                          width: 1, height: frame.height)).fill()
+            }
 
         case .codeBackground:
             let padding = typography.bodySize * 0.5

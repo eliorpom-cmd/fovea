@@ -162,24 +162,20 @@ struct MarkdownRenderer {
 
     // MARK: - Tableaux (§2.6)
 
-    /// Gouttière entre deux colonnes, en signes de chasse fixe.
-    static let tableGutter = 3
-
     /// Hauteur réservée à la ligne de délimitation, en fraction du corps.
     /// Elle ne montre rien, mais elle porte le filet d'en-tête.
     static let tableRuleHeight: CGFloat = 0.7
 
     /// La grille tient-elle dans la colonne de texte ?
     ///
-    /// Le calcul se fait sur les signes de la source, pas sur le rendu : c'est
-    /// une estimation par excès — une cellule en gras rendra plus court que sa
-    /// source — mais elle a l'avantage d'être la même partout, y compris dans
-    /// la couche de décoration qui ne peut rien mesurer. Un tableau limite sera
-    /// donc laissé en source plutôt que dessiné de travers.
-    func fitsAsGrid(_ table: MarkdownTable) -> Bool {
-        let advance = ("0" as NSString).size(withAttributes: [.font: typography.codeBlock]).width
-        guard advance > 0 else { return false }
-        return CGFloat(table.totalWidth(gutter: Self.tableGutter)) * advance <= typography.columnWidth
+    /// La mesure se fait sur le **rendu**, par `TableLayout`. La version
+    /// précédente comptait les signes de la source en chasse fixe : une
+    /// estimation qui n'était juste que tant que le tableau *était* rendu en
+    /// chasse fixe, ce qui est justement ce qui lui donnait l'air d'un bloc de
+    /// code.
+    func gridLayout(for table: MarkdownTable, in storage: NSTextStorage) -> TableLayout? {
+        TableLayout.measure(table, in: storage, typography: typography,
+                            available: typography.columnWidth)
     }
 
     /// Pose — ou retire — la grille d'un tableau.
@@ -213,10 +209,6 @@ struct MarkdownRenderer {
         guard case .table(let table) = span.kind, let table,
               span.range.upperBound <= storage.length else { return }
 
-        let font = typography.codeBlock
-        let advance = ("0" as NSString).size(withAttributes: [.font: font]).width
-        guard advance > 0 else { return }
-
         // **La grille ne se replie plus sous le curseur.** Elle le faisait —
         // c'était le repli du §2.6 — et cela revenait à demander de connaître la
         // syntaxe d'un tableau markdown pour modifier une cellule, c'est-à-dire
@@ -227,11 +219,12 @@ struct MarkdownRenderer {
         // Le repli reste pour ce qu'on ne sait pas dessiner : un tableau
         // malformé, et un tableau plus large que la colonne — qui se replierait
         // ligne à ligne, et une grille repliée ne se lit plus du tout.
-        guard fitsAsGrid(table) else {
-            showTableSource(storage, table: table, font: font)
+        guard let layout = TableLayout.measure(table, in: storage, typography: typography,
+                                               available: typography.columnWidth) else {
+            showTableSource(storage, table: table, font: typography.body)
             return
         }
-        layOutTable(storage, table: table, advance: advance)
+        layOutTable(storage, table: table, layout: layout)
     }
 
     /// Le tableau tel qu'il est écrit : `|` et blancs visibles, ligne de
@@ -247,7 +240,7 @@ struct MarkdownRenderer {
         applyRowStyles(storage, table: table, clipping: false, reducedRuleLine: false)
     }
 
-    private func layOutTable(_ storage: NSTextStorage, table: MarkdownTable, advance: CGFloat) {
+    private func layOutTable(_ storage: NSTextStorage, table: MarkdownTable, layout: TableLayout) {
         // 1. Tout ce qui est syntaxe disparaît d'abord, à largeur nulle. Les
         //    avances utiles seront réécrites juste après ; celles qui ne le
         //    sont pas — un `|` de bord droit — doivent rester à zéro.
@@ -258,24 +251,12 @@ struct MarkdownRenderer {
         // 2. Hauteurs de ligne, dont celle — réduite — de la délimitation.
         applyRowStyles(storage, table: table, clipping: true, reducedRuleLine: true)
 
-        // 3. Largeur de chaque colonne, mesurée sur le rendu réel.
-        var widths = [CGFloat](repeating: 0, count: table.columnCount)
-        for row in table.rows {
-            for (column, cell) in row.cells.enumerated() where column < widths.count {
-                widths[column] = max(widths[column], measure(storage, cell.content))
-            }
-        }
-
-        // 4. Abscisse de départ de chaque colonne.
-        let gutter = CGFloat(Self.tableGutter) * advance
-        var origins: [CGFloat] = []
-        var cursor: CGFloat = 0
-        for width in widths {
-            origins.append(cursor)
-            cursor += width + gutter
-        }
-
-        // 5. Chaque `|` reçoit l'avance qui mène au début de sa cellule.
+        // 3. Chaque `|` reçoit l'avance qui mène au début de sa cellule. La
+        //    géométrie vient de `TableLayout`, que la couche de décoration lit
+        //    aussi : les filets doivent tomber exactement entre les colonnes que
+        //    le crénage vient de poser.
+        let origins = layout.columnOrigins
+        let widths = layout.columnWidths
         for row in table.rows {
             var pen: CGFloat = 0
             for (column, cell) in row.cells.enumerated() {
@@ -360,7 +341,10 @@ struct MarkdownRenderer {
     ///   au contraire, le repli est ce qui rend le bloc lisible.
     private func tableParagraphStyle(clipping: Bool) -> NSMutableParagraphStyle {
         let style = typography.paragraphStyle()
-        style.lineHeightMultiple = 1.2
+        // Resserré par rapport à la prose, mais pas au point que le texte touche
+        // les filets : une cellule a besoin d'air au-dessus et en dessous, sinon
+        // la grille se lit comme un tableau de chiffres.
+        style.lineHeightMultiple = 1.45
         style.lineBreakMode = clipping ? .byClipping : .byWordWrapping
         return style
     }
@@ -510,12 +494,12 @@ struct MarkdownRenderer {
                                    .foregroundColor: Theme.NS.labelSecondary], range: whole)
 
         case .table(let table):
-            // Chasse fixe pour tout le bloc, y compris sous le curseur : c'est
-            // ce qui rend la source à pipes lisible pendant qu'on l'édite, et
-            // ce sur quoi la grille appuie ses colonnes. Les hauteurs de ligne,
-            // elles, dépendent de l'état de révélation et sont posées par
-            // `applyRowStyles`.
-            storage.addAttributes([.font: typography.codeBlock,
+            // **La police du corps, plus la chasse fixe.** Elle garantissait
+            // l'alignement gratuitement — chaque signe fait la même largeur —
+            // mais donnait à tous les tableaux l'air d'un bloc de code. Les
+            // colonnes sont désormais mesurées puis posées au crénage
+            // (`TableLayout`), ce qui n'a plus besoin d'une police à pas fixe.
+            storage.addAttributes([.font: typography.body,
                                    .paragraphStyle: tableParagraphStyle(clipping: false)],
                                   range: whole)
 
@@ -523,12 +507,7 @@ struct MarkdownRenderer {
             // seule information de structure que la source à pipes ne donne
             // pas d'elle-même.
             if let header = table?.rows.first {
-                // `convert(toHaveTrait:)` plutôt que le passage par la famille :
-                // la chasse fixe du système s'appelle `.AppleSystemUIFontMono‑
-                // spaced`, un nom que `NSFontManager` ne sait pas retrouver, et
-                // la conversion par famille retombait silencieusement sur le
-                // maigre.
-                let bold = NSFontManager.shared.convert(typography.codeBlock, toHaveTrait: .boldFontMask)
+                let bold = typography.bodyEmphasized
                 for cell in header.cells {
                     let range = clamp(cell.content, to: storage.length)
                     guard range.length > 0 else { continue }

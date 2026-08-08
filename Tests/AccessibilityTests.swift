@@ -138,14 +138,15 @@ final class AccessibilityTests: XCTestCase {
         let table = try XCTUnwrap(MarkdownTable.scan(utf16: utf16,
                                                      in: NSRange(location: 0, length: utf16.count)))
         // Le garde-fou décide, et il décide la même chose partout : rendu et
-        // décorations lisent `fitsAsGrid`.
+        // décorations lisent la même géométrie, `TableLayout`.
+        let storage = NSTextStorage(string: source)
         let renderer = MarkdownRenderer(typography: typography)
-        XCTAssertEqual(renderer.fitsAsGrid(table),
+        XCTAssertEqual(renderer.gridLayout(for: table, in: storage) != nil,
                        EditorDecoration.build(from: [SyntaxSpan(kind: .table(table),
                                                                 range: NSRange(location: 0, length: utf16.count),
                                                                 markers: table.markerRanges,
                                                                 content: NSRange(location: 0, length: utf16.count))],
-                                              text: source as NSString,
+                                              in: storage,
                                               typography: typography).isEmpty == false)
     }
 

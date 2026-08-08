@@ -235,7 +235,7 @@ final class EditorController: NSObject {
                         in: range)
         textView.typography = typography
         textView.documentURL = documentURL
-        textView.decorations = EditorDecoration.build(from: spans, text: storage.mutableString,
+        textView.decorations = EditorDecoration.build(from: spans, in: storage,
                                                       typography: typography,
                                                       revealed: revealed)
     }
@@ -298,7 +298,7 @@ final class EditorController: NSObject {
         // lorsque l'une d'elles est concernée — ce chemin est celui de chaque
         // flèche du clavier.
         if rebuiltDecorations {
-            textView.decorations = EditorDecoration.build(from: spans, text: storage.mutableString,
+            textView.decorations = EditorDecoration.build(from: spans, in: storage,
                                                           typography: typography,
                                                           revealed: next)
         }
@@ -382,11 +382,16 @@ final class EditorController: NSObject {
     private var isCorrectingCaret = false
 
     /// Le tableau qui contient cette position, s'il est rendu en grille.
+    ///
+    /// Un tableau resté en source — malformé, ou trop large — s'édite comme du
+    /// texte ordinaire : ses `|` sont visibles, il n'y a donc rien à corriger.
     private func grid(at location: Int) -> MarkdownTable? {
+        guard let storage = textView.textStorage else { return nil }
         for span in spans {
             guard case .table(let table?) = span.kind,
                   RevealPolicy.contains(span.range, location) else { continue }
-            return MarkdownRenderer(typography: typography).fitsAsGrid(table) ? table : nil
+            return MarkdownRenderer(typography: typography)
+                .gridLayout(for: table, in: storage) != nil ? table : nil
         }
         return nil
     }

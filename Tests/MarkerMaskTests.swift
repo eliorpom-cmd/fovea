@@ -173,10 +173,11 @@ final class MarkerMaskTests: XCTestCase {
     }
 
     private func marks(_ spans: [SyntaxSpan], _ text: String, revealed: Set<Int>) -> [EditorDecoration] {
+        let storage = NSTextStorage(string: text)
         // La barre de citation et le fond des blocs de code ne remplacent rien :
         // ils cadrent un bloc, et ce bloc existe aussi sous le curseur.
-        EditorDecoration.build(from: spans, text: text as NSString,
-                               typography: .default, revealed: revealed)
+        return EditorDecoration.build(from: spans, in: storage,
+                                      typography: .default, revealed: revealed)
             .filter { $0.kind != .quoteBar && $0.kind != .codeBackground }
     }
 
