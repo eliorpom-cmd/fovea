@@ -152,15 +152,38 @@ final class MarkdownParserTests: XCTestCase {
         }
     }
 
-    func testFootnoteDefinitionStaysPlainText() throws {
-        // `[^1]: la note` en début de ligne est la **définition**. Lui appliquer
-        // le rendu d'un renvoi masquerait les crochets et ne laisserait qu'un
-        // « : la note » incompréhensible — c'est ce qui s'affichait au premier
-        // essai.
+    func testFootnoteDefinitionIsItsOwnConstruct() throws {
+        // `[^1]: la note` en début de ligne est la **définition**, pas un
+        // renvoi. Lui appliquer le rendu d'un renvoi masquerait les crochets et
+        // ne laisserait qu'un « : la note » incompréhensible — c'est ce qui
+        // s'affichait au premier essai.
         let spans = MarkdownParser.parse("Un renvoi[^1]\n\n[^1]: la note\n").spans
         let references = spans.filter { if case .footnoteReference = $0.kind { return true } else { return false } }
-        XCTAssertEqual(references.count, 1, "Seul le renvoi, pas la définition")
+        XCTAssertEqual(references.count, 1, "Un seul renvoi")
         XCTAssertEqual(references[0].range.location, 9)
+
+        let definition = try XCTUnwrap(spans.first {
+            if case .footnoteDefinition = $0.kind { return true } else { return false }
+        })
+        // Le marqueur couvre `[^` puis `]:` : ce qui reste visible est
+        // l'identifiant, en exposant, et le texte de la note.
+        XCTAssertEqual(definition.markers, [NSRange(location: 15, length: 2),
+                                            NSRange(location: 18, length: 2)])
+        // L'espace après le `:` reste visible : c'est lui qui écarte l'exposant
+        // du premier mot de la note.
+        XCTAssertEqual(definition.content, NSRange(location: 20, length: 8))
+        // Révélée à la ligne, comme un titre : poser le curseur dessus rend la
+        // syntaxe visible, donc modifiable.
+        XCTAssertEqual(definition.kind.revealScope, .wholeLine)
+    }
+
+    func testAFootnoteDefinitionStopsAtItsLine() throws {
+        // Sans cette borne, la définition avalerait le paragraphe qui la suit.
+        let spans = MarkdownParser.parse("[^a]: la note\nUne autre ligne\n").spans
+        let definition = try XCTUnwrap(spans.first {
+            if case .footnoteDefinition = $0.kind { return true } else { return false }
+        })
+        XCTAssertEqual(definition.range, NSRange(location: 0, length: 13))
     }
 
     func testFootnotePatternIsIgnoredInsideCode() throws {

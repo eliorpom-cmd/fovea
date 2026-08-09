@@ -2,24 +2,17 @@
 // Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
 import AppKit
 
-/// Le menu d'insertion de bloc, ouvert par `/` en début de ligne vide (§4.5).
+/// Le menu d'insertion de bloc, ouvert par `/` (§4.5).
 ///
-/// # Il ne prend jamais le focus
-///
-/// C'est la seule décision d'architecture qui compte ici. Le panneau est
-/// `nonactivatingPanel` et ne devient jamais fenêtre clé : le curseur reste
-/// dans le texte, la frappe continue d'aller dans le tampon, et le menu se
-/// contente de filtrer à mesure. On tape `/tab`, on voit la liste se réduire,
-/// on valide.
+/// Le comportement de panneau — jamais fenêtre clé, ancré au curseur, piloté
+/// par la vue de texte — vit dans `FloatingPanel`. Ne reste ici que la liste
+/// des blocs et son filtrage.
 ///
 /// L'alternative — un panneau qui prend le focus, comme `⌘K` — obligerait à
 /// retirer le `/` du tampon puis à le remettre, et le curseur clignoterait
 /// ailleurs pendant qu'on tape. Ce serait un mode ; ici il n'y en a pas.
-///
-/// Les touches de navigation sont donc reçues par la vue de texte, qui les
-/// renvoie ici. Voir `EditorTextView.keyDown`.
 @MainActor
-final class SlashMenu: NSPanel {
+final class SlashMenu: FloatingPanel {
 
     /// Appelé quand une entrée est validée.
     var onChoose: ((SlashCommand) -> Void)?
@@ -35,24 +28,7 @@ final class SlashMenu: NSPanel {
     // MARK: - Construction
 
     init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: 200),
-                   styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: false)
-
-        isFloatingPanel = true
-        level = .popUpMenu
-        hasShadow = true
-        backgroundColor = .clear
-        isMovable = false
-        hidesOnDeactivate = true
-
-        let visual = NSVisualEffectView()
-        visual.material = .menu
-        visual.blendingMode = .behindWindow
-        visual.state = .active
-        visual.wantsLayer = true
-        visual.layer?.cornerRadius = 10
-        visual.layer?.masksToBounds = true
+        super.init(width: Self.width)
 
         tableView.headerView = nil
         tableView.backgroundColor = .clear
@@ -73,21 +49,14 @@ final class SlashMenu: NSPanel {
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
 
-        visual.addSubview(scrollView)
-        contentView = visual
+        container.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: visual.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: visual.bottomAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: visual.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: visual.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: container.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
     }
-
-    /// Il ne devient jamais clé : c'est tout le principe. Sans ce `false`, le
-    /// curseur quitterait le texte à l'ouverture.
-    override var canBecomeKey: Bool { false }
-
-    var isOpen: Bool { isVisible }
 
     // MARK: - Ouverture et filtrage
 
@@ -108,30 +77,9 @@ final class SlashMenu: NSPanel {
         tableView.selectRowIndexes([0], byExtendingSelection: false)
 
         let rows = min(entries.count, Self.maximumVisibleRows)
-        let height = CGFloat(rows) * Self.rowHeight + 8
-        // Sous la ligne courante, décalé d'un cheveu : posé dessus, le menu
-        // masquerait le mot qu'on est en train de taper.
-        var origin = NSPoint(x: caretRect.minX, y: caretRect.minY - height - 6)
-        if let screen = host?.screen ?? NSScreen.main {
-            // Trop bas pour tenir : il repasse au-dessus du curseur.
-            if origin.y < screen.visibleFrame.minY {
-                origin.y = caretRect.maxY + 6
-            }
-            origin.x = min(origin.x, screen.visibleFrame.maxX - Self.width - 8)
-        }
-        setFrame(NSRect(origin: origin, size: NSSize(width: Self.width, height: height)), display: true)
-
-        if !isVisible {
-            host?.addChildWindow(self, ordered: .above)
-            orderFront(nil)
-        }
+        present(size: NSSize(width: Self.width, height: CGFloat(rows) * Self.rowHeight + 8),
+                caretRect: caretRect, over: host)
         return true
-    }
-
-    func dismiss() {
-        guard isVisible else { return }
-        parent?.removeChildWindow(self)
-        orderOut(nil)
     }
 
     // MARK: - Navigation, pilotée depuis la vue de texte

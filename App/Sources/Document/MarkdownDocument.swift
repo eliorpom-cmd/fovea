@@ -98,6 +98,56 @@ final class MarkdownDocument: NSDocument {
         return FileManager.default.isWritableFile(atPath: fileURL.path)
     }
 
+    // MARK: - Le fichier change sous nos pieds (§5)
+
+    /// Un `.md` est rarement seul : un `git checkout`, un dossier synchronisé,
+    /// un autre éditeur ouvert en parallèle, et le fichier bouge pendant qu'on
+    /// le regarde. Sans cette veille, la fenêtre continue d'afficher une
+    /// version morte — et le prochain enregistrement l'écrase en silence.
+    ///
+    /// `NSDocument` est déjà un `NSFilePresenter` : la coordination de fichiers
+    /// nous prévient toute seule, il ne manquait que la réaction.
+    ///
+    /// Deux cas, et un seul est automatique :
+    ///
+    /// - **rien de modifié ici** → on recharge sans rien demander. C'est le cas
+    ///   courant, et une alerte n'y apporterait qu'un clic ;
+    /// - **des modifications non enregistrées** → on ne touche à rien, on le
+    ///   dit. Écraser le travail de quelqu'un pour afficher celui d'un autre
+    ///   outil serait le pire des deux mondes ; `NSDocument` posera de son côté
+    ///   la question au moment d'enregistrer.
+    override nonisolated func presentedItemDidChange() {
+        super.presentedItemDidChange()
+        Task { @MainActor [weak self] in self?.fileChangedOnDisk() }
+    }
+
+    @MainActor private func fileChangedOnDisk() {
+        guard let url = fileURL, let type = fileType else { return }
+
+        // Notre propre écriture repasse par ici : la date connue est alors
+        // déjà la bonne, et il n'y a rien à recharger.
+        let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+        guard let modified, let known = fileModificationDate, modified > known else { return }
+
+        guard !isDocumentEdited else {
+            windowControllers.compactMap { ($0 as? DocumentWindowController)?.banner }.forEach {
+                $0.show(["Le fichier a changé sur le disque. Vos modifications en cours sont "
+                         + "conservées : elles seront proposées à l'enregistrement."])
+            }
+            return
+        }
+
+        // Le curseur est rendu à sa place. Le document a changé ailleurs, pas
+        // sous les doigts : le renvoyer en tête serait une perte gratuite.
+        let caret = editor?.textView.selectedRange()
+        try? revert(toContentsOf: url, ofType: type)
+        if let caret, let editor {
+            let length = editor.textView.textStorage?.length ?? 0
+            editor.textView.setSelectedRange(NSRange(location: min(caret.location, length), length: 0))
+        }
+    }
+
     // MARK: - Type de fichier
 
     /// Fovea écrit toujours du markdown, même quand elle a ouvert un `.txt`

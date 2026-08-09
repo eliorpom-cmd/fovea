@@ -152,6 +152,7 @@ extension DocumentWindowController: NSMenuItemValidation {
     @objc func toggleStrikethrough(_ sender: Any?) { editor.wrapSelection(with: "~~") }
     @objc func toggleInlineCode(_ sender: Any?) { editor.wrapSelection(with: "`") }
     @objc func insertLink(_ sender: Any?) { editor.insertLink() }
+    @objc func insertTable(_ sender: Any?) { editor.presentTableSizePicker() }
     @objc func toggleTaskAtCaret(_ sender: Any?) { editor.toggleTaskAtCaret() }
 
     @objc func setHeadingLevel(_ sender: Any?) {
@@ -199,6 +200,22 @@ extension DocumentWindowController: NSMenuItemValidation {
                                        title: (documentName as NSString).deletingPathExtension,
                                        documentURL: editor.documentURL)
         try? Data(html.utf8).write(to: url)
+    }
+
+    /// Ouvre la feuille de partage du système sur le fichier lui-même.
+    ///
+    /// C'est le `.md` qui part, pas un rendu : partager un document markdown,
+    /// c'est envoyer un fichier que le destinataire pourra rouvrir et modifier.
+    /// Qui veut un PDF a le menu Exporter juste au-dessus.
+    ///
+    /// Un document jamais enregistré n'a rien à partager ; l'entrée est alors
+    /// désactivée plutôt que d'ouvrir une feuille vide.
+    @objc func shareDocument(_ sender: Any?) {
+        guard let url: URL = document?.fileURL else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        guard let anchor = window?.contentView else { return }
+        picker.show(relativeTo: NSRect(x: anchor.bounds.midX, y: anchor.bounds.maxY - 1, width: 1, height: 1),
+                    of: anchor, preferredEdge: .maxY)
     }
 
     @objc func exportPDF(_ sender: Any?) {
@@ -358,6 +375,9 @@ extension DocumentWindowController: NSMenuItemValidation {
         case #selector(toggleOutline(_:)):
             menuItem.state = outlineWidth?.constant != 0 ? .on : .off
 
+        case #selector(shareDocument(_:)):
+            return document?.fileURL != nil
+
         case #selector(toggleTaskAtCaret(_:)):
             // L'entrée dit ce qu'elle fera, et se grise hors d'une tâche plutôt
             // que de ne rien faire quand on la choisit.
@@ -373,7 +393,7 @@ extension DocumentWindowController: NSMenuItemValidation {
 
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)),
              #selector(toggleStrikethrough(_:)), #selector(toggleInlineCode(_:)),
-             #selector(insertLink(_:)), #selector(setHeadingLevel(_:)):
+             #selector(insertLink(_:)), #selector(insertTable(_:)), #selector(setHeadingLevel(_:)):
             // Le mode source montre le fichier tel qu'il est : y appliquer un
             // formatage par raccourci reviendrait à écrire des étoiles à
             // l'aveugle dans du texte brut.

@@ -77,3 +77,25 @@ final class AutoPairInTheEditorTests: XCTestCase {
         XCTAssertEqual(controller.text, "Voir ")
     }
 }
+
+/// Le damier s'ouvre-t-il vraiment ?
+@MainActor
+final class TableSizePickerInTheEditorTests: XCTestCase {
+
+    func testTheMenuOpensThePicker() {
+        let controller = EditorController(typography: .default)
+        controller.textView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        controller.setText("Un paragraphe.\n")
+        controller.presentTableSizePicker()
+
+        // L'ouverture est différée d'un tour de boucle — voir le commentaire de
+        // `presentTableSizePicker` : c'est ce qui la rend visible depuis la
+        // barre de menus.
+        let opened = expectation(description: "le damier s'ouvre")
+        DispatchQueue.main.async {
+            XCTAssertTrue(controller.isTableSizePickerOpen)
+            opened.fulfill()
+        }
+        wait(for: [opened], timeout: 1)
+    }
+}

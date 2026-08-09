@@ -85,6 +85,12 @@ enum MainMenu {
         menu.addItem(export)
 
         menu.addItem(.separator())
+        // Le partage est une affordance système : la feuille qu'il ouvre est
+        // celle de macOS, avec Mail, Messages, AirDrop et tout ce que
+        // l'utilisateur y a installé. L'écrire nous-mêmes serait à la fois plus
+        // long et moins complet.
+        menu.addItem(item("Partager…", #selector(AppCommands.shareDocument(_:))))
+        menu.addItem(.separator())
         menu.addItem(item("Imprimer…", #selector(NSDocument.printDocument(_:)), "p"))
         return menu
     }
@@ -156,6 +162,17 @@ enum MainMenu {
         let link = item("Lien…", #selector(AppCommands.insertLink(_:)), "k")
         link.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(link)
+
+        // Le damier plutôt qu'un 3 × 3 imposé : la forme du tableau est la
+        // première chose qu'on sait, et la dernière qu'on aime corriger.
+        //
+        // ⌥⌘T et non ⌘⇧T — celui de MarkText : les fenêtres de Fovea acceptent
+        // les onglets natifs, et macOS y attache déjà « Afficher la barre
+        // d'onglets ». Le doublon aurait donné un raccourci qui ne marche pas
+        // sans que rien ne le dise, exactement comme le ⌘K du menu Lien.
+        let table = item("Tableau…", #selector(AppCommands.insertTable(_:)), "t")
+        table.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(table)
 
         let task = item("Cocher la tâche", #selector(AppCommands.toggleTaskAtCaret(_:)), "\r")
         menu.addItem(task)
@@ -254,6 +271,7 @@ enum MainMenu {
 @objc protocol AppCommands {
     func showSettings(_ sender: Any?)
     func makeDefaultMarkdownEditor(_ sender: Any?)
+    func shareDocument(_ sender: Any?)
     func exportPDF(_ sender: Any?)
     func exportHTML(_ sender: Any?)
     func copyAsRichText(_ sender: Any?)
@@ -263,6 +281,7 @@ enum MainMenu {
     func toggleStrikethrough(_ sender: Any?)
     func toggleInlineCode(_ sender: Any?)
     func insertLink(_ sender: Any?)
+    func insertTable(_ sender: Any?)
     func toggleTaskAtCaret(_ sender: Any?)
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)

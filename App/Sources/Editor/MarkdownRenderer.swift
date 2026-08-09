@@ -433,6 +433,28 @@ struct MarkdownRenderer {
                                    .baselineOffset: typography.bodySize * 0.32,
                                    .foregroundColor: Theme.NS.labelSecondary], range: content)
 
+        case .footnoteDefinition(let identifier):
+            // La note se lit comme une note : un cran plus petite, en teinte
+            // secondaire, avec un retrait qui aligne son texte sous lui-même
+            // quand elle passe à la ligne. C'est la mise en page qu'un livre
+            // lui donne depuis cinq siècles.
+            let style = typography.paragraphStyle()
+            let hanging = typography.bodySize * 1.4
+            style.firstLineHeadIndent = 0
+            style.headIndent = hanging
+            storage.addAttributes([.font: typography.font(size: typography.bodySize * 0.9),
+                                   .foregroundColor: Theme.NS.labelSecondary,
+                                   .paragraphStyle: style], range: whole)
+            // L'identifiant reste en exposant, comme son renvoi : c'est ce qui
+            // fait qu'on reconnaît la paire d'un coup d'œil.
+            let label = NSRange(location: span.range.location + 2,
+                                length: max(0, identifier.utf16.count))
+            if label.upperBound <= storage.length {
+                storage.addAttributes([.font: typography.font(size: typography.bodySize * 0.7),
+                                       .baselineOffset: typography.bodySize * 0.32,
+                                       .foregroundColor: Theme.NS.label], range: label)
+            }
+
         case .heading(let level):
             let style = typography.paragraphStyle()
             style.paragraphSpacingBefore = typography.spacingBefore(headingLevel: level)

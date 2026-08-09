@@ -63,12 +63,16 @@ final class EditorTextView: NSTextView {
     /// automatiques. Renvoie `true` si le caractère a été traité autrement.
     var handlesTyping: ((Character) -> Bool)?
 
+    /// Appelé sur `⌘`+clic à une position donnée : une note de bas de page y
+    /// répond en sautant vers son autre moitié.
+    var handlesFootnoteJump: ((Int) -> Bool)?
+
     /// Appelé quand on clique la case à cocher d'une tâche. Reçoit la plage du
     /// contenu de l'item, celle que porte la décoration.
     var handlesTaskToggle: ((NSRange) -> Bool)?
 
     /// Les touches que le menu slash intercepte quand il est ouvert (§4.5).
-    enum MenuKey { case up, down, confirm, cancel }
+    enum MenuKey { case up, down, left, right, confirm, cancel }
 
     /// Renvoie `true` si le menu slash a pris la touche. Il ne devient jamais
     /// fenêtre clé — c'est ce qui permet de continuer à taper dans le texte
@@ -220,6 +224,8 @@ final class EditorTextView: NSTextView {
         let key: MenuKey? = switch event.keyCode {
         case 126: .up
         case 125: .down
+        case 123: .left
+        case 124: .right
         case 36, 76: .confirm
         case 53: .cancel
         default: nil
@@ -405,6 +411,9 @@ final class EditorTextView: NSTextView {
             NSWorkspace.shared.open(link)
             return
         }
+        // Une note de bas de page n'a pas d'adresse à ouvrir, mais elle a une
+        // autre moitié quelque part dans le document : le même geste y mène.
+        if handlesFootnoteJump?(index) == true { return }
         super.mouseDown(with: event)
     }
 

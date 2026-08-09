@@ -44,6 +44,12 @@ final class EditorController: NSObject {
 
     /// Le menu d'insertion de bloc (§4.5), et ce qui l'a déclenché.
     private let slashMenu = SlashMenu()
+    private let languagePicker = LanguagePicker()
+    private let tableSizePicker = TableSizePicker()
+    /// La plage du mot de langage que le sélecteur remplacera.
+    private var languageTrigger: CodeFence.LanguageTrigger?
+    /// Le `/tab` que le damier remplacera quand il aura une réponse.
+    private var pendingTableTrigger: TypingBehaviour.SlashTrigger?
     private var slashTrigger: TypingBehaviour.SlashTrigger?
 
     /// Appelé après chaque modification du texte, pour que le document sache
@@ -107,11 +113,26 @@ final class EditorController: NSObject {
         textView.handlesTaskToggle = { [weak self] content in
             self?.toggleTask(atContent: content) ?? false
         }
+        textView.handlesFootnoteJump = { [weak self] index in
+            self?.jumpBetweenFootnoteHalves(at: index) ?? false
+        }
         textView.handlesMenuKey = { [weak self] key in
             self?.handleSlashMenuKey(key) ?? false
         }
         slashMenu.onChoose = { [weak self] command in
-            self?.insertBlock(command)
+            // Le tableau est le seul bloc dont la forme se demande avant de
+            // l'écrire : le damier prend le relais du menu.
+            if command == .table {
+                self?.presentTableSizePicker(replacing: self?.slashTrigger)
+            } else {
+                self?.insertBlock(command)
+            }
+        }
+        languagePicker.onChoose = { [weak self] language in
+            self?.applyLanguage(language)
+        }
+        tableSizePicker.onChoose = { [weak self] columns, rows in
+            self?.insertTable(columns: columns, rows: rows)
         }
 
         NotificationCenter.default.addObserver(
@@ -722,6 +743,56 @@ final class EditorController: NSObject {
         }
     }
 
+    /// `⌘`+clic sur une note de bas de page mène à son autre moitié.
+    ///
+    /// Une note vit en deux endroits : le renvoi `[^1]` au fil du texte, et sa
+    /// définition `[^1]: …` tout en bas. Les relier à la souris est ce qui les
+    /// rend utilisables — sans ça, vérifier une note demande de faire défiler
+    /// le document, de la lire, puis de retrouver où l'on en était.
+    ///
+    /// Le geste est le même dans les deux sens, et c'est celui des liens : rien
+    /// de nouveau à apprendre.
+    private func jumpBetweenFootnoteHalves(at index: Int) -> Bool {
+        guard !isSourceMode else { return false }
+
+        let identifier: String
+        let goingToDefinition: Bool
+        if let span = spans.first(where: { span in
+            guard case .footnoteReference = span.kind else { return false }
+            return NSLocationInRange(index, span.range)
+        }), case .footnoteReference(let name) = span.kind {
+            (identifier, goingToDefinition) = (name, true)
+        } else if let span = spans.first(where: { span in
+            guard case .footnoteDefinition = span.kind else { return false }
+            // Seul le libellé répond, pas le texte de la note : autrement, tout
+            // clic dans une note qu'on est en train d'écrire sauterait ailleurs.
+            return span.markers.contains { NSLocationInRange(index, $0) }
+                || NSLocationInRange(index, NSRange(location: span.range.location,
+                                                    length: span.content.location - span.range.location))
+        }), case .footnoteDefinition(let name) = span.kind {
+            (identifier, goingToDefinition) = (name, false)
+        } else {
+            return false
+        }
+
+        let destination = spans.first { span in
+            switch span.kind {
+            case .footnoteDefinition(let name) where goingToDefinition: return name == identifier
+            case .footnoteReference(let name) where !goingToDefinition: return name == identifier
+            default: return false
+            }
+        }
+        guard let destination else { return false }
+
+        // Le curseur va sur le **contenu**, jamais sur un marqueur : arriver
+        // dans un `[^` rouvrirait la syntaxe au moment précis où l'on vient
+        // lire du texte.
+        textView.setSelectedRange(NSRange(location: destination.content.location, length: 0))
+        textView.scrollRangeToVisible(destination.range)
+        textView.showFindIndicator(for: destination.range)
+        return true
+    }
+
     /// `⇥` collé devant la balise fermante saute par-dessus.
     ///
     /// C'est la sortie de `**gras|**` sans lever la main, et le pendant exact
@@ -830,7 +901,37 @@ final class EditorController: NSObject {
         }
     }
 
+    /// Aiguille les touches de navigation vers le panneau ouvert.
+    ///
+    /// Un seul l'est à la fois — ils se ferment les uns les autres — donc
+    /// l'ordre n'a pas à trancher de conflit ; il dit simplement lequel
+    /// regarder en premier.
     private func handleSlashMenuKey(_ key: EditorTextView.MenuKey) -> Bool {
+        if tableSizePicker.isOpen {
+            switch key {
+            case .up: tableSizePicker.move(columns: 0, rows: -1)
+            case .down: tableSizePicker.move(columns: 0, rows: 1)
+            case .left: tableSizePicker.move(columns: -1, rows: 0)
+            case .right: tableSizePicker.move(columns: 1, rows: 0)
+            case .confirm: tableSizePicker.confirmSelection()
+            case .cancel: tableSizePicker.dismiss()
+            }
+            return true
+        }
+        if languagePicker.isOpen {
+            switch key {
+            case .up: languagePicker.moveSelection(by: -1)
+            case .down: languagePicker.moveSelection(by: 1)
+            case .confirm: languagePicker.confirmSelection()
+            case .cancel:
+                languageTrigger = nil
+                languagePicker.dismiss()
+            // Les flèches horizontales restent au texte : on est en train
+            // d'écrire un mot, pas de naviguer dans une grille.
+            case .left, .right: return false
+            }
+            return true
+        }
         guard slashMenu.isOpen else { return false }
         switch key {
         case .up: slashMenu.moveSelection(by: -1)
@@ -839,8 +940,101 @@ final class EditorController: NSObject {
         case .cancel:
             slashTrigger = nil
             slashMenu.dismiss()
+        case .left, .right: return false
         }
         return true
+    }
+
+    // MARK: - Le langage d'un bloc de code
+
+    /// Ouvre, met à jour ou referme le sélecteur de langage.
+    ///
+    /// Appelé au même endroit que le menu slash, et pour la même raison : la
+    /// question « le curseur est-il quelque part où l'app peut aider ? » se
+    /// repose à chaque frappe et à chaque déplacement.
+    private func refreshLanguagePicker() {
+        let selection = textView.selectedRange()
+        guard !isSourceMode, selection.length == 0, !slashMenu.isOpen,
+              textView.window?.isKeyWindow == true,
+              let storage = textView.textStorage
+        else {
+            languageTrigger = nil
+            languagePicker.dismiss()
+            return
+        }
+        let line = currentLineRange()
+        guard let trigger = CodeFence.languageTrigger(
+            inLine: storage.mutableString.substring(with: line),
+            lineStart: line.location,
+            caret: selection.location)
+        else {
+            languageTrigger = nil
+            languagePicker.dismiss()
+            return
+        }
+        languageTrigger = trigger
+        let caretRect = textView.firstRect(forCharacterRange: selection, actualRange: nil)
+        if !languagePicker.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
+            languageTrigger = nil
+        }
+    }
+
+    private func applyLanguage(_ language: String) {
+        guard let trigger = languageTrigger else { return }
+        languageTrigger = nil
+        apply(TypingBehaviour.Edit(range: trigger.range,
+                                   replacement: language,
+                                   caret: trigger.range.location + language.utf16.count,
+                                   undoName: "Choisir le langage"))
+    }
+
+    // MARK: - Le damier de tableau
+
+    /// Ouvre le damier, en mémorisant ce qu'il devra remplacer.
+    ///
+    /// Le `/tab` tapé est retiré au moment de l'insertion, pas à l'ouverture :
+    /// refermer le damier sans choisir doit laisser le texte exactement comme
+    /// on l'a tapé.
+    var isTableSizePickerOpen: Bool { tableSizePicker.isOpen }
+    var isLanguagePickerOpen: Bool { languagePicker.isOpen }
+
+    func presentTableSizePicker(replacing trigger: TypingBehaviour.SlashTrigger? = nil) {
+        pendingTableTrigger = trigger
+        slashTrigger = nil
+        slashMenu.dismiss()
+        // Un tour de boucle avant de montrer le panneau.
+        //
+        // Sans ça, l'entrée de menu « Tableau… » n'ouvrait rien : ouvrir un
+        // menu de la barre désactive brièvement l'application, et un panneau
+        // `hidesOnDeactivate` posé pendant ce suivi se refermait aussitôt.
+        // Le chemin du menu slash, lui, marchait — ce qui rendait le défaut
+        // parfaitement invisible aux tests comme à l'essai rapide.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let caretRect = textView.firstRect(forCharacterRange: textView.selectedRange(),
+                                               actualRange: nil)
+            tableSizePicker.present(caretRect: caretRect, over: textView.window)
+        }
+    }
+
+    private func insertTable(columns: Int, rows: Int) {
+        let (markdown, offset) = CodeFence.table(columns: columns, rows: rows)
+        let target: NSRange
+        if let trigger = pendingTableTrigger {
+            target = trigger.range
+        } else {
+            target = textView.selectedRange()
+        }
+        pendingTableTrigger = nil
+        // Une grille ne peut pas commencer au milieu d'une phrase : si la ligne
+        // porte déjà du texte, le tableau s'écrit en dessous.
+        let line = TypingBehaviour.lineRange(Array(text.utf16), containing: target.location)
+        let needsBreak = target.location > line.location
+        let prefix = needsBreak ? "\n\n" : ""
+        apply(TypingBehaviour.Edit(range: target,
+                                   replacement: prefix + markdown,
+                                   caret: target.location + prefix.utf16.count + offset,
+                                   undoName: "Insérer un tableau"))
     }
 
     private func insertBlock(_ command: SlashCommand) {
@@ -862,6 +1056,7 @@ final class EditorController: NSObject {
         applyFocus()
         applyTypewriterScrolling()
         refreshSlashMenu()
+        refreshLanguagePicker()
         onTextChanged?()
     }
 
@@ -898,6 +1093,7 @@ extension EditorController: NSTextViewDelegate {
         applyFocus()
         applyTypewriterScrolling()
         refreshSlashMenu()
+        refreshLanguagePicker()
         onSelectionChanged?()
     }
 }

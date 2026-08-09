@@ -9,10 +9,10 @@ import Foundation
 /// et `[^1]` ressort en `Text` brut. Le motif étant sans la moindre ambiguïté,
 /// une passe maison suffit — c'est le repli qui était prévu.
 ///
-/// Ne sont reconnus que les renvois `[^identifiant]` dans le corps du texte.
-/// La ligne de définition `[^1]: …` reste du texte ordinaire : elle se lit très
-/// bien telle quelle, et lui inventer un rendu ferait disparaître le seul
-/// endroit où l'utilisateur peut modifier la note.
+/// Deux constructions en sortent : le **renvoi** `[^1]` dans le corps du texte,
+/// et la **définition** `[^1]: …` en début de ligne. La seconde est révélée à la
+/// ligne — poser le curseur dessus rend `[^1]: ` visible et modifiable — ce qui
+/// permet de la mettre en forme sans enfermer l'auteur hors de son texte.
 enum Footnotes {
 
     static func scan(utf16: [UInt16], skippingCodeIn verbatim: [NSRange]) -> [SyntaxSpan] {
@@ -53,11 +53,29 @@ enum Footnotes {
                 index = end + 1
                 continue
             }
-            // La **définition** `[^1]: …` en début de ligne reste du texte
-            // ordinaire (§4.1). Elle se lit très bien telle quelle, et lui
-            // inventer un rendu ferait disparaître le seul endroit où
-            // l'utilisateur peut modifier la note.
+            // La **définition** `[^1]: …` en début de ligne est une autre
+            // construction : `[^` et `]:` sont ses marqueurs, le reste de la
+            // ligne est le texte de la note.
+            //
+            // Elle est révélée à la ligne, comme un titre ou une puce : poser
+            // le curseur dessus rend `[^1]:` visible, donc modifiable. C'est
+            // ce qui permet de la mettre en forme sans jamais enfermer
+            // l'auteur hors de son propre texte.
             if isDefinition(utf16: utf16, referenceStart: index, referenceEnd: end) {
+                // L'espace qui suit le `:` **n'est pas** un marqueur : masqué
+                // avec lui, l'exposant se collait au premier mot de la note.
+                // Il est le seul blanc qui sépare le numéro de son texte.
+                let contentStart = end + 2
+                var lineEnd = contentStart
+                while lineEnd < utf16.count, utf16[lineEnd] != UInt16(UnicodeScalar("\n").value) {
+                    lineEnd += 1
+                }
+                spans.append(SyntaxSpan(
+                    kind: .footnoteDefinition(identifier: identifier),
+                    range: NSRange(location: index, length: lineEnd - index),
+                    markers: [NSRange(location: index, length: 2),
+                              NSRange(location: end, length: contentStart - end)],
+                    content: NSRange(location: contentStart, length: lineEnd - contentStart)))
                 index = end + 1
                 continue
             }

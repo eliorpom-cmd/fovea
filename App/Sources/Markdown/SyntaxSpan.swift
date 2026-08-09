@@ -26,6 +26,8 @@ struct SyntaxSpan: Equatable, Sendable {
         case listItem(marker: ListMarker)
         case taskItem(marker: ListMarker, checked: Bool)
         case thematicBreak
+        /// La ligne `[^1]: …` qui porte le texte de la note.
+        case footnoteDefinition(identifier: String)
 
         // Bloc délimité — les deux clôtures révélées ensemble.
         case codeBlock(language: String?)
@@ -42,7 +44,8 @@ struct SyntaxSpan: Equatable, Sendable {
             case .strong, .emphasis, .inlineCode, .strikethrough,
                  .link, .image, .footnoteReference:
                 return .innermostInline
-            case .heading, .blockQuote, .listItem, .taskItem, .thematicBreak:
+            case .heading, .blockQuote, .listItem, .taskItem, .thematicBreak,
+                 .footnoteDefinition:
                 return .wholeLine
             case .codeBlock, .frontMatter, .table:
                 return .wholeBlock

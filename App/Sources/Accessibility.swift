@@ -88,6 +88,7 @@ enum Accessibility {
         case .table: "Tableau"
         case .frontMatter: "Métadonnées"
         case .footnoteReference(let identifier): "Note \(identifier)"
+        case .footnoteDefinition(let identifier): "Texte de la note \(identifier)"
         }
     }
 }
