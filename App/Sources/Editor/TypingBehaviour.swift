@@ -47,11 +47,20 @@ enum TypingBehaviour {
         guard selection.location >= line.location + prefix.length else { return nil }
 
         // Un item vide : le marqueur seul, rien derrière. `⏎` en sort.
+        //
+        // **Retirer le marqueur ne suffit pas à sortir.** La ligne devenue vide
+        // reste collée à l'item précédent, et le premier mot tapé ensuite est
+        // une *continuation paresseuse* au sens de CommonMark : `- item\ntexte`
+        // range `texte` **dans** la puce. On croyait avoir quitté la liste,
+        // le fichier disait le contraire, et le prouvait dès qu'on le rouvrait
+        // ailleurs. Il faut donc laisser une ligne vide au-dessus — sauf s'il y
+        // en a déjà une, ou si l'item était la première ligne du document.
         let contentIsEmpty = line.location + prefix.length >= line.location + line.length
         if contentIsEmpty {
+            let separator = needsBlankLineAbove(units, line: line) ? "\n" : ""
             return Edit(range: NSRange(location: line.location, length: prefix.length),
-                        replacement: "",
-                        caret: line.location,
+                        replacement: separator,
+                        caret: line.location + separator.utf16.count,
                         undoName: "Sortir de la liste")
         }
 
@@ -501,6 +510,22 @@ enum TypingBehaviour {
         var count = 0
         while count < line.length, units[line.location + count] == space { count += 1 }
         return count
+    }
+
+    /// La ligne au-dessus porte-t-elle du texte ?
+    ///
+    /// Vrai seulement s'il y en a une **et** qu'elle n'est pas déjà blanche :
+    /// c'est exactement le cas où sortir d'une liste doit insérer une ligne
+    /// vide pour couper la continuation paresseuse.
+    private static func needsBlankLineAbove(_ units: [UInt16], line: NSRange) -> Bool {
+        guard line.location > 0 else { return false }
+        let previous = lineRange(units, containing: line.location - 1)
+        let space = UInt16(UnicodeScalar(" ").value)
+        let tab = UInt16(UnicodeScalar("\t").value)
+        return (0..<previous.length).contains {
+            let unit = units[previous.location + $0]
+            return unit != space && unit != tab
+        }
     }
 
     private static func isDigit(_ unit: UInt16) -> Bool { unit >= 48 && unit <= 57 }

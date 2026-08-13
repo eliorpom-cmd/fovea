@@ -117,6 +117,18 @@ final class PerformanceTests: XCTestCase {
     /// c'est la grandeur qui décrit le défaut, et elle ne dépend pas de la
     /// machine. Avant correction, elle passait de 634 à 35 160 points.
     func testPaintingTheBackgroundDoesNotLayOutTheWholeDocument() throws {
+        // **Les réglages de la personne qui lance les tests ne doivent rien
+        // décider.** `AppSettings.shared` lit les préférences de l'app, et le
+        // test s'exécute dans son binaire : quelqu'un qui active la machine à
+        // écrire dans Fovea faisait échouer ce test-ci, sans rapport. La machine
+        // à écrire demande la place du curseur à chaque changement de sélection
+        // ; `setText` laisse le curseur en fin de document, et le mesurer met en
+        // page tout ce qui le précède — les 40 000 mots. Le mode n'est pas en
+        // cause : c'est le test qui doit dire dans quel état il travaille.
+        let typewriter = AppSettings.shared.typewriterMode
+        AppSettings.shared.typewriterMode = false
+        defer { AppSettings.shared.typewriterMode = typewriter }
+
         let controller = EditorController(typography: .default)
         controller.scrollView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
         controller.applyColumnLayout()

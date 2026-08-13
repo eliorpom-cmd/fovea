@@ -261,13 +261,20 @@ struct MarkdownParser {
             // La plage retenue s'arrête à la fin de la **première** ligne : un
             // item multi-lignes ne doit pas révéler son marqueur quand le
             // curseur est trois lignes plus bas (§2.2, portée ligne).
+            //
+            // La mise en page, elle, a besoin de l'item entier — voir
+            // `SyntaxSpan.blockRange`. Sans elle, les lignes de continuation
+            // retombaient au style de base : elles se dessinaient **à gauche de
+            // leur propre puce**, et leur indentation de source se voyait en
+            // blanc devant le texte.
             let firstLine = lineRange(at: full.location)
             spans.append(SyntaxSpan(kind: kind,
                                     range: firstLine,
                                     markers: [markerRange],
                                     content: NSRange(location: inner.location,
                                                      length: max(0, firstLine.location + firstLine.length - inner.location)),
-                                    depth: depth))
+                                    depth: depth,
+                                    blockRange: full.length > firstLine.length ? full : nil))
         }
 
         private mutating func emitThematicBreak(_ node: ThematicBreak, depth: Int) {

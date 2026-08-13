@@ -37,8 +37,45 @@ final class TypingBehaviourTests: XCTestCase {
         let text = "- premier\n- "
         let edit = TypingBehaviour.newline(in: text, selection: NSRange(location: 12, length: 0))
         XCTAssertEqual(edit?.range, NSRange(location: 10, length: 2))
+        // La ligne vide n'est pas un ornement : sans elle, le premier mot tapé
+        // ensuite serait une continuation paresseuse de « premier ».
+        XCTAssertEqual(edit?.replacement, "\n")
+        XCTAssertEqual(edit?.caret, 11)
+    }
+
+    func testLeavingAListReallyLeavesIt() {
+        // Le test qui compte : ce que dit le **fichier** une fois la phrase
+        // tapée. Sans la ligne vide, cmark range « Après » dans la puce, et
+        // l'éditeur qui affichait un paragraphe à part mentait sur le document.
+        let text = "- premier\n- "
+        let edit = try? XCTUnwrap(TypingBehaviour.newline(in: text, selection: NSRange(location: 12, length: 0)))
+        let after = (text as NSString).replacingCharacters(in: edit!.range, with: edit!.replacement)
+        let typed = (after as NSString).replacingCharacters(in: NSRange(location: edit!.caret, length: 0),
+                                                           with: "Après.")
+        XCTAssertEqual(typed, "- premier\n\nAprès.")
+
+        let spans = MarkdownParser.parse(typed).spans
+        let items = spans.filter { if case .listItem = $0.kind { return true } else { return false } }
+        XCTAssertEqual(items.count, 1, "Un seul item : « Après. » est dehors")
+        XCTAssertFalse(items.contains { NSLocationInRange(typed.utf16.count - 1, $0.range) },
+                       "La dernière phrase ne doit appartenir à aucun item")
+    }
+
+    func testLeavingAListDoesNotStackBlankLines() {
+        // Une ligne vide au-dessus suffit déjà à couper la continuation : en
+        // ajouter une seconde creuserait un trou dans le document.
+        let text = "du texte\n\n- "
+        let edit = TypingBehaviour.newline(in: text, selection: NSRange(location: 12, length: 0))
         XCTAssertEqual(edit?.replacement, "")
         XCTAssertEqual(edit?.caret, 10)
+    }
+
+    func testLeavingAListAtTheTopOfTheDocumentAddsNothing() {
+        // Rien au-dessus, donc rien à couper : un document qui s'ouvrirait sur
+        // une ligne vide serait une régression à lui tout seul.
+        let edit = TypingBehaviour.newline(in: "- ", selection: NSRange(location: 2, length: 0))
+        XCTAssertEqual(edit?.replacement, "")
+        XCTAssertEqual(edit?.caret, 0)
     }
 
     func testNewlineOnATaskItemStartsAnUncheckedOne() {

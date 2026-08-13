@@ -267,7 +267,12 @@ private struct FontPicker: View {
                 Text(family).tag(String?.some(family))
             }
         }
-        .id(libraryVersion)
+        // **L'identité doit distinguer les deux sélecteurs.** `.id` désigne une
+        // vue parmi ses sœurs ; les deux ne portaient que `libraryVersion`,
+        // donc la même valeur, et SwiftUI les tenait pour une seule vue :
+        // « Police du code » s'affichait en double de « Police du corps », même
+        // intitulé et même valeur, et la police du code n'était plus réglable.
+        .id("\(monospaced)-\(libraryVersion)")
     }
 
     private var imported: [String] { FontCatalogue.families(monospaced: monospaced,

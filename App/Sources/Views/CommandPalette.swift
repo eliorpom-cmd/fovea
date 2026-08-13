@@ -74,6 +74,11 @@ final class CommandPalette: NSPanel {
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        // La fenêtre est en `fullSizeContentView` : sans cela, AppKit réserve de
+        // lui-même la hauteur d'une barre de titre — invisible ici — au-dessus
+        // de la liste. La première entrée se décollait du filet, et la hauteur
+        // ajustée aux résultats coupait la dernière en deux.
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         let divider = NSBox()
@@ -144,6 +149,46 @@ final class CommandPalette: NSPanel {
         if !filtered.isEmpty {
             tableView.selectRowIndexes([0], byExtendingSelection: false)
         }
+        resizeToFit()
+    }
+
+    /// Le nombre de lignes qu'on montre avant de laisser défiler.
+    ///
+    /// Au-delà, la palette occuperait la moitié de l'écran pour une liste qu'on
+    /// ne lit pas jusqu'en bas : on cherche, on tape deux lettres de plus.
+    private static let visibleRows = 11
+
+    /// Ajuste la hauteur au nombre de résultats.
+    ///
+    /// La palette gardait ses 380 points quoi qu'il arrive : taper « machine »
+    /// laissait un seul résultat et trois cents points de vide en dessous, ce
+    /// qui se lit comme une fenêtre cassée plutôt que comme une recherche qui a
+    /// trouvé. Elle se referme maintenant sur ce qu'elle montre.
+    ///
+    /// **Le haut reste où il est.** Un `NSWindow` a son origine en bas à
+    /// gauche : redimensionner sans y penser ferait remonter le champ de
+    /// recherche à chaque frappe, sous les doigts.
+    private func resizeToFit() {
+        guard let visual = contentView else { return }
+        visual.layoutSubtreeIfNeeded()
+
+        // Tout est **mesuré**, rien n'est recomposé à partir des constantes de
+        // contraintes. Ni le chrome — un champ de recherche ne fait pas la
+        // hauteur qu'on lui suppose —, ni les rangées : le style `.inset` d'un
+        // `NSTableView` ajoute sa propre marge, et la calculer à
+        // `rowHeight × n` coupait la dernière entrée en deux au ras de la
+        // fenêtre. Une rangée tronquée est pire que le vide qu'on enlève.
+        let chrome = visual.bounds.height - scrollView.frame.height
+        let shown = min(filtered.count, Self.visibleRows)
+        let rows = shown > 0
+            ? tableView.rect(ofRow: shown - 1).maxY + tableView.rect(ofRow: 0).minY
+            : 0
+        let target = (chrome + rows).rounded()
+        guard abs(frame.height - target) > 0.5 else { return }
+
+        setFrame(NSRect(x: frame.minX, y: frame.maxY - target,
+                        width: frame.width, height: target),
+                 display: true)
     }
 
     /// Score d'une correspondance par sous-séquence, ou `nil` si le texte ne

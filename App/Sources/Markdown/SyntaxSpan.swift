@@ -87,6 +87,17 @@ struct SyntaxSpan: Equatable, Sendable {
     /// changement de sélection.
     var depth: Int
 
+    /// La plage du bloc entier, quand `range` a dû être rétrécie.
+    ///
+    /// Un item de liste multi-lignes se révèle **à la ligne** (§2.2) : `range`
+    /// s'arrête donc au premier `\n`, sinon la puce reviendrait à l'écran alors
+    /// que le curseur est trois lignes plus bas. Mais sa **mise en page** — le
+    /// retrait, et le retrait de continuation qui aligne les lignes suivantes
+    /// sous le texte plutôt que sous la puce — porte sur tout l'item. Les deux
+    /// besoins sont contradictoires, d'où deux plages. `nil` quand elles
+    /// coïncident, ce qui est le cas de tout le reste.
+    var blockRange: NSRange?
+
     /// Niveau d'imbrication d'un item de liste, à partir de 0.
     ///
     /// L'AST alterne liste et item : `Document > List > Item > List > Item`.
@@ -96,13 +107,18 @@ struct SyntaxSpan: Equatable, Sendable {
         max(0, (depth - 2) / 2)
     }
 
-    init(kind: Kind, range: NSRange, markers: [NSRange], content: NSRange, depth: Int = 0) {
+    init(kind: Kind, range: NSRange, markers: [NSRange], content: NSRange, depth: Int = 0,
+         blockRange: NSRange? = nil) {
         self.kind = kind
         self.range = range
         self.markers = markers
         self.content = content
         self.depth = depth
+        self.blockRange = blockRange
     }
+
+    /// La plage sur laquelle poser la mise en page du bloc.
+    var layoutRange: NSRange { blockRange ?? range }
 
     /// Décale toutes les positions de la construction.
     ///
@@ -116,6 +132,7 @@ struct SyntaxSpan: Equatable, Sendable {
         var moved = self
         moved.range.location += delta
         moved.content.location += delta
+        moved.blockRange?.location += delta
         moved.markers = markers.map { NSRange(location: $0.location + delta, length: $0.length) }
         if case .table(let table?) = kind {
             moved.kind = .table(table.shifted(by: delta))

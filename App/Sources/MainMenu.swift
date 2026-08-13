@@ -57,13 +57,13 @@ enum MainMenu {
         menu.addItem(item("Nouveau", #selector(NSDocumentController.newDocument(_:)), "n"))
         menu.addItem(item("Ouvrir…", #selector(NSDocumentController.openDocument(_:)), "o"))
 
-        let recents = NSMenuItem(title: "Ouvrir les documents récents", action: nil, keyEquivalent: "")
-        // Ce titre exact est le contrat : AppKit reconnaît un sous-menu nommé
-        // « NSRecentDocumentsMenu » et le remplit tout seul, y compris l'entrée
-        // « Vider le menu ».
-        let recentsMenu = NSMenu(title: "NSRecentDocumentsMenu")
-        recents.submenu = recentsMenu
-        menu.addItem(recents)
+        // **Pas de sous-menu des documents récents ici.** Le contrat du titre
+        // « NSRecentDocumentsMenu » ne vaut que pour un menu chargé depuis un
+        // nib : construit à la main, le sous-menu restait vide pour toujours.
+        // macOS, lui, injecte tout seul « Ouvrir l'élément récent » dans le menu
+        // Fichier d'une app à documents — comme « Renommer… » et « Revenir à »
+        // juste en dessous. En ajouter un deuxième donnait deux entrées voisines
+        // dont une ne s'ouvrait sur rien.
 
         menu.addItem(.separator())
         menu.addItem(item("Fermer", #selector(NSWindow.performClose(_:)), "w"))

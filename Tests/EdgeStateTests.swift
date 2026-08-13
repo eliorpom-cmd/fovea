@@ -60,6 +60,36 @@ final class EdgeStateTests: XCTestCase {
 
     // MARK: - Images (§6)
 
+    /// **Une image morte au fil d'une phrase doit se voir.**
+    ///
+    /// En bloc, une image absente reçoit son cadre « Image introuvable » : le
+    /// §6 interdit le vide qui ferait croire à un bug. Au fil du texte il n'y a
+    /// pas de place pour un cadre, et il n'y avait alors *aucun* signe :
+    /// `![au fil du texte](absente.png)` se lisait « au fil du texte », un
+    /// texte alternatif indiscernable de la prose. Le lien pouvait être mort
+    /// depuis des mois sans que rien ne le dise.
+    func testAMissingInlineImageIsMarked() throws {
+        let source = "Du texte ![une photo](absente.png) au milieu.\n"
+        let view = EditorTextView.make()
+        view.frame = NSRect(x: 0, y: 0, width: 900, height: 400)
+        let storage = try XCTUnwrap(view.textStorage)
+        storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: source)
+
+        let parsed = MarkdownParser.parse(source)
+        MarkdownRenderer(typography: .default)
+            .render(storage, spans: parsed.spans, revealed: [],
+                    in: NSRange(location: 0, length: storage.length))
+
+        let alt = (source as NSString).range(of: "une photo")
+        let underline = storage.attribute(.underlineStyle, at: alt.location, effectiveRange: nil) as? Int
+        XCTAssertNotNil(underline, "Le texte alternatif d'une image absente doit être souligné")
+
+        // Et la prose autour n'a rien attrapé au passage.
+        let prose = (source as NSString).range(of: "au milieu")
+        XCTAssertNil(storage.attribute(.underlineStyle, at: prose.location, effectiveRange: nil),
+                     "Le texte voisin reste du texte ordinaire")
+    }
+
     func testAnOversizedImageIsNotCalledMissing() throws {
         // Le fichier existe : l'annoncer « introuvable » serait faux, et c'était
         // pourtant le comportement précédent.

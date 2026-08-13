@@ -54,36 +54,56 @@ final class TableRenderingTests: XCTestCase {
 
     // MARK: - Alignements
 
-    func testATrailingAlignedColumnEndsFlush() throws {
+    /// **Toutes les cellules partent du même bord.**
+    ///
+    /// L'alignement de la ligne `|:---:|---:|` reste dans le fichier — il n'est
+    /// simplement plus rendu. Une grille dont chaque colonne commence à un bord
+    /// différent se parcourt moins bien qu'une grille dont toutes les entrées
+    /// tombent au même point, et c'est le rendu qui a été tranché.
+    func testEveryCellIsLeftAlignedWhateverTheDelimiterSays() throws {
         let source = """
-        | n |
-        |---:|
-        | 1 |
-        | 1234 |
+        | g | c | d |
+        |---|:-:|--:|
+        | 1 | 1 | 1 |
+        | 1234 | 1234 | 1234 |
         """
         let view = try render(source)
-        let shortEnd = try caretX(at: (source as NSString).range(of: "| 1 |").location + 3, view: view)
-        let longEnd = try caretX(at: (source as NSString).range(of: "| 1234 |").location + 6, view: view)
-
-        XCTAssertEqual(shortEnd, longEnd, accuracy: tolerance,
-                       "Une colonne alignée à droite doit finir au même x sur toutes ses rangées")
+        for column in 0..<3 {
+            let short = try cellStart(row: "| 1 | 1 | 1 |", column: column, in: source, view: view)
+            let long = try cellStart(row: "| 1234 | 1234 | 1234 |", column: column, in: source, view: view)
+            XCTAssertEqual(short, long, accuracy: tolerance,
+                           "La colonne \(column) doit partir du même x sur les deux rangées")
+        }
     }
 
-    func testACenteredColumnIsIndentedByHalfTheSlack() throws {
-        let source = """
-        | n |
-        |:-:|
-        | 1 |
-        | 1234 |
-        """
+    func testACellIsNotGluedToItsRule() throws {
+        // Un peu d'air entre le filet et la première lettre : sans lui, la
+        // grille se lit comme un tableau de chiffres.
+        let source = "| a | b |\n|---|---|\n| c | d |"
         let view = try render(source)
-        let shortStart = try caretX(at: (source as NSString).range(of: "| 1 |").location + 2, view: view)
-        let longStart = try caretX(at: (source as NSString).range(of: "| 1234 |").location + 2, view: view)
-        let one = try width(of: "1234", in: source, view: view) / 4
+        let left = try caretX(at: 0, view: view)
+        let text = try caretX(atFirstOccurrenceOf: "a", in: source, view: view)
+        XCTAssertGreaterThan(text - left, 2, "Le contenu garde un retrait par rapport au bord")
+    }
 
-        // « 1 » est plus court de trois signes ; centré, il commence donc une
-        // signe et demi plus loin que « 1234 ».
-        XCTAssertEqual(shortStart - longStart, one * 1.5, accuracy: one * 0.6)
+    // MARK: - Hauteur des rangées
+
+    /// **Un tableau vide reste un tableau.**
+    ///
+    /// Les `|` masqués mesurent un centième de point : une rangée dont toutes
+    /// les cellules sont vides n'avait donc aucune hauteur naturelle, et le
+    /// multiplicateur d'interlignage multipliait ce néant. Le tableau à remplir
+    /// de « 6 — Tableaux » se réduisait à trois filets empilés, sans une rangée
+    /// où poser le curseur.
+    func testAnEmptyTableKeepsClickableRows() throws {
+        let full = try lineHeights(in: try render("| a | b |\n|---|---|\n| c | d |"))
+        let empty = try lineHeights(in: try render("|  |  |\n|---|---|\n|  |  |"))
+
+        XCTAssertEqual(empty.count, full.count)
+        for (index, height) in empty.enumerated() {
+            XCTAssertEqual(height, full[index], accuracy: tolerance,
+                           "La rangée \(index) vide doit faire la hauteur d'une rangée pleine")
+        }
     }
 
     // MARK: - Les deux états du §2.1
@@ -208,6 +228,22 @@ final class TableRenderingTests: XCTestCase {
         let range = (source as NSString).range(of: needle)
         XCTAssertNotEqual(range.location, NSNotFound, "« \(needle) » introuvable")
         return try caretX(at: range.location, view: view)
+    }
+
+    /// Abscisse du premier signe d'une cellule, repérée par sa rangée source.
+    private func cellStart(row: String, column: Int, in source: String,
+                           view: EditorTextView) throws -> CGFloat {
+        let line = (source as NSString).range(of: row)
+        XCTAssertNotEqual(line.location, NSNotFound, "Rangée « \(row) » introuvable")
+        // `| a | b |` : le contenu de la colonne n commence après le n+1-ième
+        // `|` et son blanc.
+        var offset = line.location
+        var seen = 0
+        while seen <= column, offset < line.upperBound {
+            if (source as NSString).character(at: offset) == UInt16(UnicodeScalar("|").value) { seen += 1 }
+            offset += 1
+        }
+        return try caretX(at: offset + 1, view: view)
     }
 
     /// Largeur rendue d'un fragment, mesurée entre ses deux extrémités.
