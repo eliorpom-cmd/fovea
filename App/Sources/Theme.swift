@@ -37,6 +37,14 @@ enum Theme {
     static let fillSecondary = adaptive(light: (0x787880, 0.12), dark: (0x787880, 0.30))
     /// Ligne survolée dans le plan ou la palette.
     static let rowHover = adaptive(light: (0x787880, 0.16), dark: (0x787880, 0.32))
+    /// **Ligne sélectionnée** dans une liste — menu slash, palette, plan.
+    ///
+    /// Un cran au-dessus du survol, pour qu'on distingue les deux, et gris :
+    /// `NSTableView` peint sa sélection en bleu système, ce qui était la seule
+    /// couleur d'accent restée dans l'app. Le §7 n'autorise la couleur que sur
+    /// le contenu de l'utilisateur, et ce fichier annonçait déjà la neutraliser
+    /// — sans que les listes l'appliquent jamais.
+    static let rowSelection = adaptive(light: (0x787880, 0.22), dark: (0x787880, 0.42))
 
     // MARK: - Libellés
 
@@ -162,6 +170,7 @@ extension Theme {
         static let separator = ns(light: (0x000000, 0.10), dark: (0xFFFFFF, 0.12))
         static let quoteBar = ns(light: (0x000000, 0.18), dark: (0xFFFFFF, 0.22))
         static let selection = ns(light: (0x000000, 0.12), dark: (0xFFFFFF, 0.18))
+        static let rowSelection = ns(light: (0x787880, 0.22), dark: (0x787880, 0.42))
         static let ink = ns(light: (0x0A0A0A, 1.0), dark: (0xF5F5F5, 1.0))
 
         private static func ns(light: (Int, Double), dark: (Int, Double)) -> NSColor {

@@ -97,6 +97,91 @@ final class PerformanceTests: XCTestCase {
                           "Déplacement de curseur : \(ms(perMove)) pour un budget de 1 ms")
     }
 
+    // MARK: - La géométrie ne doit pas bouger sous la main
+
+    /// **Peindre le fond ne met en page que ce qui se voit.**
+    ///
+    /// C'est le test de la régression la plus grave qu'ait connue l'app.
+    /// `DecorationPainter` écartait les marques hors champ *après* leur avoir
+    /// demandé leur position — et demander la position d'une plage la met en
+    /// page. Avec une marque par item de liste, par citation et par bloc de
+    /// code, chaque passe de dessin mettait en page le document **entier**,
+    /// depuis l'intérieur de la passe de dessin.
+    ///
+    /// Ce que l'utilisateur voyait : la vue de texte se redimensionnait au
+    /// milieu de son propre affichage, la vue de défilement rattrapait, et le
+    /// texte sautait — sous le curseur en tapant, sous le pointeur en
+    /// sélectionnant, où la sélection partait alors très loin de la souris.
+    ///
+    /// Le test porte sur la **hauteur mise en page** et non sur une durée :
+    /// c'est la grandeur qui décrit le défaut, et elle ne dépend pas de la
+    /// machine. Avant correction, elle passait de 634 à 35 160 points.
+    func testPaintingTheBackgroundDoesNotLayOutTheWholeDocument() throws {
+        let controller = EditorController(typography: .default)
+        controller.scrollView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        controller.applyColumnLayout()
+        controller.setText(Corpus.document(words: 40_000))
+
+        let view = controller.textView
+        let layout = try XCTUnwrap(view.textLayoutManager)
+        let viewport = NSRect(x: 0, y: 0, width: 900, height: 600)
+        layout.ensureLayout(for: viewport)
+        let laidOut = layout.usageBoundsForTextContainer.height
+
+        XCTAssertGreaterThan(view.decorations.count, 100,
+                             "Le corpus doit porter assez de marques pour que le test ait un sens")
+
+        let image = NSImage(size: viewport.size)
+        image.lockFocus()
+        DecorationPainter(typography: .default, documentURL: nil)
+            .draw(view.decorations, in: view, dirtyRect: viewport)
+        image.unlockFocus()
+
+        // Une marge : un bloc qui déborde du champ visible est légitimement mis
+        // en page. Ce qui ne doit plus arriver, c'est le document entier.
+        XCTAssertLessThan(layout.usageBoundsForTextContainer.height, laidOut * 1.5,
+                          "Le dessin du fond a mis en page \(layout.usageBoundsForTextContainer.height) points "
+                          + "là où seuls \(laidOut) étaient à l'écran")
+    }
+
+    /// Le revers du test précédent : **ce qui se voit se dessine encore**.
+    ///
+    /// Écarter les marques par leur plage est ce qui rend le dessin gratuit ;
+    /// c'est aussi ce qui pourrait en faire disparaître. Le test descend au
+    /// milieu d'un long document et vérifie que les cases à cocher de cette
+    /// hauteur-là — et elles seules — ont bien une zone posée.
+    func testMarksStayVisibleAfterScrolling() throws {
+        var source = "# Tâches\n\n"
+        for index in 0..<400 {
+            source += "- [ ] Tâche numéro \(index), avec un libellé assez long pour tenir la ligne\n"
+        }
+
+        let controller = EditorController(typography: .default)
+        controller.scrollView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        controller.applyColumnLayout()
+        controller.setText(source)
+
+        let view = controller.textView
+        let layout = try XCTUnwrap(view.textLayoutManager)
+        layout.ensureLayout(for: NSRect(x: 0, y: 0, width: 900, height: 20_000))
+        view.frame = NSRect(x: 0, y: 0, width: 900, height: layout.usageBoundsForTextContainer.height + 128)
+
+        let painter = DecorationPainter(typography: .default, documentURL: nil)
+        let clip = controller.scrollView.contentView
+        clip.setBoundsOrigin(NSPoint(x: 0, y: 4_000))
+
+        let targets = painter.checkboxTargets(among: view.decorations, in: view)
+        XCTAssertFalse(targets.isEmpty,
+                       "Aucune case posée au milieu du document : le tri par plage en a trop écarté")
+
+        // Toutes celles qui sont rendues tombent bien dans le champ visible.
+        let visible = view.visibleRect.insetBy(dx: 0, dy: -200)
+        for target in targets {
+            XCTAssertTrue(visible.intersects(target.box),
+                          "Une case a été posée hors du champ visible : \(target.box) hors de \(visible)")
+        }
+    }
+
     // MARK: - Instrument
 
     /// Un cycle de frappe **tel qu'il se produit réellement** : par

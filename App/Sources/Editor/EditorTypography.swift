@@ -13,7 +13,7 @@ import AppKit
 /// thread-safe, et la seule alternative serait un verrou payé à chaque
 /// caractère rendu.
 @MainActor
-struct EditorTypography {
+struct EditorTypography: Equatable {
 
     /// Nom de la famille, ou `nil` pour la police système (SF Pro, le défaut
     /// du §7). L'utilisateur peut en choisir une autre, y compris une police

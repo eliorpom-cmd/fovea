@@ -126,4 +126,63 @@ final class PasteConversionTests: XCTestCase {
         XCTAssertTrue(spans.contains { if case .link = $0.kind { return true } else { return false } },
                       "Le lien collé doit se relire : \(markdown)")
     }
+
+    // MARK: - Structure de bloc
+
+    /// Une chaîne attribuée depuis du vrai HTML, comme le presse-papier en
+    /// livre quand on copie une page web.
+    private func fromHTML(_ html: String) throws -> NSAttributedString {
+        try XCTUnwrap(NSAttributedString(
+            data: Data(html.utf8),
+            options: [.documentType: NSAttributedString.DocumentType.html,
+                      .characterEncoding: String.Encoding.utf8.rawValue],
+            documentAttributes: nil))
+    }
+
+    /// **Les titres et les listes survivent au collage.**
+    ///
+    /// L'en-tête de `PasteConversion` promet de ne pas perdre « les titres, les
+    /// listes et les liens ». Les liens passaient ; les deux autres non — seul
+    /// l'inline était traité, et un article collé arrivait en une suite de
+    /// paragraphes plats. C'est justement la perte que la conversion existe
+    /// pour éviter.
+    func testHeadingsAndListsSurviveAPaste() throws {
+        let html = """
+        <h1>Le grand titre</h1>
+        <p>Un paragraphe avec du <strong>gras</strong> et un <a href="https://x.fr">lien</a>.</p>
+        <h2>Un sous-titre</h2>
+        <ul><li>Premier item</li><li>Deuxième avec du <em>relief</em></li></ul>
+        <ol><li>Un</li><li>Deux</li></ol>
+        """
+        let converted = PasteConversion.convert(try fromHTML(html))
+
+        XCTAssertTrue(converted.contains("# Le grand titre"), converted)
+        XCTAssertTrue(converted.contains("## Un sous-titre"), converted)
+        XCTAssertTrue(converted.contains("- Premier item"), converted)
+        XCTAssertTrue(converted.contains("- Deuxième avec du *relief*"), converted)
+        XCTAssertTrue(converted.contains("1. Un"), converted)
+        XCTAssertTrue(converted.contains("**gras**"), converted)
+
+        // Un titre est déjà gras : `# **Le titre**` dirait deux fois la même
+        // chose, et laisserait des étoiles dans le fichier.
+        XCTAssertFalse(converted.contains("# **"), converted)
+        // La puce que l'importateur écrit dans le texte ne doit pas doubler
+        // celle de markdown.
+        XCTAssertFalse(converted.contains("- •"), converted)
+        XCTAssertFalse(converted.contains("1. 1"), converted)
+    }
+
+    func testNestedListsKeepTheirDepth() throws {
+        let html = "<ul><li>Un<ul><li>Un-un</li></ul></li><li>Deux</li></ul>"
+        let converted = PasteConversion.convert(try fromHTML(html))
+        XCTAssertTrue(converted.contains("\n  - Un-un"), converted)
+    }
+
+    /// Le revers : de la prose reste de la prose. Un paragraphe ordinaire ne
+    /// doit gagner ni dièse ni tiret.
+    func testPlainProseGainsNoStructure() throws {
+        let html = "<p>Une phrase ordinaire, sans structure particulière.</p>"
+        XCTAssertEqual(PasteConversion.convert(try fromHTML(html)),
+                       "Une phrase ordinaire, sans structure particulière.")
+    }
 }

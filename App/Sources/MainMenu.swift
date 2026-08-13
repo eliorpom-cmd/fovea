@@ -170,7 +170,15 @@ enum MainMenu {
         // les onglets natifs, et macOS y attache déjà « Afficher la barre
         // d'onglets ». Le doublon aurait donné un raccourci qui ne marche pas
         // sans que rien ne le dise, exactement comme le ⌘K du menu Lien.
-        let table = item("Tableau…", #selector(AppCommands.insertTable(_:)), "t")
+        // `insertMarkdownTable` et non `insertTable` : **`NSTextView` possède
+        // déjà un `insertTable:`**, son action d'insertion de tableau en texte
+        // riche. La vue de texte est le premier répondeur, elle répondait donc
+        // la première — et comme elle est en `isRichText = false`, elle
+        // refusait l'action. L'entrée « Tableau… » restait grisée et ⌥⌘T ne
+        // faisait rien, sans que rien ne l'explique : le contrôleur de fenêtre,
+        // qui sait pourtant l'ouvrir, n'était jamais atteint. Le damier
+        // n'existait qu'au travers de `/tab`.
+        let table = item("Tableau…", #selector(AppCommands.insertMarkdownTable(_:)), "t")
         table.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(table)
 
@@ -281,7 +289,7 @@ enum MainMenu {
     func toggleStrikethrough(_ sender: Any?)
     func toggleInlineCode(_ sender: Any?)
     func insertLink(_ sender: Any?)
-    func insertTable(_ sender: Any?)
+    func insertMarkdownTable(_ sender: Any?)
     func toggleTaskAtCaret(_ sender: Any?)
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)

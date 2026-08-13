@@ -380,6 +380,12 @@ final class EditorController: NSObject {
     /// mode déroute plus qu'il n'aide tant qu'on ne l'a pas demandé.
     private func applyTypewriterScrolling() {
         guard AppSettings.shared.typewriterMode,
+              // **Jamais pendant qu'une sélection s'étend.** Ce rappel est
+              // aussi celui de chaque changement de sélection, glissement de
+              // souris compris : faire défiler à ce moment-là tire le texte
+              // sous le pointeur, et la sélection s'étend vers ce qu'on ne
+              // vise pas. On ne recentre que sur un curseur posé.
+              textView.selectedRange().length == 0,
               let layout = textView.textLayoutManager,
               let content = textView.textContentStorage,
               let caretLocation = content.location(content.documentRange.location,
@@ -394,14 +400,25 @@ final class EditorController: NSObject {
         }
         guard let caretFrame else { return }
 
-        let visible = scrollView.contentView.bounds
+        let clip = scrollView.contentView
+        let visible = clip.bounds
         // Un tiers de la hauteur, pas la moitié : on écrit vers le bas, et
         // laisser deux tiers de contexte au-dessus se lit mieux qu'un partage
         // égal.
         let target = caretFrame.midY + textView.textContainerOrigin.y - visible.height / 3
-        scrollView.contentView.setBoundsOrigin(NSPoint(x: visible.origin.x,
-                                                       y: max(0, target)))
-        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        // **Les bornes sont celles des encarts, pas zéro et l'infini.** La
+        // fenêtre est en `fullSizeContentView` : AppKit pose un encart en haut
+        // pour que le texte ne défile pas sous la barre de titre, et l'origine
+        // valide commence donc à `-contentInsets.top`. Un plancher à zéro
+        // décalait la ligne active de la hauteur de cette barre, et rien ne
+        // retenait le bas — `setBoundsOrigin` ne passe pas par le calage de
+        // `NSClipView`, si bien qu'une frappe en fin de document poussait le
+        // texte hors de l'écran.
+        let top = -clip.contentInsets.top
+        let bottom = max(top, textView.frame.height + clip.contentInsets.bottom - visible.height)
+        clip.setBoundsOrigin(NSPoint(x: visible.origin.x, y: min(max(top, target), bottom)))
+        scrollView.reflectScrolledClipView(clip)
     }
 
     // MARK: - Écrire dans un tableau (§2.6)
@@ -839,22 +856,42 @@ final class EditorController: NSObject {
         }) else { return false }
 
         let span = spans[index]
-        // Supprimer les marqueurs de la fin vers le début : chaque suppression
-        // décale ce qui suit, et remonter évite d'avoir à recalculer les offsets.
-        let ordered = span.markers.sorted { $0.location > $1.location }
-        guard let undo = textView.undoManager else { return false }
+        guard span.range.upperBound <= storage.length else { return false }
 
-        undo.beginUndoGrouping()
-        storage.beginEditing()
-        for marker in ordered where marker.upperBound <= storage.length {
-            storage.replaceCharacters(in: marker, with: "")
-        }
-        storage.endEditing()
-        undo.endUndoGrouping()
+        // **Une seule édition, et elle passe par `shouldChangeText`.**
+        //
+        // La version précédente retirait les marqueurs un par un, directement
+        // dans le `NSTextStorage`, entre un `beginUndoGrouping` et un
+        // `endUndoGrouping`. Or ce n'est pas le groupe qui inscrit une
+        // annulation, c'est `shouldChangeText(in:replacementString:)` : le
+        // groupe était donc vide, et `⌘Z` ne rendait pas les `**` effacés. La
+        // pile disait pourtant `canUndo` — l'annulation existait, elle ne
+        // défaisait rien, ce qui est la pire des deux formes.
+        //
+        // Remplacer la construction entière par son seul contenu fait le même
+        // travail en une édition, que la vue sait annuler comme une frappe.
+        let kept = withoutMarkers(span, in: storage)
+        guard textView.shouldChangeText(in: span.range, replacementString: kept) else { return false }
+        textView.undoManager?.setActionName("Supprimer le format")
+        storage.replaceCharacters(in: span.range, with: kept)
+        textView.didChangeText()
 
         textView.setSelectedRange(NSRange(location: max(0, span.content.location - lengthBefore(span)), length: 0))
-        handleTextChange()
         return true
+    }
+
+    /// Le texte d'une construction, ses marqueurs retirés.
+    private func withoutMarkers(_ span: SyntaxSpan, in storage: NSTextStorage) -> String {
+        let text = storage.mutableString
+        var kept = ""
+        var cursor = span.range.location
+        for marker in span.markers.sorted(by: { $0.location < $1.location }) {
+            guard marker.location >= cursor, marker.upperBound <= span.range.upperBound else { continue }
+            kept += text.substring(with: NSRange(location: cursor, length: marker.location - cursor))
+            cursor = marker.upperBound
+        }
+        return kept + text.substring(with: NSRange(location: cursor,
+                                                   length: span.range.upperBound - cursor))
     }
 
     private func lengthBefore(_ span: SyntaxSpan) -> Int {
@@ -895,7 +932,7 @@ final class EditorController: NSObject {
         slashTrigger = trigger
         // Le rectangle du curseur est demandé en coordonnées écran, que le
         // panneau attend telles quelles.
-        let caretRect = textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
+        let caretRect = caretRectOnScreen()
         if !slashMenu.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
             slashTrigger = nil
         }
@@ -973,7 +1010,7 @@ final class EditorController: NSObject {
             return
         }
         languageTrigger = trigger
-        let caretRect = textView.firstRect(forCharacterRange: selection, actualRange: nil)
+        let caretRect = caretRectOnScreen()
         if !languagePicker.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
             languageTrigger = nil
         }
@@ -986,6 +1023,24 @@ final class EditorController: NSObject {
                                    replacement: language,
                                    caret: trigger.range.location + language.utf16.count,
                                    undoName: "Choisir le langage"))
+    }
+
+    /// Le rectangle du curseur **en coordonnées écran**, pour y ancrer les
+    /// panneaux flottants — ou `.zero` quand il n'y en a pas.
+    ///
+    /// `firstRect(forCharacterRange:actualRange:)` appartient à
+    /// `NSTextInputClient` : il répond pour une **session de saisie en cours**,
+    /// et rend un rectangle nul quand il n'y en a pas. C'est le cas dès que la
+    /// commande vient de la barre de menus plutôt que de la frappe — `/tab`
+    /// ouvrait le damier sous le curseur, ⌥⌘T l'ouvrait dans le coin bas-gauche
+    /// de l'écran, à moitié sous le Dock, et rien dans le code ne le laissait
+    /// voir.
+    ///
+    /// On ne bricole pas une position de remplacement ici : le `.zero` est
+    /// rendu tel quel, et `FloatingPanel` — seul à connaître sa propre taille —
+    /// décide où se poser faute de curseur.
+    private func caretRectOnScreen() -> NSRect {
+        textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
     }
 
     // MARK: - Le damier de tableau
@@ -1011,8 +1066,7 @@ final class EditorController: NSObject {
         // parfaitement invisible aux tests comme à l'essai rapide.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let caretRect = textView.firstRect(forCharacterRange: textView.selectedRange(),
-                                               actualRange: nil)
+            let caretRect = caretRectOnScreen()
             tableSizePicker.present(caretRect: caretRect, over: textView.window)
         }
     }
@@ -1070,10 +1124,28 @@ final class EditorController: NSObject {
         // Les fontes sont mises en cache par couple (famille, taille) : changer
         // de police laisserait l'ancienne dans le cache.
         FontCache.shared.clear()
-        typography = AppSettings.shared.typography
+
+        // **Ne re-rendre que si le rendu a changé.**
+        //
+        // Un seul avis prévient de *tout* changement de réglage, et la réponse
+        // était de réassigner `typography` — dont le `didSet` repasse les
+        // attributs sur le document entier. Basculer le mode focus, qui n'est
+        // qu'un voile posé par-dessus, ou changer l'objectif de mots, qui ne
+        // touche à rien du tout, coûtait donc un rendu complet : plusieurs
+        // centaines de millisecondes sur un long document, pour rien.
+        let settings = AppSettings.shared
+        if typography != settings.typography || lastColorfulCode != settings.colorfulCodeBlocks {
+            lastColorfulCode = settings.colorfulCodeBlocks
+            typography = settings.typography
+        }
         applyFocus()
         applyTypewriterScrolling()
     }
+
+    /// La coloration des blocs de code au dernier rendu. Elle ne vit pas dans
+    /// `EditorTypography` — ce n'est pas de la typographie — mais elle change
+    /// le rendu, donc elle décide aussi de le refaire.
+    private var lastColorfulCode = AppSettings.shared.colorfulCodeBlocks
 }
 
 // MARK: - NSTextViewDelegate

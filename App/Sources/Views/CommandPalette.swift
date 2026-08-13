@@ -238,6 +238,11 @@ extension CommandPalette: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
 
+    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        ListRowView()
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let entry = filtered[row]
         let title = NSTextField(labelWithString: entry.title)

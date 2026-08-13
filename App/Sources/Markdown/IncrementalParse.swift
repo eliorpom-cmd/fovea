@@ -47,7 +47,24 @@ enum IncrementalParse {
                       existingCodeBlocks: [NSRange]) -> NSRange? {
 
         // Une clôture de bloc de code rebat les cartes pour tout ce qui suit.
-        if inserted.contains("`") || inserted.contains("~") { return nil }
+        //
+        // **Mais elle seule.** La règle portait d'abord sur le caractère tapé :
+        // un backtick ou un tilde, n'importe où, déclenchait l'analyse complète.
+        // Or un backtick au fil d'une phrase n'ouvre qu'un `code` en ligne, dont
+        // la portée s'arrête à la ligne vide suivante — et un backtick non
+        // apparié n'est même qu'un caractère littéral. Le prix de cette
+        // approximation était lourd : sur 190 000 signes, taper « a » ré-analyse
+        // 193 signes en 6 ms, taper « ` » ré-analysait tout le document en
+        // 440 ms. Une seule touche, quarante fois le budget du §9 — et les
+        // paires automatiques en posent deux d'un coup.
+        //
+        // Ce qui compte n'est donc pas le caractère mais **la ligne où il
+        // tombe** : seule une ligne de clôture — trois signes ou plus en tête —
+        // peut changer le sens de ce qui suit.
+        if inserted.contains("`") || inserted.contains("~"),
+           touchesAFence(in: text, editedRange: editedRange) {
+            return nil
+        }
 
         // Éditer **dans** un bloc de code : les lignes vides n'y délimitent
         // plus rien, la portée par bloc n'a pas de sens.
@@ -120,6 +137,45 @@ enum IncrementalParse {
             index = line.upperBound
         }
         return text.length
+    }
+
+    /// L'une des lignes touchées par l'édition est-elle une clôture de bloc ?
+    ///
+    /// Le test se fait sur le texte **après** l'édition : c'est l'état dont
+    /// dépend l'interprétation de la suite. Toutes les lignes de la plage sont
+    /// examinées et non la seule première, pour qu'un collage de plusieurs
+    /// lignes contenant une clôture soit vu.
+    private static func touchesAFence(in text: NSString, editedRange: NSRange) -> Bool {
+        var index = min(editedRange.location, text.length)
+        let end = min(editedRange.upperBound, text.length)
+        repeat {
+            let line = text.lineRange(for: NSRange(location: index, length: 0))
+            if isFence(text, line: line) { return true }
+            guard line.upperBound > index else { break }
+            index = line.upperBound
+        } while index <= end && index < text.length
+        return false
+    }
+
+    /// Une ligne de clôture : jusqu'à trois blancs, puis au moins trois
+    /// backticks ou trois tildes. C'est la définition de CommonMark, et rien
+    /// d'autre n'ouvre un bloc dont la portée dépasse le paragraphe.
+    private static func isFence(_ text: NSString, line: NSRange) -> Bool {
+        var offset = line.location
+        var blanks = 0
+        while offset < line.upperBound, text.character(at: offset) == 32 || text.character(at: offset) == 9 {
+            blanks += 1
+            offset += 1
+        }
+        guard blanks <= 3, offset < line.upperBound else { return false }
+        let marker = text.character(at: offset)
+        guard marker == 96 || marker == 126 else { return false }   // ` ou ~
+        var run = 0
+        while offset < line.upperBound, text.character(at: offset) == marker {
+            run += 1
+            offset += 1
+        }
+        return run >= 3
     }
 
     /// Une ligne blanche : vide, ou uniquement des blancs.

@@ -270,23 +270,54 @@ private struct FontPicker: View {
         .id(libraryVersion)
     }
 
-    private var imported: [String] {
-        FontLibrary.importedFamilies().filter(isSuitable)
+    private var imported: [String] { FontCatalogue.families(monospaced: monospaced,
+                                                           version: libraryVersion).imported }
+    private var installed: [String] { FontCatalogue.families(monospaced: monospaced,
+                                                            version: libraryVersion).installed }
+}
+
+/// Les familles proposables, **calculées une fois**.
+///
+/// Le tri instanciait une `NSFont` par famille installée pour savoir si elle
+/// est à chasse fixe — plusieurs centaines — et il vivait dans une propriété
+/// calculée de la vue. SwiftUI réévalue le corps à chaque frappe et à chaque
+/// cran de curseur : bouger le réglage de taille refaisait donc tout ce travail
+/// des dizaines de fois par seconde, et les curseurs des réglages traînaient.
+///
+/// La liste ne change qu'à l'import ou au retrait d'une police, ce que
+/// `version` dit. On ne garde que la génération courante : deux entrées, le
+/// corps et le code.
+@MainActor
+private enum FontCatalogue {
+
+    private struct Key: Hashable {
+        let monospaced: Bool
+        let version: Int
     }
 
-    private var installed: [String] {
+    private static var cache: [Key: (imported: [String], installed: [String])] = [:]
+
+    static func families(monospaced: Bool, version: Int) -> (imported: [String], installed: [String]) {
+        let key = Key(monospaced: monospaced, version: version)
+        if let hit = cache[key] { return hit }
+
+        let isSuitable = { (family: String) -> Bool in
+            // Les familles à nom préfixé d'un point sont internes au système ;
+            // les proposer n'apporterait que de la confusion.
+            guard !family.hasPrefix(".") else { return false }
+            guard let font = NSFont(name: family, size: 12) else { return false }
+            return monospaced ? font.isFixedPitch : true
+        }
+
+        let imported = FontLibrary.importedFamilies().filter(isSuitable)
         let added = Set(imported)
-        return NSFontManager.shared.availableFontFamilies
+        let installed = NSFontManager.shared.availableFontFamilies
             .filter { !added.contains($0) && isSuitable($0) }
             .sorted()
-    }
 
-    private func isSuitable(_ family: String) -> Bool {
-        // Les familles à nom préfixé d'un point sont internes au système ; les
-        // proposer n'apporterait que de la confusion.
-        guard !family.hasPrefix(".") else { return false }
-        guard let font = NSFont(name: family, size: 12) else { return false }
-        return monospaced ? font.isFixedPitch : true
+        cache = cache.filter { $0.key.version == version }
+        cache[key] = (imported, installed)
+        return (imported, installed)
     }
 }
 

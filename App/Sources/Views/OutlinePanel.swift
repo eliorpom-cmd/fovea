@@ -140,6 +140,11 @@ extension OutlinePanel: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
+    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        ListRowView()
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let item = items[row]
         let label = NSTextField(labelWithString: item.title)

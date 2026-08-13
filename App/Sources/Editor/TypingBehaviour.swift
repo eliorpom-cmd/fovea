@@ -37,6 +37,15 @@ enum TypingBehaviour {
         let line = lineRange(units, containing: selection.location)
         guard let prefix = listPrefix(units, line: line) else { return nil }
 
+        // **Devant le marqueur, `⏎` reste un `⏎`.**
+        //
+        // Le curseur peut se poser au tout début de la ligne — la règle de
+        // révélation le laisse entrer dans le `- `, et `⌘←` l'y envoie. La
+        // continuation s'appliquait quand même : on obtenait `- - item`, une
+        // puce ajoutée devant celle qu'on n'avait pas quittée. Ce qu'on veut là
+        // est une ligne vide au-dessus, c'est-à-dire le comportement ordinaire.
+        guard selection.location >= line.location + prefix.length else { return nil }
+
         // Un item vide : le marqueur seul, rien derrière. `⏎` en sort.
         let contentIsEmpty = line.location + prefix.length >= line.location + line.length
         if contentIsEmpty {
@@ -338,15 +347,30 @@ enum TypingBehaviour {
         let length = markerUnits.count
 
         // Déjà encadré : on retire, plutôt que d'empiler un second niveau.
+        //
+        // # Ce que la comparaison seule ne voyait pas
+        //
+        // Elle regardait les `length` signes de chaque côté et s'arrêtait là.
+        // Autour de `**mot**`, `⌘I` y lisait donc un `*` à gauche et un `*` à
+        // droite — les moitiés intérieures du gras — concluait « déjà en
+        // italique » et **retirait le gras** : `⌘B` puis `⌘I` donnait `*mot*`
+        // au lieu de `***mot***`. Le geste le plus courant du menu Format
+        // détruisait ce que le geste précédent venait de poser.
+        //
+        // Ce qui décide, c'est donc la **longueur de la série** d'étoiles, pas
+        // ses premiers signes : deux étoiles sont du gras, trois sont les deux
+        // à la fois, et une série d'une autre longueur n'est pas la nôtre.
         let before = NSRange(location: selection.location - length, length: length)
         let after = NSRange(location: selection.upperBound, length: length)
         if before.location >= 0, after.upperBound <= units.count,
-           slice(units, before) == marker, slice(units, after) == marker {
+           slice(units, before) == marker, slice(units, after) == marker,
+           encloses(units, selection, marker: marker, length: length) {
             let whole = NSRange(location: before.location, length: length * 2 + selection.length)
             return Edit(range: whole,
                         replacement: slice(units, selection),
-                        caret: before.location + selection.length,
-                        undoName: "Retirer le formatage")
+                        caret: before.location,
+                        undoName: "Retirer le formatage",
+                        selectionLength: selection.length)
         }
 
         let inner = slice(units, selection)
@@ -355,8 +379,43 @@ enum TypingBehaviour {
                     // Sur un curseur seul, on se place **entre** les marqueurs :
                     // l'utilisateur a demandé du gras pour écrire en gras, pas
                     // pour poser deux étoiles et chercher où taper.
-                    caret: selection.location + length + selection.length,
-                    undoName: "Formater")
+                    //
+                    // Avec une sélection, elle est **conservée sur le même
+                    // texte** — comme le fait déjà la frappe d'un `*` sur une
+                    // sélection (voir `autoPair`). Sans ça, `⌘B` puis `⌘I`
+                    // était impossible : la première touche défaisait la
+                    // sélection dont la seconde avait besoin, et les deux
+                    // chemins vers le même geste ne se comportaient pas pareil.
+                    caret: selection.location + length,
+                    undoName: "Formater",
+                    selectionLength: selection.length)
+    }
+
+    /// La série de marqueurs qui entoure la sélection est-elle bien **celle
+    /// qu'on retire**, et non une plus longue dont elle ne serait qu'un bout ?
+    ///
+    /// Deux longueurs valent le retrait :
+    ///
+    /// - `length` exactement — `*mot*` pour `⌘I`, `**mot**` pour `⌘B` ;
+    /// - trois, pour la famille de l'étoile : `***mot***` porte le gras **et**
+    ///   l'italique, et chacun des deux raccourcis doit pouvoir en retirer sa
+    ///   part sans emporter l'autre.
+    ///
+    /// Toute autre longueur veut dire que la sélection est bordée par un
+    /// format différent : on empile alors, ce qui est le geste demandé.
+    private static func encloses(_ units: [UInt16], _ selection: NSRange,
+                                 marker: String, length: Int) -> Bool {
+        guard let symbol = marker.utf16.first else { return false }
+        var leading = 0
+        while selection.location - leading - 1 >= 0,
+              units[selection.location - leading - 1] == symbol { leading += 1 }
+        var trailing = 0
+        while selection.upperBound + trailing < units.count,
+              units[selection.upperBound + trailing] == symbol { trailing += 1 }
+
+        guard leading == trailing else { return false }
+        let combinable = marker.allSatisfy { $0 == "*" || $0 == "_" }
+        return leading == length || (combinable && leading == 3 && length < 3)
     }
 
     /// Change le niveau d'un titre, ou le retire quand `level` vaut 0.

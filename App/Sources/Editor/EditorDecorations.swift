@@ -232,7 +232,10 @@ struct DecorationPainter {
 
         let origin = view.textContainerOrigin
         let columnWidth = view.textContainer?.size.width ?? view.bounds.width
+        let onScreen = characterRange(coveredBy: dirtyRect, in: view, layout: layout, content: content)
+
         for decoration in decorations {
+            guard touches(decoration.range, onScreen) else { continue }
             guard let frame = boundingFrame(of: decoration.range, layout: layout, content: content) else { continue }
             let placed = frame.offsetBy(dx: origin.x, dy: origin.y)
             guard placed.intersects(dirtyRect) else { continue }
@@ -479,13 +482,21 @@ struct DecorationPainter {
     /// sert au clic **et** au pointeur, qui doivent répondre exactement à la
     /// même surface — un pointeur qui change sans que le clic ne fasse rien est
     /// pire que pas de pointeur du tout.
+    ///
+    /// Seules les cases **visibles** sont calculées, et pour la même raison que
+    /// le dessin : demander la position d'une case met en page la portion du
+    /// document où elle se trouve. Ce que la souris ne peut pas atteindre n'a
+    /// de toute façon pas de zone à poser — `resetCursorRects` ne s'intéresse
+    /// qu'au champ visible, et un clic ne tombe jamais ailleurs.
     func checkboxTargets(among decorations: [EditorDecoration],
                          in view: NSTextView) -> [(range: NSRange, box: NSRect)] {
         guard let layout = view.textLayoutManager, let content = view.textContentStorage else { return [] }
         let origin = view.textContainerOrigin
+        let onScreen = characterRange(coveredBy: view.visibleRect, in: view,
+                                      layout: layout, content: content)
 
         return decorations.compactMap { decoration in
-            guard case .checkbox = decoration.kind,
+            guard case .checkbox = decoration.kind, touches(decoration.range, onScreen),
                   let frame = boundingFrame(of: decoration.range, layout: layout, content: content)
             else { return nil }
             let box = checkboxBox(at: frame.offsetBy(dx: origin.x, dy: origin.y))
@@ -497,6 +508,65 @@ struct DecorationPainter {
     func task(at point: NSPoint, among decorations: [EditorDecoration],
               in view: NSTextView) -> NSRange? {
         checkboxTargets(among: decorations, in: view).first { $0.box.contains(point) }?.range
+    }
+
+    /// La plage de caractères couverte par une bande de la vue.
+    ///
+    /// # Le défaut que ce calcul répare
+    ///
+    /// La boucle de dessin écartait bien les marques hors champ — mais
+    /// **après** avoir demandé leur position. Or demander la position d'une
+    /// plage force TextKit 2 à la mettre en page, et il y a une marque par
+    /// item de liste, par citation et par bloc de code du document. Peindre le
+    /// fond mettait donc en page le document **entier**, à chaque passe de
+    /// dessin, depuis l'intérieur de cette passe.
+    ///
+    /// Mesuré sur 40 000 mots : la hauteur mise en page passait de 634 points
+    /// — le seul écran visible — à 35 160 pendant le dessin, en 56 ms. La vue
+    /// de texte se redimensionnait donc au milieu de son propre affichage, la
+    /// vue de défilement rattrapait, et le texte sautait sous le curseur. Le
+    /// même calcul relancé après une frappe coûtait 283 ms : la frappe invalide
+    /// la mise en page, et le dessin suivant la refaisait en entier.
+    ///
+    /// La bande est prise en coordonnées de la vue et convertie en plage de
+    /// caractères par les fragments qui la bordent — ce que la mise en page du
+    /// viewport a déjà calculé, donc gratuit. Une marque dont la plage ne la
+    /// touche pas ne coûte plus rien du tout.
+    ///
+    /// - Returns: `nil` quand la bande ne peut pas être résolue, auquel cas
+    ///   rien n'est écarté : mieux vaut un dessin lent qu'un dessin absent.
+    private func characterRange(coveredBy band: NSRect,
+                                in view: NSTextView,
+                                layout: NSTextLayoutManager,
+                                content: NSTextContentStorage) -> NSRange? {
+        // De quoi couvrir ce qu'une marque déborde de son texte porteur :
+        // l'espace au-dessus d'un titre, la marge d'un fond de bloc de code.
+        // Un bloc qui traverse la bande, lui, est retenu par sa plage — elle
+        // couvre les caractères visibles — quelle que soit sa hauteur.
+        let margin: CGFloat = 120
+        let origin = view.textContainerOrigin
+        let top = max(0, band.minY - origin.y - margin)
+        let bottom = max(0, band.maxY - origin.y + margin)
+
+        guard let first = layout.textLayoutFragment(for: CGPoint(x: 0, y: top)) else { return nil }
+        let end = layout.textLayoutFragment(for: CGPoint(x: 0, y: bottom))?.rangeInElement.endLocation
+            ?? content.documentRange.endLocation
+
+        let start = content.offset(from: content.documentRange.location,
+                                   to: first.rangeInElement.location)
+        let finish = content.offset(from: content.documentRange.location, to: end)
+        guard start != NSNotFound, finish != NSNotFound, finish >= start else { return nil }
+        return NSRange(location: start, length: finish - start)
+    }
+
+    /// Les deux plages se touchent-elles, bornes comprises ?
+    ///
+    /// `NSIntersectionRange` ne convient pas : la plage d'une marque peut être
+    /// vide — l'item de liste sans texte — et une intersection vide l'écarterait
+    /// alors qu'elle est bel et bien à l'écran.
+    private func touches(_ range: NSRange, _ band: NSRange?) -> Bool {
+        guard let band else { return true }
+        return range.location <= band.upperBound && band.location <= range.upperBound
     }
 
     /// Rectangle englobant d'une plage, en coordonnées du conteneur de texte.

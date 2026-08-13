@@ -42,6 +42,12 @@ class FloatingPanel: NSPanel {
         backgroundColor = .clear
         isMovable = false
         hidesOnDeactivate = true
+        // Sans cela, une zone de suivi posée avec `.mouseMoved` ne reçoit
+        // rien : AppKit ne *produit* les événements de déplacement que pour
+        // les fenêtres qui les acceptent, et le défaut est `false`. Le damier
+        // s'annonce « on survole, on voit la grille se remplir, on clique » —
+        // le survol ne remplissait rien.
+        acceptsMouseMovedEvents = true
 
         container.material = .menu
         container.blendingMode = .behindWindow
@@ -64,10 +70,22 @@ class FloatingPanel: NSPanel {
     func present(size: NSSize, caretRect: NSRect, over host: NSWindow?) {
         // Sous la ligne courante, décalé d'un cheveu : posé dessus, le panneau
         // masquerait le mot qu'on est en train de taper.
-        var origin = NSPoint(x: caretRect.minX, y: caretRect.minY - size.height - 6)
+        // **Un rectangle nul n'est pas une position, c'est une absence de
+        // réponse.** `firstRect(forCharacterRange:)` en rend un quand aucune
+        // session de saisie n'est en cours — c'est le cas quand la commande
+        // vient de la barre de menus. Le calcul qui suit le prenait au mot :
+        // l'origine tombait à zéro, le repli vers le haut la ramenait au ras du
+        // bord, et le panneau se posait dans le coin bas-gauche de l'écran, à
+        // moitié sous le Dock. Techniquement affiché, introuvable en pratique.
+        //
+        // On ne devine pas la position à sa place : on prend le tiers supérieur
+        // de la fenêtre, là où le regard est déjà.
+        let anchor = caretRect == .zero ? fallbackAnchor(size: size, in: host) : caretRect
+
+        var origin = NSPoint(x: anchor.minX, y: anchor.minY - size.height - 6)
         if let screen = host?.screen ?? NSScreen.main {
             if origin.y < screen.visibleFrame.minY {
-                origin.y = caretRect.maxY + 6
+                origin.y = anchor.maxY + 6
             }
             origin.x = min(max(origin.x, screen.visibleFrame.minX + 8),
                            screen.visibleFrame.maxX - size.width - 8)
@@ -78,6 +96,20 @@ class FloatingPanel: NSPanel {
             host?.addChildWindow(self, ordered: .above)
             orderFront(nil)
         }
+    }
+
+    /// Où poser un panneau qui n'a pas de curseur où s'accrocher : au tiers
+    /// supérieur de la fenêtre, centré. Ce n'est pas la position du curseur,
+    /// mais c'est sous les yeux et dans le document — ce qu'un coin d'écran
+    /// n'est pas.
+    private func fallbackAnchor(size: NSSize, in host: NSWindow?) -> NSRect {
+        guard let frame = host?.frame else {
+            let screen = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+            return NSRect(x: screen.midX - size.width / 2, y: screen.midY, width: 1, height: 1)
+        }
+        return NSRect(x: frame.midX - size.width / 2,
+                      y: frame.minY + frame.height * 2 / 3,
+                      width: 1, height: 1)
     }
 
     func dismiss() {

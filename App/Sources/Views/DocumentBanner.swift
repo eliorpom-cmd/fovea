@@ -98,8 +98,18 @@ final class DocumentBanner: NSView {
     @objc func dismiss() {
         guard !isHidden else { return }
         heightConstraint.constant = 0
-        Accessibility.animate(0.18) { superview?.layoutSubtreeIfNeeded() }
-        isHidden = true
+        // `isHidden` est posé **à la fin**, pas avant : appliqué tout de suite,
+        // il faisait disparaître le bandeau d'un coup et l'animation qui suit
+        // repliait une vue déjà invisible. Le bandeau sautait au lieu de se
+        // refermer, et le glissement écrit juste au-dessus ne se voyait jamais.
+        Accessibility.animate(0.18) { superview?.layoutSubtreeIfNeeded() } completion: {
+            MainActor.assumeIsolated { [weak self] in
+                // Un `show` a pu passer entre-temps : on ne masque que ce qui
+                // est bien resté replié.
+                guard let self, heightConstraint.constant == 0 else { return }
+                isHidden = true
+            }
+        }
     }
 }
 

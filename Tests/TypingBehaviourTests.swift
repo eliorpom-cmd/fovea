@@ -88,7 +88,15 @@ final class TypingBehaviourTests: XCTestCase {
     func testWrapSurroundsTheSelection() {
         let edit = TypingBehaviour.wrap("un mot ici", selection: NSRange(location: 3, length: 3), with: "**")
         XCTAssertEqual(edit.replacement, "**mot**")
-        XCTAssertEqual(edit.caret, 8, "Le curseur reste après le mot, pas après les étoiles")
+        // **La sélection survit au formatage**, sur le même texte qu'avant.
+        //
+        // Elle ne survivait pas : `⌘B` la repliait en un curseur, et le `⌘I`
+        // qui suit n'avait plus rien à mettre en italique. La frappe d'un `*`
+        // sur une sélection, elle, la conservait déjà (voir `autoPair`) : deux
+        // chemins vers le même geste, deux comportements. Le curseur reste
+        // entre les étoiles dans les deux cas.
+        XCTAssertEqual(edit.caret, 5, "Le mot commence après les deux étoiles ouvrantes")
+        XCTAssertEqual(edit.selectionLength, 3, "Le mot reste sélectionné, prêt pour un second format")
     }
 
     func testWrapOnACaretPlacesItBetweenTheMarkers() {
@@ -349,5 +357,24 @@ final class TypingBehaviourTests: XCTestCase {
         let units = Array("- [ ] à faire".utf16)
         let line = TypingBehaviour.lineRange(units, containing: 0)
         XCTAssertEqual(TypingBehaviour.listPrefix(units, line: line), NSRange(location: 0, length: 6))
+    }
+
+    /// **Devant le marqueur, `⏎` reste un `⏎`.**
+    ///
+    /// Le curseur peut se poser au tout début d'une ligne de liste — `⌘←` l'y
+    /// envoie, et la règle de révélation l'y laisse entrer. La continuation
+    /// s'appliquait quand même : on obtenait `- - item`, une seconde puce
+    /// devant celle qu'on n'avait pas quittée. Ce qu'on veut là est une ligne
+    /// vide au-dessus, c'est-à-dire le comportement ordinaire.
+    func testNewlineBeforeTheMarkerDoesNotDuplicateIt() {
+        XCTAssertNil(TypingBehaviour.newline(in: "- un item", selection: NSRange(location: 0, length: 0)),
+                     "En tête de ligne, ⏎ doit rester un simple retour")
+        XCTAssertNil(TypingBehaviour.newline(in: "- un item", selection: NSRange(location: 1, length: 0)),
+                     "Dans le marqueur non plus, la liste ne se continue pas")
+
+        // Juste après le marqueur, en revanche, la continuation reprend : c'est
+        // le geste qui crée l'item vide au-dessus.
+        let edit = TypingBehaviour.newline(in: "- un item", selection: NSRange(location: 2, length: 0))
+        XCTAssertEqual(edit?.replacement, "\n- ")
     }
 }
