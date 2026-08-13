@@ -53,6 +53,60 @@ final class MarkdownExportTests: XCTestCase {
         XCTAssertTrue(inLink.contains("<a href=\"https://exemple.fr\">lien <strong>gras</strong></a>"), inLink)
     }
 
+    /// Les documents d'essai sont coupés à 80 signes, comme la plupart des
+    /// markdown écrits à la main. Chaque ligne ressortait en `<p>`, donc un
+    /// paragraphe de trois lignes s'espaçait comme trois paragraphes.
+    func testAWrappedParagraphStaysOneParagraph() {
+        let html = MarkdownExport.html(from: "Une phrase assez longue\npour être coupée\nen trois.\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertEqual(html.components(separatedBy: "<p>").count - 1, 1, html)
+        XCTAssertTrue(html.contains("<p>Une phrase assez longue\npour être coupée\nen trois.</p>"), html)
+    }
+
+    /// Le vrai dégât de la découpe ligne à ligne : une construction à cheval
+    /// sur la coupure n'était plus reconnue, et sa syntaxe brute ressortait.
+    func testAConstructSpanningTheWrapIsStillRendered() {
+        let code = MarkdownExport.html(from: "et du `code avec des\n*étoiles*` qui suit.\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertTrue(code.contains("<code>"), code)
+        XCTAssertFalse(code.contains("`"), code)
+
+        let strong = MarkdownExport.html(from: "un **gras coupé\nen deux** ici.\n",
+                                         title: "T", documentURL: nil)
+        XCTAssertTrue(strong.contains("<strong>gras coupé\nen deux</strong>"), strong)
+        XCTAssertFalse(strong.contains("**"), strong)
+    }
+
+    /// Recoller les lignes ne doit pas avaler ce qui suit le paragraphe.
+    func testABlockAfterAParagraphIsNotSwallowed() {
+        let html = MarkdownExport.html(from: "Une phrase\ncoupée.\n\n- un\n- deux\n\n## Titre\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertEqual(html.components(separatedBy: "<p>").count - 1, 1, html)
+        XCTAssertEqual(html.components(separatedBy: "<li>").count - 1, 2, html)
+        XCTAssertTrue(html.contains("<h2>Titre</h2>"), html)
+    }
+
+    /// Deux définitions de note qui se suivent restent deux lignes, pas un
+    /// paragraphe recollé.
+    func testFootnoteDefinitionsAreNotMergedTogether() {
+        let html = MarkdownExport.html(from: "Un renvoi[^1].\n\n[^1]: La première.\n[^b]: La seconde.\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertTrue(html.contains("[^1]: La première."), html)
+        XCTAssertTrue(html.contains("[^b]: La seconde."), html)
+        XCTAssertFalse(html.contains("La première.\n[^b]"), html)
+    }
+
+    /// Une coupure rendue dure par l'auteur — deux espaces ou une barre
+    /// inverse — reste une coupure, sinon recoller la ferait disparaître.
+    func testHardBreaksSurviveTheJoin() {
+        let spaces = MarkdownExport.html(from: "premier vers  \nsecond vers\n", title: "T", documentURL: nil)
+        XCTAssertTrue(spaces.contains("<br>"), spaces)
+
+        let backslash = MarkdownExport.html(from: "premier vers\\\nsecond vers\n", title: "T", documentURL: nil)
+        XCTAssertTrue(backslash.contains("<br>"), backslash)
+        XCTAssertFalse(backslash.contains("\\"), backslash)
+    }
+
     func testLinksKeepTheirDestination() {
         let html = MarkdownExport.html(from: "Voir [le site](https://exemple.fr).\n",
                                        title: "T", documentURL: nil)
@@ -195,6 +249,25 @@ final class MarkdownExportTests: XCTestCase {
             }
         }
         XCTAssertTrue(foundBold, "Le gras doit survivre au passage en texte riche")
+    }
+
+    /// Le texte riche est collé dans Mail ou Pages, et le PDF est imprimé :
+    /// des pages **blanches**. WebKit résolvait `prefers-color-scheme` sur
+    /// l'apparence du système, donc en thème sombre `⌘⇧C` et l'export PDF ne
+    /// donnaient qu'un gris clair illisible — le fond, lui, ne suit pas.
+    func testRichTextIsReadableOnPaperWhateverTheSystemAppearance() throws {
+        let rich = try XCTUnwrap(MarkdownExport.richText(from: "Une phrase ordinaire.\n", documentURL: nil))
+        let colour = try XCTUnwrap(rich.attributes(at: 0, effectiveRange: nil)[.foregroundColor] as? NSColor)
+        let sRGB = try XCTUnwrap(colour.usingColorSpace(.sRGB))
+        XCTAssertLessThan(sRGB.brightnessComponent, 0.5,
+                          "Le texte riche doit rester sombre : il atterrit sur du blanc (\(sRGB))")
+    }
+
+    /// Le fichier autonome, lui, s'ouvre dans un navigateur — qui applique
+    /// aussi le fond. Il garde donc sa variante sombre.
+    func testTheStandaloneFileKeepsItsDarkVariant() {
+        let file = MarkdownExport.html(from: "Une phrase.\n", title: "T", documentURL: nil)
+        XCTAssertTrue(file.contains("prefers-color-scheme: dark"), file)
     }
 
     // MARK: - La règle qui prime sur tout

@@ -18,9 +18,26 @@ enum MarkdownExport {
     ///
     /// Autonome veut dire ce qu'il dit : le fichier s'ouvre dans un navigateur
     /// sans son dossier d'images, s'envoie par courriel, et se lit dans dix ans.
-    static func html(from markdown: String, title: String, documentURL: URL?) -> String {
+    /// `followingSystemAppearance` ne vaut que pour le fichier autonome, qui
+    /// s'ouvre dans un navigateur — celui-ci applique aussi le **fond**, donc
+    /// la variante sombre s'y tient. Le texte riche et le PDF atterrissent sur
+    /// du papier ou dans le document d'une autre app, où le fond reste blanc :
+    /// la variante sombre n'y laissait qu'un gris clair illisible.
+    static func html(from markdown: String,
+                     title: String,
+                     documentURL: URL?,
+                     followingSystemAppearance: Bool = true) -> String {
         let spans = MarkdownParser.parse(markdown).spans
         let body = HTMLWriter(source: markdown, spans: spans, documentURL: documentURL).run()
+        let dark = """
+        @media (prefers-color-scheme: dark) {
+          body { color: #e8e8e8; background: #1c1c1e; }
+          blockquote { border-color: #444; color: #a8a8a8; }
+          code, pre { background: #2a2a2c; }
+          hr { border-color: #3a3a3c; }
+          a { color: inherit; }
+        }
+        """
         return """
         <!doctype html>
         <html lang="fr">
@@ -29,20 +46,14 @@ enum MarkdownExport {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>\(escape(title))</title>
         <style>
-        :root { color-scheme: light dark; }
+        :root { color-scheme: \(followingSystemAppearance ? "light dark" : "light"); }
         body {
           max-width: 42rem; margin: 4rem auto; padding: 0 1.5rem;
           font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
           color: #1a1a1a; background: #fff;
           -webkit-text-size-adjust: 100%;
         }
-        @media (prefers-color-scheme: dark) {
-          body { color: #e8e8e8; background: #1c1c1e; }
-          blockquote { border-color: #444; color: #a8a8a8; }
-          code, pre { background: #2a2a2c; }
-          hr { border-color: #3a3a3c; }
-          a { color: inherit; }
-        }
+        \(followingSystemAppearance ? dark : "")
         h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 2em 0 .6em; font-weight: 600; }
         h1 { font-size: 1.85em; } h2 { font-size: 1.5em; } h3 { font-size: 1.25em; }
         p, ul, ol, blockquote, pre { margin: 0 0 1.1em; }
@@ -74,7 +85,8 @@ enum MarkdownExport {
     /// Slack. Il est produit depuis le HTML, parce que c'est le seul format que
     /// toutes ces apps savent lire de la même façon.
     static func richText(from markdown: String, documentURL: URL?) -> NSAttributedString? {
-        let source = html(from: markdown, title: "", documentURL: documentURL)
+        let source = html(from: markdown, title: "", documentURL: documentURL,
+                          followingSystemAppearance: false)
         return try? NSAttributedString(
             data: Data(source.utf8),
             options: [.documentType: NSAttributedString.DocumentType.html,
@@ -185,7 +197,18 @@ private struct HTMLWriter {
             }
 
             closeLists(&listStack, into: &output)
-            output.append("<p>\(inline(in: line))</p>")
+            // Un paragraphe coupé à 80 signes reste **un** paragraphe. Ligne à
+            // ligne, chacune ressortait en `<p>` — avec l'espacement d'un
+            // paragraphe entier entre deux — et toute construction à cheval sur
+            // la coupure était perdue, laissant sa syntaxe brute à l'écran.
+            var paragraph = line
+            while index < text.length {
+                let following = self.line(at: index)
+                if startsAnotherBlock(following.content) { break }
+                paragraph.length = following.content.upperBound - paragraph.location
+                index = following.next
+            }
+            output.append("<p>\(inline(in: paragraph))</p>")
         }
         closeLists(&listStack, into: &output)
         return output.joined(separator: "\n")
@@ -212,11 +235,27 @@ private struct HTMLWriter {
                 index = max(span.range.upperBound, index + 1)
                 continue
             }
+            let unit = text.character(at: index)
+
+            // Une barre inverse en fin de ligne est une coupure dure : elle ne
+            // s'écrit pas, c'est le `<br>` qui la remplace.
+            if unit == 92, index + 1 < range.upperBound, isNewline(text.character(at: index + 1)) {
+                index += 1
+                continue
+            }
+            // Dans un paragraphe, une coupure de ligne vaut une espace — c'est
+            // le navigateur qui la replie. Sauf si l'auteur l'a rendue dure.
+            if isNewline(unit) {
+                output += isHardBreak(before: index) ? "<br>\n" : "\n"
+                index += 1
+                if unit == 13, index < range.upperBound, text.character(at: index) == 10 { index += 1 }
+                continue
+            }
+
             // Une paire de substitution se copie **entière**. Convertir l'unité
             // UTF-16 seule en `UnicodeScalar` échouait sur la moitié haute d'un
             // emoji, et chaque emoji ressortait en deux espaces.
             var step = 1
-            let unit = text.character(at: index)
             if unit >= 0xD800, unit <= 0xDBFF, index + 1 < range.upperBound { step = 2 }
             output += MarkdownExport.escape(text.substring(with: NSRange(location: index, length: step)))
             index += step
@@ -330,6 +369,41 @@ private struct HTMLWriter {
 
     // MARK: - Recherche de constructions
 
+    /// La ligne qui commence à `location`, sans son terminateur, et l'endroit
+    /// où commence la suivante.
+    private func line(at location: Int) -> (content: NSRange, next: Int) {
+        let text = source as NSString
+        let full = text.lineRange(for: NSRange(location: location, length: 0))
+        var content = full
+        while content.length > 0, isNewline(text.character(at: content.upperBound - 1)) {
+            content.length -= 1
+        }
+        return (content, full.upperBound)
+    }
+
+    /// Vrai si cette ligne ouvre autre chose que la suite d'un paragraphe.
+    ///
+    /// Sert à recoller un paragraphe coupé à 80 signes : on avale les lignes
+    /// suivantes tant qu'elles le continuent.
+    private func startsAnotherBlock(_ line: NSRange) -> Bool {
+        let text = source as NSString
+        if line.length == 0 { return true }
+        if text.substring(with: line).trimmingCharacters(in: .whitespaces).isEmpty { return true }
+        if codeBlock(containing: line.location) != nil { return true }
+        if table(containing: line.location) != nil { return true }
+        if frontMatter(containing: line.location) != nil { return true }
+        if span(containing: line.location,
+                matching: { if case .blockQuote = $0.kind { return true } else { return false } }) != nil {
+            return true
+        }
+        return span(onLine: line) {
+            switch $0.kind {
+            case .thematicBreak, .heading, .taskItem, .listItem, .footnoteDefinition: true
+            default: false
+            }
+        } != nil
+    }
+
     private func span(onLine line: NSRange, matching predicate: (SyntaxSpan) -> Bool) -> SyntaxSpan? {
         spans.first { predicate($0) && NSIntersectionRange($0.range, line).length > 0 && $0.range.location >= line.location }
     }
@@ -379,4 +453,12 @@ private struct HTMLWriter {
     }
 
     private func isNewline(_ unit: unichar) -> Bool { unit == 10 || unit == 13 }
+
+    /// Deux espaces ou une barre inverse en fin de ligne : la coupure est dure.
+    private func isHardBreak(before newline: Int) -> Bool {
+        let text = source as NSString
+        if newline >= 1, text.character(at: newline - 1) == 92 { return true }
+        guard newline >= 2 else { return false }
+        return text.character(at: newline - 1) == 32 && text.character(at: newline - 2) == 32
+    }
 }
