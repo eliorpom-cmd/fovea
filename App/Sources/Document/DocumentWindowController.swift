@@ -113,15 +113,13 @@ final class DocumentWindowController: NSWindowController {
         editor.applyColumnLayout()
     }
 
-    /// Rafraîchit la barre d'état.
-    ///
-    /// Appelée à chaque changement de sélection **et** à chaque frappe. Le
-    /// comptage exclut la syntaxe markdown, donc il parcourt le document : sur
-    /// un très gros texte, ce serait le seul coût restant dans le cycle de
-    /// frappe. La barre étant masquable, on ne paie que si elle est affichée.
     /// Le recomptage en attente. Voir `refreshStatistics`.
     private var pendingStatistics: DispatchWorkItem?
 
+    /// Rafraîchit la barre d'état.
+    ///
+    /// Appelée à chaque changement de sélection **et** à chaque frappe. La
+    /// barre étant masquable, on ne paie rien du tout quand elle est cachée.
     func refreshStatistics() {
         guard AppSettings.shared.showStatistics else {
             statusBar.isHidden = true
@@ -383,10 +381,6 @@ extension DocumentWindowController: NSMenuItemValidation {
     private func refreshOutlineHighlight() {
         guard outlineWidth?.constant != 0 else { return }
         outline.highlight(caret: editor.textView.selectedRange().location)
-    }
-
-    @objc func openRepository(_ sender: Any?) {
-        NSWorkspace.shared.open(AppConfig.repositoryURL)
     }
 
     /// `NSWindowController` n'hérite pas de la validation : sans cette

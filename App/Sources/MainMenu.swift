@@ -19,7 +19,6 @@ enum MainMenu {
         main.addItem(submenu(formatMenu(), title: "Format"))
         main.addItem(submenu(viewMenu(), title: "Présentation"))
         main.addItem(submenu(windowMenu(), title: "Fenêtre"))
-        main.addItem(submenu(helpMenu(), title: "Aide"))
         return main
     }
 
@@ -226,7 +225,7 @@ enum MainMenu {
         return menu
     }
 
-    // MARK: - Fenêtre et Aide
+    // MARK: - Fenêtre
 
     private static func windowMenu() -> NSMenu {
         let menu = NSMenu(title: "Fenêtre")
@@ -235,13 +234,6 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(item("Tout ramener au premier plan", #selector(NSApplication.arrangeInFront(_:))))
         NSApp.windowsMenu = menu
-        return menu
-    }
-
-    private static func helpMenu() -> NSMenu {
-        let menu = NSMenu(title: "Aide")
-        menu.addItem(item("Aide \(AppConfig.name)", #selector(AppCommands.openRepository(_:)), "?"))
-        NSApp.helpMenu = menu
         return menu
     }
 
@@ -297,5 +289,4 @@ enum MainMenu {
     func showCommandPalette(_ sender: Any?)
     func toggleFocusMode(_ sender: Any?)
     func toggleTypewriterMode(_ sender: Any?)
-    func openRepository(_ sender: Any?)
 }

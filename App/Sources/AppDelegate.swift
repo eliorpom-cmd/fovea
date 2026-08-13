@@ -38,10 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Task { await DefaultHandler.makeDefault() }
     }
 
-    @objc func openRepository(_ sender: Any?) {
-        NSWorkspace.shared.open(AppConfig.repositoryURL)
-    }
-
     /// Sans ce réglage, relancer l'app depuis le Dock avec une fenêtre déjà
     /// ouverte n'ouvre rien du tout — l'utilisateur clique et rien ne se passe.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
