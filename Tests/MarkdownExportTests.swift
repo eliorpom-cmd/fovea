@@ -29,6 +29,30 @@ final class MarkdownExportTests: XCTestCase {
         XCTAssertTrue(html.contains("<del>barré</del>"), html)
     }
 
+    /// `***gras et italique***` faisait tomber l'app par débordement de pile,
+    /// donc l'export HTML, l'export PDF et `⌘⇧C` avec : cmark donne au nœud
+    /// `emphasis` et au nœud `strong` la **même** plage source, et le rendu
+    /// re-sélectionnait indéfiniment l'emphase au lieu de descendre dedans.
+    func testTripleEmphasisNestsAndDoesNotRecurseForever() {
+        let html = MarkdownExport.html(from: "Un ***gras et italique*** collés.\n",
+                                       title: "T", documentURL: nil)
+        XCTAssertTrue(html.contains("<em><strong>gras et italique</strong></em>"), html)
+    }
+
+    /// Les autres imbrications gardent leur ordre : c'est le nœud le plus
+    /// extérieur qui ouvre la première balise.
+    func testNestedEmphasisKeepsItsOrder() {
+        let mixed = MarkdownExport.html(from: "***a* b**.\n", title: "T", documentURL: nil)
+        XCTAssertTrue(mixed.contains("<strong><em>a</em> b</strong>"), mixed)
+
+        let underscored = MarkdownExport.html(from: "**_x_**.\n", title: "T", documentURL: nil)
+        XCTAssertTrue(underscored.contains("<strong><em>x</em></strong>"), underscored)
+
+        let inLink = MarkdownExport.html(from: "[lien **gras**](https://exemple.fr).\n",
+                                         title: "T", documentURL: nil)
+        XCTAssertTrue(inLink.contains("<a href=\"https://exemple.fr\">lien <strong>gras</strong></a>"), inLink)
+    }
+
     func testLinksKeepTheirDestination() {
         let html = MarkdownExport.html(from: "Voir [le site](https://exemple.fr).\n",
                                        title: "T", documentURL: nil)

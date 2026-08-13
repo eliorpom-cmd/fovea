@@ -195,15 +195,21 @@ private struct HTMLWriter {
 
     /// Rend une plage de texte, en appliquant les constructions inline qu'elle
     /// contient. Le parcours va de gauche à droite, en sautant les marqueurs.
-    private func inline(in range: NSRange) -> String {
+    ///
+    /// `deeperThan` est la profondeur AST de la construction qu'on est en train
+    /// de rendre : on ne considère que ses descendants. Sans ce garde-fou,
+    /// `***gras***` bouclait à l'infini — cmark donne au nœud `emphasis` et au
+    /// nœud `strong` **la même** plage source, donc le contenu de l'emphase est
+    /// sa propre plage, et on la re-sélectionnait sans jamais avancer.
+    private func inline(in range: NSRange, deeperThan depth: Int = Int.min) -> String {
         let text = source as NSString
         var output = ""
         var index = range.location
 
         while index < range.upperBound {
-            if let span = innermostInline(at: index, within: range) {
+            if let span = innermostInline(at: index, within: range, deeperThan: depth) {
                 output += renderInline(span)
-                index = span.range.upperBound
+                index = max(span.range.upperBound, index + 1)
                 continue
             }
             // Une paire de substitution se copie **entière**. Convertir l'unité
@@ -220,12 +226,12 @@ private struct HTMLWriter {
 
     private func renderInline(_ span: SyntaxSpan) -> String {
         switch span.kind {
-        case .strong: "<strong>\(inline(in: span.content))</strong>"
-        case .emphasis: "<em>\(inline(in: span.content))</em>"
-        case .strikethrough: "<del>\(inline(in: span.content))</del>"
+        case .strong: "<strong>\(inline(in: span.content, deeperThan: span.depth))</strong>"
+        case .emphasis: "<em>\(inline(in: span.content, deeperThan: span.depth))</em>"
+        case .strikethrough: "<del>\(inline(in: span.content, deeperThan: span.depth))</del>"
         case .inlineCode: "<code>\(MarkdownExport.escape((source as NSString).substring(with: span.content)))</code>"
         case .link(let destination):
-            "<a href=\"\(MarkdownExport.escape(destination))\">\(inline(in: span.content))</a>"
+            "<a href=\"\(MarkdownExport.escape(destination))\">\(inline(in: span.content, deeperThan: span.depth))</a>"
         case .image(let src, let alt):
             "<img src=\"\(embeddedSource(src))\" alt=\"\(MarkdownExport.escape(alt))\">"
         case .footnoteReference(let identifier):
@@ -353,13 +359,23 @@ private struct HTMLWriter {
         }
     }
 
-    /// La construction inline la plus intérieure qui commence exactement ici.
-    private func innermostInline(at location: Int, within range: NSRange) -> SyntaxSpan? {
+    /// La construction inline la plus intérieure qui commence exactement ici,
+    /// parmi les descendantes de la profondeur `depth`.
+    private func innermostInline(at location: Int,
+                                 within range: NSRange,
+                                 deeperThan depth: Int) -> SyntaxSpan? {
         spans
             .filter { $0.kind.revealScope == .innermostInline
                       && $0.range.location == location
-                      && $0.range.upperBound <= range.upperBound }
-            .max { $0.range.length < $1.range.length }
+                      && $0.range.upperBound <= range.upperBound
+                      && $0.depth > depth }
+            .min { lhs, rhs in
+                // La plus longue d'abord ; à longueur égale, la plus extérieure,
+                // pour que `***gras***` sorte `<em><strong>` et non l'inverse.
+                lhs.range.length != rhs.range.length
+                    ? lhs.range.length > rhs.range.length
+                    : lhs.depth < rhs.depth
+            }
     }
 
     private func isNewline(_ unit: unichar) -> Bool { unit == 10 || unit == 13 }
