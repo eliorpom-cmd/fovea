@@ -164,7 +164,15 @@ struct MarkdownRenderer {
 
     /// Hauteur réservée à la ligne de délimitation, en fraction du corps.
     /// Elle ne montre rien, mais elle porte le filet d'en-tête.
-    static let tableRuleHeight: CGFloat = 0.7
+    /// La hauteur de la ligne `|---|`, qui ne montre rien.
+    ///
+    /// Elle valait 0,7 corps — 12,6 points qui se déversaient de part et
+    /// d'autre du filet d'en-tête, moitié sous l'en-tête, moitié sur la
+    /// première rangée. Résultat mesuré : quatre rangées de trois hauteurs
+    /// différentes (53, 51, 42, 42 pixels), dont aucune centrée pareil. Une
+    /// ligne invisible ne doit rien peser : il ne lui reste que la place du
+    /// filet qu'elle porte.
+    static let tableRuleHeight: CGFloat = 0.12
 
     /// La grille tient-elle dans la colonne de texte ?
     ///
@@ -415,7 +423,16 @@ struct MarkdownRenderer {
         let box = natural * (1 + (rowLeading - 1) / 2)
         let above = box - natural                       // le supplément, tout en haut
         let below = box - above - (font.ascender - font.descender)
-        return max(0, (above - below) / 2).rounded()
+        // Centrer le cadre typographique laisse le texte visiblement haut : la
+        // hampe monte plus haut que les capitales, et presque aucun mot ne
+        // descend jusqu'au jambage. On corrige vers le milieu **optique**.
+        //
+        // Le facteur est réglé à la mesure, pas déduit : centrer exactement sur
+        // la hauteur de capitale renversait le biais de l'autre côté (7 pixels
+        // dessus, 11 dessous, là où on avait 11 et 7). La moitié tombe juste,
+        // vérifié au pixel sur « 6 — Tableaux ».
+        let optical = (font.ascender - font.capHeight) / 4
+        return max(0, (above - below) / 2 + optical).rounded()
     }
 
     /// Ce que TextKit donnerait de lui-même à une ligne dans cette fonte.
