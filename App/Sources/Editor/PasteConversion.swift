@@ -97,20 +97,38 @@ enum PasteConversion {
             }
 
             let block = describe(rich, paragraph: range, body: body)
-            let content = inline(rich, in: block.content, ignoringBold: block.isHeading)
+            let content = inline(rich, in: block.content,
+                                 ignoringBold: block.isHeading, ignoringCode: block.isCode)
             // Une ligne vide sépare deux blocs ; elle n'en est pas un.
             guard !content.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-            blocks.append(Block(prefix: block.prefix, content: content, isListItem: block.isListItem))
+            blocks.append(Block(prefix: block.prefix, content: content,
+                                isListItem: block.isListItem, isCode: block.isCode))
         }
 
         var output = ""
         for (index, block) in blocks.enumerated() {
-            if index > 0 {
-                // Deux items de liste se suivent ligne à ligne ; tout le reste
-                // demande la ligne vide qui sépare deux blocs en markdown.
-                output += (block.isListItem && blocks[index - 1].isListItem) ? "\n" : "\n\n"
+            let previous = index > 0 ? blocks[index - 1] : nil
+            let opensRun = block.isCode && previous?.isCode != true
+            let closesRun = block.isCode
+                && (index + 1 >= blocks.count || blocks[index + 1].isCode == false)
+            // **Une seule ligne de chasse fixe reste du code au fil du texte.**
+            // Un mot de code copié au milieu d'une phrase arrive exactement
+            // comme un `<pre>` d'une ligne : rien ne les distingue. Ce qui les
+            // sépare vraiment, c'est qu'un bloc en fait plusieurs.
+            let isFenced = block.isCode && !(opensRun && closesRun)
+
+            if let previous {
+                // Deux items de liste se suivent ligne à ligne, deux lignes de
+                // code aussi ; tout le reste demande la ligne vide qui sépare
+                // deux blocs en markdown.
+                let tight = (block.isListItem && previous.isListItem)
+                    || (block.isCode && previous.isCode)
+                output += tight ? "\n" : "\n\n"
             }
-            output += block.prefix + block.content
+            if isFenced, opensRun { output += "```\n" }
+            output += block.prefix + (isFenced || !block.isCode ? block.content
+                                                                : "`" + block.content + "`")
+            if isFenced, closesRun { output += "\n```" }
         }
         return normaliseBlankLines(output)
     }
@@ -119,12 +137,14 @@ enum PasteConversion {
         var prefix: String
         var content: String
         var isListItem: Bool
+        var isCode: Bool
     }
 
     /// La conversion des attributs inline d'une portée : celle d'origine, à la
     /// portée près.
     private static func inline(_ rich: NSAttributedString, in whole: NSRange,
-                               ignoringBold: Bool = false) -> String {
+                               ignoringBold: Bool = false,
+                               ignoringCode: Bool = false) -> String {
         guard whole.length > 0 else { return "" }
         var output = ""
 
@@ -147,7 +167,11 @@ enum PasteConversion {
             let isMonospaced = font?.isFixedPitch ?? false
 
             var wrapped = escapeMarkdown(fragment)
-            if isMonospaced {
+            if isMonospaced, ignoringCode {
+                // Déjà dans une clôture : ce qui est dedans est littéral, et des
+                // backticks par-dessus se liraient dans le bloc.
+                wrapped = fragment
+            } else if isMonospaced {
                 // Le code inline n'admet pas d'autre formatage à l'intérieur, et
                 // ne s'échappe pas : ce qui est entre backticks est littéral.
                 wrapped = "`" + fragment + "`"
@@ -172,8 +196,8 @@ enum PasteConversion {
 
     /// Le préfixe markdown d'un paragraphe, et la portée de son contenu.
     private static func describe(_ rich: NSAttributedString, paragraph: NSRange, body: CGFloat)
-        -> (prefix: String, content: NSRange, isListItem: Bool, isHeading: Bool) {
-        guard paragraph.length > 0 else { return ("", paragraph, false, false) }
+        -> (prefix: String, content: NSRange, isListItem: Bool, isHeading: Bool, isCode: Bool) {
+        guard paragraph.length > 0 else { return ("", paragraph, false, false, false) }
         let style = rich.attribute(.paragraphStyle, at: paragraph.location,
                                    effectiveRange: nil) as? NSParagraphStyle
 
@@ -183,7 +207,24 @@ enum PasteConversion {
         if let lists = style?.textLists, !lists.isEmpty {
             let indent = String(repeating: "  ", count: max(0, lists.count - 1))
             let marker = lists.last.map { isOrdered($0) ? "1. " : "- " } ?? "- "
-            return (indent + marker, withoutListMarker(rich, in: paragraph), true, false)
+            return (indent + marker, withoutListMarker(rich, in: paragraph), true, false, false)
+        }
+
+        // **Un `<pre>` est un bloc, pas du code au fil du texte.** Il arrivait
+        // entouré de backticks simples, sur une seule ligne : un bloc de code
+        // collé depuis un site perdait ses retours et sa clôture. Ce qui les
+        // distingue est l'étendue — tout le paragraphe est en chasse fixe,
+        // alors qu'un `<code>` n'en couvre qu'un morceau.
+        if isEntirely(rich, paragraph: paragraph, monospaced: true) {
+            return ("", paragraph, false, false, true)
+        }
+
+        // **Une citation se lit à son retrait.** L'importateur HTML n'a pas
+        // d'attribut pour `<blockquote>` : ce qu'il pose est une indentation.
+        // Sans ce cas, une citation collée devenait un paragraphe ordinaire et
+        // rien ne disait plus que c'en était une.
+        if let style, style.headIndent > 0 || style.firstLineHeadIndent > 0 {
+            return ("> ", paragraph, false, false, false)
         }
 
         // Un titre se mesure. La comparaison porte sur la **plus petite**
@@ -193,10 +234,27 @@ enum PasteConversion {
             let ratio = smallest / body
             let level = ratio >= 1.7 ? 1 : ratio >= 1.4 ? 2 : ratio >= 1.15 ? 3 : 0
             if level > 0 {
-                return (String(repeating: "#", count: level) + " ", paragraph, false, true)
+                return (String(repeating: "#", count: level) + " ", paragraph, false, true, false)
             }
         }
-        return ("", paragraph, false, false)
+        return ("", paragraph, false, false, false)
+    }
+
+    /// Tout le paragraphe est-il dans cette chasse ?
+    private static func isEntirely(_ rich: NSAttributedString,
+                                   paragraph: NSRange, monospaced: Bool) -> Bool {
+        guard paragraph.length > 0 else { return false }
+        var uniform = true
+        rich.enumerateAttribute(.font, in: paragraph) { value, range, stop in
+            // Les blancs n'ont pas de chasse qui compte.
+            let piece = (rich.string as NSString).substring(with: range)
+            guard !piece.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            if ((value as? NSFont)?.isFixedPitch ?? false) != monospaced {
+                uniform = false
+                stop.pointee = true
+            }
+        }
+        return uniform
     }
 
     /// La taille de police la plus représentée, prise pour celle du corps.

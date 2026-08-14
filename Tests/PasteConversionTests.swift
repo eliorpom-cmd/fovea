@@ -185,4 +185,48 @@ final class PasteConversionTests: XCTestCase {
         XCTAssertEqual(PasteConversion.convert(try fromHTML(html)),
                        "Une phrase ordinaire, sans structure particulière.")
     }
+
+    // MARK: - Les blocs que le collage perdait
+
+    /// Une citation collée devenait un paragraphe ordinaire : rien ne disait
+    /// plus que c'en était une. L'importateur HTML n'a pas d'attribut pour
+    /// `<blockquote>` — ce qu'il pose est un retrait.
+    func testABlockquoteKeepsItsMarker() throws {
+        let html = "<p>Avant.</p><blockquote>Une citation.</blockquote><p>Après.</p>"
+        let rich = try XCTUnwrap(NSAttributedString(
+            data: Data(html.utf8),
+            options: [.documentType: NSAttributedString.DocumentType.html,
+                      .characterEncoding: String.Encoding.utf8.rawValue],
+            documentAttributes: nil))
+        let markdown = PasteConversion.convert(rich)
+        XCTAssertTrue(markdown.contains("> Une citation."), markdown)
+    }
+
+    /// Un `<pre>` de plusieurs lignes arrivait sur une seule, entouré de
+    /// backticks simples : le bloc perdait ses retours et sa clôture.
+    func testAPreBecomesAFencedBlock() throws {
+        let html = "<pre><code>let x = 1\nlet y = 2\nprint(x + y)</code></pre>"
+        let rich = try XCTUnwrap(NSAttributedString(
+            data: Data(html.utf8),
+            options: [.documentType: NSAttributedString.DocumentType.html,
+                      .characterEncoding: String.Encoding.utf8.rawValue],
+            documentAttributes: nil))
+        let markdown = PasteConversion.convert(rich)
+        XCTAssertTrue(markdown.hasPrefix("```"), markdown)
+        XCTAssertTrue(markdown.hasSuffix("```"), markdown)
+        XCTAssertTrue(markdown.contains("let x = 1"), markdown)
+        XCTAssertTrue(markdown.contains("print(x + y)"), markdown)
+        // Les lignes du bloc ne doivent pas être entourées une par une.
+        XCTAssertFalse(markdown.contains("`let x = 1`"), markdown)
+    }
+
+    /// Mais un mot de code au fil d'une phrase arrive lui aussi tout en chasse
+    /// fixe : une seule ligne doit rester du code en ligne, pas un bloc.
+    func testASingleMonospacedLineStaysInline() {
+        let rich = NSMutableAttributedString(string: "arr[0] * 2")
+        rich.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
+                          range: NSRange(location: 0, length: 10))
+        XCTAssertEqual(PasteConversion.convert(rich), "`arr[0] * 2`")
+    }
+
 }
