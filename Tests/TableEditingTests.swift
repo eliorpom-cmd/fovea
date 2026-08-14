@@ -306,6 +306,43 @@ final class TableEditingInTheEditorTests: XCTestCase {
         XCTAssertNil(TableEditing.position(of: controller.textView.selectedRange().location, in: table))
     }
 
+    /// Le mot tapé doit rester **dans sa cellule**.
+    ///
+    /// La correction du curseur s'exécute au changement de sélection, qui
+    /// précède la ré-analyse : elle rangeait donc le curseur d'après la
+    /// géométrie d'**avant** la frappe. Dans une cellule vide, la première
+    /// lettre posée envoyait le curseur dans la cellule suivante, et le mot se
+    /// répandait sur toute la ligne — « Nom » donnait `|  N| om |  |`.
+    func testAWordTypedInAnEmptyCellStaysInIt() throws {
+        let controller = editor()
+        controller.setText("|  |  |  |\n|---|---|---|\n|  |  |  |\n")
+        let table = try grid(controller)
+        // Là où l'insertion d'un tableau neuf pose le curseur.
+        let first = TableEditing.cellContents(of: table)[0]
+        controller.textView.setSelectedRange(NSRange(location: first.location, length: 0))
+
+        for letter in ["N", "o", "m"] {
+            controller.textView.insertText(letter, replacementRange: controller.textView.selectedRange())
+        }
+
+        let firstRow = controller.text.components(separatedBy: "\n")[0]
+        XCTAssertEqual(firstRow, "| Nom |  |  |",
+                       "Les trois lettres doivent tenir dans la première cellule")
+    }
+
+    /// La même chose là où une cellule a déjà du contenu : on écrit à la suite,
+    /// sans sauter de colonne.
+    func testTypingContinuesInsideAFilledCell() throws {
+        let controller = editor()
+        let table = try grid(controller)
+        let first = TableEditing.cellContents(of: table)[0]
+        controller.textView.setSelectedRange(NSRange(location: first.upperBound, length: 0))
+
+        controller.textView.insertText("X", replacementRange: controller.textView.selectedRange())
+
+        XCTAssertTrue(controller.text.contains("| Colonne AX |"), controller.text)
+    }
+
     /// `⌫` au début d'une cellule mangerait le `|` qui précède, donc fusionnerait
     /// deux colonnes. Il recule d'une cellule à la place.
     func testBackspaceAtACellStartDoesNotBreakTheGrid() throws {

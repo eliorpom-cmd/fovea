@@ -191,6 +191,15 @@ struct MarkdownTable: Equatable, Sendable {
         while start < end, isSpace(utf16[start]) { start += 1 }
         while end > start, isSpace(utf16[end - 1]) { end -= 1 }
 
+        // Une cellule vide n'est que du blanc : les deux boucles se rejoignent
+        // contre le `|` fermant, et tout ce qu'on y tapait s'écrivait là —
+        // `|  Nom|` au lieu de `| Nom |`. On garde une espace de chaque côté,
+        // qui est la forme que tout le monde écrit à la main.
+        if start == end, segment.length >= 2 {
+            start = segment.location + 1
+            end = start
+        }
+
         let content = NSRange(location: start, length: end - start)
         var padding: [NSRange] = []
         if start > segment.location {

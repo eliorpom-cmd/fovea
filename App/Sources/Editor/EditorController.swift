@@ -454,6 +454,13 @@ final class EditorController: NSObject {
     /// clic, `⌘↓`, dictée, recherche.
     private func correctCaretInsideTable() {
         guard !isSourceMode, !isCorrectingCaret else { return }
+        // Le tampon vient de changer et l'analyse date d'avant : `spans` décrit
+        // un tableau qui n'existe plus. Corriger là-dessus rangeait le curseur
+        // d'après l'**ancienne** géométrie — en tapant la première lettre d'une
+        // cellule vide, il sautait dans la suivante, et le mot se répandait
+        // d'une cellule à l'autre. `handleTextChange()` rappelle après coup.
+        guard lastEditedRange == nil else { return }
+
         let selection = textView.selectedRange()
         // Une sélection est un geste en cours : on ne la déplace pas sous la
         // main de l'utilisateur.
@@ -1107,6 +1114,8 @@ final class EditorController: NSObject {
 
         let scope = reparseIncrementally(editedRange: edited, delta: delta)
         render(in: scope)
+        // Maintenant seulement : l'analyse correspond enfin au tampon.
+        correctCaretInsideTable()
         applyFocus()
         applyTypewriterScrolling()
         refreshSlashMenu()
