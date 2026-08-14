@@ -450,6 +450,16 @@ private final class FocusOverlayView: NSView {
     /// Transparente aux clics : le voile est décoratif, on écrit à travers.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+    /// **Retournée, comme la vue de texte qu'elle recouvre.**
+    ///
+    /// `NSTextView` est retournée, une `NSView` ordinaire ne l'est pas. Les
+    /// bornes de l'unité active venaient donc de la mise en page en
+    /// coordonnées descendantes, et se dessinaient dans un repère montant :
+    /// la bande claire était le **miroir vertical** de la bonne. Elle tombait
+    /// sur un autre paragraphe, et ses bords coupaient les lignes en pleine
+    /// hauteur au lieu de se poser entre elles.
+    override var isFlipped: Bool { true }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let owner, let focusRange = owner.focusRange,
               let layout = owner.textLayoutManager,
@@ -458,12 +468,23 @@ private final class FocusOverlayView: NSView {
               let end = content.location(start, offsetBy: focusRange.length),
               let range = NSTextRange(location: start, end: end) else { return }
 
-        // Les bornes verticales de l'unité active suffisent : découper par
-        // segments laisserait des trous entre les lignes.
+        // **Les fragments de mise en page, pas les segments de texte.**
+        //
+        // Un segment épouse la hauteur typographique des caractères qu'il
+        // couvre, laquelle est plus courte que la ligne : la frontière du voile
+        // tombait alors *dans* les lettres. Sur le titre du document, mesuré au
+        // pixel, la moitié haute restait claire et la moitié basse s'assombrissait
+        // au milieu des jambages — une ligne coupée en deux dans sa hauteur.
+        //
+        // Les fragments, eux, pavent le document sans trou ni recouvrement :
+        // leur bord est toujours *entre* deux lignes, jamais dedans.
         var union: NSRect?
-        layout.enumerateTextSegments(in: range, type: .standard, options: []) { _, frame, _, _ in
+        layout.enumerateTextLayoutFragments(from: range.location, options: []) { fragment in
+            let frame = fragment.layoutFragmentFrame
             union = union.map { $0.union(frame) } ?? frame
-            return true
+            // On s'arrête au fragment qui contient la fin de l'unité — celui-là
+            // compris, sinon la dernière ligne resterait sous le voile.
+            return fragment.rangeInElement.endLocation.compare(range.endLocation) == .orderedAscending
         }
         guard let union else { return }
         let active = union.offsetBy(dx: owner.textContainerOrigin.x, dy: owner.textContainerOrigin.y)

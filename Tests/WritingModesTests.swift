@@ -1,6 +1,7 @@
 // Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
 // Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
 import XCTest
+import AppKit
 @testable import Fovea
 
 /// Les fonctions d'écriture du §4.5, testées comme des fonctions pures.
@@ -136,4 +137,28 @@ final class WritingModesTests: XCTestCase {
             }
         }
     }
+
+    /// **Le voile se dessine dans le même sens que le texte.**
+    ///
+    /// `NSTextView` est retournée, une `NSView` ordinaire ne l'est pas. Tant
+    /// que le voile ne l'était pas, les bornes de l'unité active — calculées
+    /// par la mise en page, donc en coordonnées descendantes — se dessinaient
+    /// dans un repère montant : la bande claire était le miroir vertical de la
+    /// bonne, tombait sur un autre paragraphe, et ses bords coupaient les
+    /// lignes en pleine hauteur. Mesuré sur le titre de « 1 — Article » : clair
+    /// jusqu'au pixel 345, voilé de 346 à 366, en plein milieu des lettres.
+    @MainActor
+    func testTheFocusVeilUsesTheSameCoordinatesAsTheText() {
+        let controller = EditorController(typography: .default)
+        controller.textView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+        controller.setText("Une phrase. Une autre.\n")
+        controller.textView.focusRange = NSRange(location: 0, length: 11)
+
+        let veil = controller.textView.subviews.first { String(describing: type(of: $0)).contains("FocusOverlay") }
+        XCTAssertNotNil(veil, "le voile doit être une sous-vue")
+        XCTAssertTrue(veil?.isFlipped ?? false,
+                      "le voile doit être retourné comme la vue de texte qu'il recouvre")
+        XCTAssertTrue(controller.textView.isFlipped, "la vue de texte est retournée")
+    }
+
 }
