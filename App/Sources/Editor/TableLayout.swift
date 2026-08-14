@@ -69,9 +69,16 @@ struct TableLayout {
                 widths[column] = max(widths[column], measure(storage, cell.content))
             }
         }
-        // Une colonne vide garde une largeur minimale, sinon deux filets se
-        // toucheraient et la cellule ne serait plus cliquable.
-        let minimum = (typography.bodySize * 1.5).rounded()
+        // Une colonne vide garde une largeur minimale.
+        //
+        // Elle valait 1,5 corps — de quoi empêcher deux filets de se toucher,
+        // rien de plus. Un tableau qu'on vient d'insérer n'a que des cellules
+        // vides : il sortait en filet de 168 points au milieu d'une colonne de
+        // texte trois fois plus large, illisible et presque impossible à viser.
+        // Or c'est **l'état initial de tout tableau** : celui qu'on voit avant
+        // d'avoir écrit quoi que ce soit. Une cellule vide est un endroit où
+        // l'on va écrire ; elle doit en avoir la taille.
+        let minimum = (typography.bodySize * 4.5).rounded()
         widths = widths.map { max($0, minimum) }
 
         var origins: [CGFloat] = []
