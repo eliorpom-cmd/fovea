@@ -105,7 +105,7 @@ final class OutlinePanel: NSView {
             .compactMap { span -> Item? in
                 guard case .heading(let level) = span.kind,
                       span.content.upperBound <= text.length else { return nil }
-                let title = text.substring(with: span.content).trimmingCharacters(in: .whitespaces)
+                let title = Self.plainText(of: span.content, spans: spans, text: text)
                 guard !title.isEmpty else { return nil }
                 return Item(title: title, level: level, location: span.range.location)
             }
@@ -113,6 +113,35 @@ final class OutlinePanel: NSView {
         tableView.reloadData()
         emptyLabel.isHidden = !items.isEmpty
         scrollView.isHidden = items.isEmpty
+    }
+
+    /// Le titre tel qu'on le lit dans le document, marqueurs retirés.
+    ///
+    /// Le plan montrait la **source** : `## 2. Les tâches — dans **2 — Notes**`
+    /// s'y lisait avec ses étoiles. C'est la seule liste de l'app qui les
+    /// laissait voir, alors que tout le reste est bâti pour les taire — et
+    /// dans un panneau étroit, les deux étoiles mangent la place du texte
+    /// qu'on cherche.
+    static func plainText(of content: NSRange, spans: [SyntaxSpan], text: NSString) -> String {
+        let cuts = spans
+            .filter { $0.kind.revealScope == .innermostInline
+                      && NSIntersectionRange($0.range, content).length > 0 }
+            .flatMap(\.markers)
+            .filter { NSIntersectionRange($0, content).length > 0 }
+            .sorted { $0.location < $1.location }
+
+        var result = ""
+        var index = content.location
+        for cut in cuts where cut.location >= index {
+            if cut.location > index {
+                result += text.substring(with: NSRange(location: index, length: cut.location - index))
+            }
+            index = max(index, cut.upperBound)
+        }
+        if index < content.upperBound {
+            result += text.substring(with: NSRange(location: index, length: content.upperBound - index))
+        }
+        return result.trimmingCharacters(in: .whitespaces)
     }
 
     /// Met en évidence le titre dans lequel se trouve le curseur.

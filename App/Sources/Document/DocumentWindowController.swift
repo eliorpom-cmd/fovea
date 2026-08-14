@@ -355,7 +355,9 @@ extension DocumentWindowController: NSMenuItemValidation {
         for span in editor.spans {
             guard case .heading(let level) = span.kind,
                   span.content.upperBound <= text.length else { continue }
-            let title = text.substring(with: span.content).trimmingCharacters(in: .whitespaces)
+            // Le même texte que le plan : celui du document, pas de sa source.
+            // Un titre qui contient du gras s'y listait avec ses étoiles.
+            let title = OutlinePanel.plainText(of: span.content, spans: editor.spans, text: text)
             guard !title.isEmpty else { continue }
             entries.append(.init(title: title,
                                  detail: "Titre \(level)") { [weak self] in

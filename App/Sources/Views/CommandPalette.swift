@@ -198,9 +198,23 @@ final class CommandPalette: NSPanel {
     /// doit remonter « Mode focus » avant « Rechercher un format ».
     /// `nonisolated` parce qu'elle est pure : elle ne touche ni à la vue ni à
     /// AppKit, et le menu slash s'en sert depuis la couche sans interface.
+    /// Sans casse **ni accents**.
+    ///
+    /// La comparaison se faisait sur un simple `lowercased()` : « taches » ne
+    /// trouvait pas « tâches », « reunion » pas « réunion », « legales » pas
+    /// « légales ». Dans une app française, dont les titres sont accentués une
+    /// fois sur deux, la recherche de titres demandait de taper l'accent juste
+    /// — c'est-à-dire de connaître déjà ce qu'on cherche.
+    ///
+    /// Le repli est fait sans locale, donc identique partout : on ne veut pas
+    /// que le résultat dépende de la langue du système.
+    nonisolated static func folded(_ text: String) -> String {
+        text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
+    }
+
     nonisolated static func score(_ text: String, query: String) -> Int? {
-        let haystack = Array(text.lowercased())
-        let needle = Array(query.lowercased().filter { !$0.isWhitespace })
+        let haystack = Array(Self.folded(text))
+        let needle = Array(Self.folded(query).filter { !$0.isWhitespace })
         guard !needle.isEmpty else { return 0 }
 
         var score = 0
