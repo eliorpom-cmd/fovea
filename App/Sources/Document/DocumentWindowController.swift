@@ -65,7 +65,13 @@ final class DocumentWindowController: NSWindowController {
             // Le bandeau est **au-dessus** de la colonne, pas par-dessus : il
             // pousse le texte au lieu de le masquer, et le rend intégralement
             // quand il se referme.
-            banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s40),
+            //
+            // Le retrait est celui du plan, et pour la même raison : la barre
+            // de titre est transparente et les onglets s'y superposent. À 40,
+            // le bandeau passait dessous — de ses 34 points de hauteur, seuls
+            // les dix derniers dépassaient, et son message était illisible au
+            // moment précis où il faut le lire.
+            banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s64),
             banner.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
             banner.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
