@@ -81,15 +81,38 @@ struct TableLayout {
         let minimum = (typography.bodySize * 4.5).rounded()
         widths = widths.map { max($0, minimum) }
 
-        var origins: [CGFloat] = []
-        var cursor = gutter / 2
-        for width in widths {
-            origins.append(cursor)
-            cursor += width + gutter
+        /// Les abscisses qui découlent des largeurs, et la largeur totale.
+        func lay(_ widths: [CGFloat]) -> (origins: [CGFloat], total: CGFloat) {
+            var origins: [CGFloat] = []
+            var cursor = gutter / 2
+            for width in widths {
+                origins.append(cursor)
+                cursor += width + gutter
+            }
+            return (origins, cursor - gutter / 2)
         }
-        let total = cursor - gutter / 2
 
+        var (origins, total) = lay(widths)
+
+        // Trop large pour la colonne : on ne replie pas, on montre la source.
+        // Ce test se fait sur la largeur **naturelle**, avant tout étirement.
         guard total <= available else { return nil }
+
+        // Le tableau occupe toute la colonne de texte.
+        //
+        // À la taille de son contenu, son bord droit tombait n'importe où, et
+        // surtout un tableau qu'on venait d'insérer — toutes cellules vides —
+        // se réduisait à un filet perdu au milieu de la page. Le surplus se
+        // partage à parts égales : les écarts de largeur entre colonnes sont
+        // conservés, ce qui garde à la colonne large son emphase.
+        if total < available, !widths.isEmpty {
+            let share = ((available - total) / CGFloat(widths.count)).rounded(.down)
+            if share > 0 {
+                widths = widths.map { $0 + share }
+                (origins, total) = lay(widths)
+            }
+        }
+
         return TableLayout(columnOrigins: origins, columnWidths: widths,
                            gutter: gutter, width: total)
     }

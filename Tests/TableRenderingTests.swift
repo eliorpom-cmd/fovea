@@ -106,6 +106,50 @@ final class TableRenderingTests: XCTestCase {
         }
     }
 
+    /// Le tableau occupe **toute la colonne de texte**.
+    ///
+    /// À la taille de son contenu, un tableau qu'on venait d'insérer — toutes
+    /// cellules vides — se réduisait à un filet de 168 points au milieu d'une
+    /// colonne trois fois plus large : on ne voyait pas où cliquer.
+    func testATableFillsTheTextColumn() throws {
+        let typography = EditorTypography.default
+        for source in ["|  |  |  |\n|---|---|---|\n|  |  |  |",
+                       "| a | b |\n|---|---|\n| c | d |",
+                       "| Piège | Symptôme | Correctif |\n|---|---|---|\n| a | b | c |"] {
+            let view = try render(source)
+            let storage = try XCTUnwrap(view.textStorage)
+            let table = try XCTUnwrap(firstTable(in: source))
+            let layout = try XCTUnwrap(TableLayout.measure(table, in: storage,
+                                                          typography: typography,
+                                                          available: typography.columnWidth))
+            XCTAssertEqual(layout.width, typography.columnWidth, accuracy: 3,
+                           "Le tableau doit tenir toute la colonne : \(source)")
+        }
+    }
+
+    /// L'étirement ne doit pas rattraper un tableau trop large : celui-là reste
+    /// en source, et le test se fait sur sa largeur **naturelle**.
+    func testAnOversizedTableIsStillRefusedBeforeStretching() throws {
+        let source = """
+        | Une colonne au titre interminable | Une deuxième tout aussi longue | Une troisième pour finir | Et une quatrième |
+        |---|---|---|---|
+        | a | b | c | d |
+        """
+        let view = try render(source)
+        let storage = try XCTUnwrap(view.textStorage)
+        let table = try XCTUnwrap(firstTable(in: source))
+        XCTAssertNil(TableLayout.measure(table, in: storage,
+                                         typography: .default,
+                                         available: EditorTypography.default.columnWidth))
+    }
+
+    private func firstTable(in source: String) -> MarkdownTable? {
+        for span in MarkdownParser.parse(source).spans {
+            if case .table(let table?) = span.kind { return table }
+        }
+        return nil
+    }
+
     // MARK: - Les deux états du §2.1
 
     func testPipesTakeNoWidthWhenTheCaretIsElsewhere() throws {
