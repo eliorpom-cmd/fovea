@@ -186,7 +186,13 @@ extension EditorDecoration {
                                                 range: row.line, indent: 0))
         }
 
-        let separators = table.alignments.indices.compactMap { layout.separatorX(before: $0) }
+        // Les filets entre colonnes, **plus les deux bords**. Sans eux la grille
+        // était ouverte à gauche et à droite : les filets horizontaux
+        // s'arrêtaient en l'air, et un tableau se lisait comme des lignes
+        // soulignées plutôt que comme une boîte.
+        var separators = table.alignments.indices.compactMap { layout.separatorX(before: $0) }
+        separators.append(0)
+        separators.append((width - 1).rounded())
         if !separators.isEmpty {
             decorations.append(EditorDecoration(kind: .tableColumns(x: separators, width: width),
                                                 range: NSRange(location: first.line.location,
@@ -346,10 +352,11 @@ struct DecorationPainter {
             // Le filet d'en-tête est plus appuyé que les autres : c'est lui qui
             // sépare les titres des données, et c'est la séparation dont un
             // tableau de prose a le plus besoin.
+            let drop = MarkdownRenderer.rowRuleOffset(typography)
             let y: CGFloat = switch position {
-            case .top: frame.minY
-            case .header: (frame.midY - 0.5).rounded()
-            case .row, .bottom: frame.maxY - 1
+            case .top: frame.minY + drop
+            case .header: (frame.midY - 0.5).rounded() + drop
+            case .row, .bottom: frame.maxY - 1 + drop
             }
             // La largeur est celle de la **grille**, pas celle de la colonne de
             // texte : un filet qui court jusqu'au bord droit autour d'un tableau
@@ -359,9 +366,12 @@ struct DecorationPainter {
             NSBezierPath(rect: rule).fill()
 
         case .tableColumns(let positions, _):
+            // Décalés comme les filets horizontaux, sinon la grille se disloque
+            // d'un demi-interligne à chaque croisement.
+            let drop = MarkdownRenderer.rowRuleOffset(typography)
             Theme.NS.separator.setFill()
             for x in positions {
-                NSBezierPath(rect: NSRect(x: (frame.minX + x).rounded(), y: frame.minY,
+                NSBezierPath(rect: NSRect(x: (frame.minX + x).rounded(), y: frame.minY + drop,
                                           width: 1, height: frame.height)).fill()
             }
 

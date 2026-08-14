@@ -369,19 +369,21 @@ struct MarkdownRenderer {
         // Resserré par rapport à la prose, mais pas au point que le texte touche
         // les filets : une cellule a besoin d'air au-dessus et en dessous, sinon
         // la grille se lit comme un tableau de chiffres.
-        // **L'air d'une rangée, moitié dessus, moitié dessous.**
         //
-        // Un multiplicateur d'interlignage empile tout son supplément
-        // **au-dessus** de la ligne et pose la base tout en bas : le texte se
-        // retrouvait plaqué contre le filet du dessous, à quatre points du milieu
-        // de sa cellule. `.baselineOffset` ne le rattrape pas — TextKit relève la
-        // base *et* le cadre de la ligne avec, si bien que rien ne bouge à
-        // l'écran. Ce qui marche est de partager : la moitié du supplément par le
-        // multiplicateur, qui la met dessus, l'autre par `lineSpacing`, qui la met
-        // dessous.
+        // **Le supplément va entièrement au-dessus, et c'est irrémédiable.**
+        // Un multiplicateur d'interlignage l'empile là et pose la base tout en
+        // bas. `.baselineOffset` ne le rattrape pas — TextKit relève la base
+        // *et* le cadre avec. `lineSpacing` non plus : il ne se glisse
+        // qu'*entre* les lignes d'un même paragraphe, or une rangée est un
+        // paragraphe d'une seule ligne. `paragraphSpacing` non plus : il ne
+        // compte pas dans le rectangle de la ligne, TextKit le reporte sur
+        // l'origine du paragraphe suivant, donc il creuse un vide qui
+        // n'appartient à aucune rangée.
+        //
+        // Le centrage se règle donc là où il est réglable : au tracé. Voir
+        // `rowRuleOffset(_:)`.
         if clipping {
             style.lineHeightMultiple = 1 + (Self.rowLeading - 1) / 2
-            style.lineSpacing = Self.rowPadding(typography)
         } else {
             style.lineHeightMultiple = Self.rowLeading
         }
@@ -395,6 +397,25 @@ struct MarkdownRenderer {
     /// L'air sous le texte d'une rangée — la moitié de son supplément.
     static func rowPadding(_ typography: EditorTypography) -> CGFloat {
         (naturalHeight(typography.body) * (rowLeading - 1) / 2).rounded()
+    }
+
+    /// De combien descendre les filets pour que le texte tombe **au milieu** de
+    /// sa rangée.
+    ///
+    /// Le supplément d'interlignage se pose tout entier au-dessus de la ligne
+    /// (voir `tableParagraphStyle`), si bien que le texte se retrouve plaqué
+    /// contre le filet du bas — mesuré au pixel : 23 points d'air dessus, 3
+    /// dessous. Puisque le cadre de la ligne n'est pas déplaçable, ce sont les
+    /// filets qu'on descend de la moitié de l'écart, ce qui revient au même :
+    /// la bande visible d'une rangée est ce qui sépare deux filets, pas ce que
+    /// TextKit appelle sa ligne.
+    static func rowRuleOffset(_ typography: EditorTypography) -> CGFloat {
+        let font = typography.body
+        let natural = naturalHeight(font)
+        let box = natural * (1 + (rowLeading - 1) / 2)
+        let above = box - natural                       // le supplément, tout en haut
+        let below = box - above - (font.ascender - font.descender)
+        return max(0, (above - below) / 2).rounded()
     }
 
     /// Ce que TextKit donnerait de lui-même à une ligne dans cette fonte.
