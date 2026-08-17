@@ -17,6 +17,11 @@ final class DocumentWindowController: NSWindowController {
     private let palette = CommandPalette()
     /// Largeur du plan quand il est ouvert. Zéro le referme.
     private var outlineWidth: NSLayoutConstraint!
+    /// Le retrait laissé à la barre de titre — et à la barre d'onglets quand
+    /// elle est là. Voir `applyTitleBarInset()`.
+    private var bannerTop: NSLayoutConstraint!
+    /// L'abonnement aux réglages, à rendre à la fermeture.
+    private var settingsObserver: (any NSObjectProtocol)?
 
     convenience init() {
         let window = NSWindow(
@@ -45,7 +50,10 @@ final class DocumentWindowController: NSWindowController {
         // définitive, ce qui laissait le texte collé à gauche. Le recalcul est
         // donc rattaché à la mise en page de la vue elle-même.
         let content = LayoutObservingView()
-        content.onLayout = { [weak editor] in editor?.applyColumnLayout() }
+        content.onLayout = { [weak self, weak editor] in
+            self?.applyTitleBarInset()
+            editor?.applyColumnLayout()
+        }
         content.addSubview(outline)
         content.addSubview(banner)
         content.addSubview(editor.scrollView)
@@ -55,6 +63,7 @@ final class DocumentWindowController: NSWindowController {
         outline.translatesAutoresizingMaskIntoConstraints = false
         banner.translatesAutoresizingMaskIntoConstraints = false
         outlineWidth = outline.widthAnchor.constraint(equalToConstant: 0)
+        bannerTop = banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s64)
 
         NSLayoutConstraint.activate([
             outline.topAnchor.constraint(equalTo: content.topAnchor),
@@ -71,7 +80,7 @@ final class DocumentWindowController: NSWindowController {
             // le bandeau passait dessous — de ses 34 points de hauteur, seuls
             // les dix derniers dépassaient, et son message était illisible au
             // moment précis où il faut le lire.
-            banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s64),
+            bannerTop,
             banner.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
             banner.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
@@ -102,7 +111,12 @@ final class DocumentWindowController: NSWindowController {
         // ne faisait rien de visible : la barre ne partait qu'à la frappe
         // suivante, quand un autre chemin appelait `refreshStatistics`. On
         // croyait le réglage cassé alors qu'il était seulement en retard.
-        NotificationCenter.default.addObserver(
+        // Le jeton est retenu et rendu au `deinit` : la variante à bloc
+        // n'efface **pas** son observateur toute seule, contrairement à celle
+        // qui prend une cible. Le bloc restait enregistré après la fermeture de
+        // la fenêtre, et chaque document ouvert dans la session en laissait un
+        // de plus derrière lui.
+        settingsObserver = NotificationCenter.default.addObserver(
             forName: AppSettings.didChange, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshStatistics() }
             }
@@ -111,12 +125,55 @@ final class DocumentWindowController: NSWindowController {
         // une app d'écriture, le curseur clignote avant que la main ne quitte
         // le clavier.
         window.makeFirstResponder(editor.textView)
+
+        // **La taille est mémorisée, la position se décale.**
+        //
+        // Un nom d'autosauvegarde de cadre désactive la cascade d'AppKit : les
+        // fenêtres de deux documents ouverts côte à côte se superposaient au
+        // pixel près, et la seconde paraissait ne pas s'être ouverte. On garde
+        // donc le cadre enregistré — c'est lui qui rend la taille choisie — et
+        // on décale à la main dès qu'une autre fenêtre occupe déjà la place.
         windowFrameAutosaveName = "FoveaDocumentWindow"
+        if let taken = NSApp.windows.first(where: {
+            $0 !== window && $0.isVisible && $0.frame.origin == window.frame.origin
+        }) {
+            window.cascadeTopLeft(from: NSPoint(x: taken.frame.minX, y: taken.frame.maxY))
+        }
     }
+
 
     override func windowDidLoad() {
         super.windowDidLoad()
         editor.applyColumnLayout()
+    }
+
+    /// Laisse au texte la hauteur que la barre de titre lui prend **vraiment**.
+    ///
+    /// # Ce que les 64 points codés en dur ne voyaient pas
+    ///
+    /// La fenêtre est en `fullSizeContentView` : le contenu s'étend sous la
+    /// barre de titre, et c'est voulu — le texte défile derrière. Encore
+    /// faut-il ne pas *commencer* dessous.
+    ///
+    /// 64 points suffisaient à une barre de titre seule. Dès qu'un second
+    /// onglet s'ouvre, macOS ajoute la barre d'onglets par-dessus : la première
+    /// ligne visible était alors **coupée en deux** par son bord inférieur
+    /// pendant tout le défilement. Le plan, lui, posait déjà un retrait pour
+    /// exactement cette raison — mais lui aussi en dur.
+    ///
+    /// `contentLayoutRect` est la seule mesure juste : c'est AppKit qui dit ce
+    /// qu'il a pris.
+    private func applyTitleBarInset() {
+        guard let window, let content = window.contentView else { return }
+        // 64 reste le **plancher** : c'est l'air voulu au-dessus du premier
+        // mot, pas une estimation de la barre de titre. Ce que la mesure
+        // apporte, c'est ce qui vient en plus — la barre d'onglets, qui prend
+        // près de quarante points et sous laquelle la première ligne visible
+        // était coupée en deux.
+        let taken = max(Theme.Space.s64, content.bounds.height - window.contentLayoutRect.height)
+        guard abs(bannerTop.constant - taken) > 0.5 else { return }
+        bannerTop.constant = taken
+        outline.topInset = taken
     }
 
     /// Le recomptage en attente. Voir `refreshStatistics`.
@@ -172,6 +229,21 @@ private final class LayoutObservingView: NSView {
 // MARK: - NSWindowDelegate
 
 extension DocumentWindowController: NSWindowDelegate {
+
+    /// On rend l'abonnement aux réglages ici plutôt qu'au `deinit` : celui-ci
+    /// est `nonisolated`, et le jeton d'un observateur ne traverse pas les
+    /// domaines d'isolement. La fermeture de la fenêtre est de toute façon le
+    /// moment exact où l'abonnement cesse d'avoir un objet.
+    func windowWillClose(_ notification: Notification) {
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
+            self.settingsObserver = nil
+        }
+        // La palette est une fenêtre à part : sans cela, elle survivrait au
+        // document qu'elle pilote.
+        palette.dismiss()
+        pendingStatistics?.cancel()
+    }
 }
 
 // MARK: - Commandes de la barre de menus
@@ -306,7 +378,14 @@ extension DocumentWindowController: NSMenuItemValidation {
         let opening = outlineWidth.constant == 0
         // La largeur **avant** le remplissage : `refreshOutline` se garde
         // d'agir sur un panneau fermé, et l'appeler d'abord le laissait vide.
-        outlineWidth.constant = opening ? 220 : 0
+        //
+        // **220 points, mais jamais plus du tiers de la fenêtre.** La largeur
+        // était fixe : dans une fenêtre de 430 points — au-dessus du minimum
+        // autorisé — le plan prenait plus de la moitié de la place et la colonne
+        // de texte tombait à une quinzaine de signes par ligne. Le plan sert à
+        // naviguer dans un document ; il ne doit pas empêcher de le lire.
+        let available = window?.frame.width ?? 820
+        outlineWidth.constant = opening ? min(220, max(140, available / 3)) : 0
         if opening {
             refreshOutline()
             refreshOutlineHighlight()
@@ -325,6 +404,12 @@ extension DocumentWindowController: NSMenuItemValidation {
     }
 
     @objc func showCommandPalette(_ sender: Any?) {
+        // Le raccourci qui ouvre referme : `⌘K` sur une palette déjà là la
+        // réinitialisait, ce qui ressemblait à une touche sans effet.
+        guard !palette.isVisible else {
+            palette.dismiss()
+            return
+        }
         palette.present(entries: paletteEntries(), relativeTo: window)
     }
 
@@ -334,36 +419,68 @@ extension DocumentWindowController: NSMenuItemValidation {
     /// que n'importe quelle commande — les séparer obligerait à choisir un
     /// mode avant de savoir ce qu'on cherche.
     private func paletteEntries() -> [CommandPalette.Entry] {
+        // Les raccourcis sont **lus dans la barre de menus**, jamais écrits ici :
+        // macOS les remappe selon la disposition du clavier, et la palette
+        // était le seul endroit de l'app à en afficher — donc le seul à se
+        // tromper. Voir `MainMenu.shortcut(for:tag:)`.
+        let key = MainMenu.shortcut
         var entries: [CommandPalette.Entry] = [
             .init(title: editor.isSourceMode ? "Masquer la source" : "Afficher la source",
-                  detail: "⌘/") { [weak self] in self?.editor.toggleSourceMode() },
-            .init(title: "Plan du document", detail: "⌘⌥0") { [weak self] in self?.toggleOutline(nil) },
+                  detail: key(#selector(toggleSourceMode(_:)), nil)) { [weak self] in
+                      self?.editor.toggleSourceMode()
+                  },
+            .init(title: outlineWidth.constant == 0 ? "Plan du document" : "Masquer le plan",
+                  detail: key(#selector(toggleOutline(_:)), nil)) { [weak self] in self?.toggleOutline(nil) },
             .init(title: AppSettings.shared.focusMode ? "Désactiver le mode focus" : "Mode focus",
-                  detail: "") { AppSettings.shared.focusMode.toggle() },
+                  detail: key(#selector(toggleFocusMode(_:)), nil)) { AppSettings.shared.focusMode.toggle() },
             .init(title: AppSettings.shared.typewriterMode ? "Désactiver la machine à écrire" : "Machine à écrire",
-                  detail: "") { AppSettings.shared.typewriterMode.toggle() },
-            .init(title: "Gras", detail: "⌘B") { [weak self] in self?.editor.wrapSelection(with: "**") },
-            .init(title: "Italique", detail: "⌘I") { [weak self] in self?.editor.wrapSelection(with: "*") },
-            .init(title: "Code", detail: "⌘⇧K") { [weak self] in self?.editor.wrapSelection(with: "`") },
-            .init(title: "Barré", detail: "⌘⇧X") { [weak self] in self?.editor.wrapSelection(with: "~~") },
-            .init(title: "Exporter en HTML autonome", detail: "") { [weak self] in self?.exportHTML(nil) },
-            .init(title: "Exporter en PDF", detail: "") { [weak self] in self?.exportPDF(nil) },
-            .init(title: "Copier en texte riche", detail: "⌘⇧C") { [weak self] in self?.copyAsRichText(nil) },
-            .init(title: "Réglages", detail: "⌘,") { SettingsWindowController.shared.present() },
+                  detail: key(#selector(toggleTypewriterMode(_:)), nil)) { AppSettings.shared.typewriterMode.toggle() },
+            .init(title: "Gras", detail: key(#selector(toggleBold(_:)), nil)) { [weak self] in
+                self?.editor.wrapSelection(with: "**")
+            },
+            .init(title: "Italique", detail: key(#selector(toggleItalic(_:)), nil)) { [weak self] in
+                self?.editor.wrapSelection(with: "*")
+            },
+            .init(title: "Code", detail: key(#selector(toggleInlineCode(_:)), nil)) { [weak self] in
+                self?.editor.wrapSelection(with: "`")
+            },
+            .init(title: "Barré", detail: key(#selector(toggleStrikethrough(_:)), nil)) { [weak self] in
+                self?.editor.wrapSelection(with: "~~")
+            },
+            .init(title: "Tableau…", detail: key(#selector(insertMarkdownTable(_:)), nil)) { [weak self] in
+                self?.editor.presentTableSizePicker()
+            },
+            .init(title: "Lien…", detail: key(#selector(insertLink(_:)), nil)) { [weak self] in
+                self?.editor.insertLink()
+            },
+            .init(title: "Exporter en HTML autonome",
+                  detail: key(#selector(exportHTML(_:)), nil)) { [weak self] in self?.exportHTML(nil) },
+            .init(title: "Exporter en PDF",
+                  detail: key(#selector(exportPDF(_:)), nil)) { [weak self] in self?.exportPDF(nil) },
+            .init(title: "Copier en texte riche",
+                  detail: key(#selector(copyAsRichText(_:)), nil)) { [weak self] in self?.copyAsRichText(nil) },
+            .init(title: "Réglages",
+                  detail: key(#selector(AppDelegate.showSettings(_:)), nil)) {
+                      SettingsWindowController.shared.present()
+                  },
         ]
         for level in 1...3 {
-            entries.append(.init(title: "Titre \(level)", detail: "⌘⌃\(level)") { [weak self] in
+            entries.append(.init(title: "Titre \(level)",
+                                 detail: key(#selector(setHeadingLevel(_:)), level)) { [weak self] in
                 self?.editor.setHeadingLevel(level)
             })
         }
 
         let text = editor.textView.textStorage?.mutableString ?? NSMutableString()
+        // Les marqueurs une fois pour tous les titres, comme dans le plan :
+        // les recalculer par titre est quadratique.
+        let markers = OutlinePanel.inlineMarkers(of: editor.spans)
         for span in editor.spans {
             guard case .heading(let level) = span.kind,
                   span.content.upperBound <= text.length else { continue }
             // Le même texte que le plan : celui du document, pas de sa source.
             // Un titre qui contient du gras s'y listait avec ses étoiles.
-            let title = OutlinePanel.plainText(of: span.content, spans: editor.spans, text: text)
+            let title = OutlinePanel.plainText(of: span.content, markers: markers, text: text)
             guard !title.isEmpty else { continue }
             entries.append(.init(title: title,
                                  detail: "Titre \(level)") { [weak self] in
@@ -384,6 +501,10 @@ extension DocumentWindowController: NSMenuItemValidation {
         guard outlineWidth?.constant != 0 else { return }
         outline.update(spans: editor.spans,
                        text: editor.textView.textStorage?.mutableString ?? NSMutableString())
+        // Un rechargement défait la ligne en évidence : on la repose. Le plan
+        // se garde lui-même de recharger pour rien, donc c'est gratuit dans le
+        // cas courant.
+        refreshOutlineHighlight()
     }
 
     private func refreshOutlineHighlight() {

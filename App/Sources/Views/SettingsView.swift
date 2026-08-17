@@ -24,11 +24,29 @@ struct SettingsView: View {
             AboutSettings()
                 .tabItem { Label("À propos", systemImage: "info.circle") }
         }
-        // Taille fixe, et non intrinsèque : `NSHostingController` ne remonte
-        // pas la hauteur d'un `Form` imbriqué dans un `TabView`, et la fenêtre
-        // s'ouvrait écrasée sur ses onglets. Une fenêtre de réglages a de toute
-        // façon une bonne taille et une seule.
-        .frame(width: 480, height: 560)
+        // **Une taille de départ, plus un plancher — et la fenêtre s'agrandit.**
+        //
+        // La hauteur était figée à 560, et le `styleMask` n'avait pas
+        // `.resizable` : sur l'onglet Apparence, « Coloration en couleurs »
+        // était coupé en deux par le bord inférieur, et sur l'onglet Édition,
+        // « Dossier des images » et son explication étaient entièrement sous la
+        // ligne de flottaison. Rien ne disait qu'il fallait faire défiler, et
+        // rien ne permettait d'agrandir.
+        //
+        // Intrinsèque tout court ne marche toujours pas — `NSHostingController`
+        // ne remonte pas la hauteur d'un `Form` imbriqué dans un `TabView` —
+        // d'où le couple minimum/idéal.
+        .frame(minWidth: 480, idealWidth: 480, minHeight: 420, idealHeight: 660)
+        // §7 : le monochrome vaut aussi pour l'écran qui explique les réglages.
+        // Segmenté, curseurs et interrupteurs étaient les seules surfaces
+        // d'accent bleu restées dans l'app.
+        //
+        // **La barre d'onglets d'un `TabView` y échappe** : sur macOS elle est
+        // rendue par le contrôle système, qui ignore la teinte. On ne la
+        // repeindra pas à la main — ce serait une pièce d'AppKit réécrite pour
+        // trois pixels, et elle cesserait de suivre le système le jour où il
+        // change.
+        .tint(Color(nsColor: Theme.NS.label))
     }
 }
 
@@ -117,6 +135,11 @@ private struct EditingSettings: View {
 
     var body: some View {
         Form {
+            // Chaque réglage dans sa propre section, avec sa propre
+            // explication. Les deux partageaient un encadré et une seule
+            // phrase, posée en dessous des deux : elle avait l'air de décrire
+            // le mode focus, qui n'en avait aucune — et c'est celui des deux
+            // dont le comportement surprend le plus.
             Section("Écriture") {
                 Toggle("Mode focus", isOn: $settings.focusMode)
                 if settings.focusMode {
@@ -124,6 +147,13 @@ private struct EditingSettings: View {
                         ForEach(AppSettings.FocusUnit.allCases) { Text($0.label).tag($0) }
                     }
                 }
+                Text("Tout s'atténue sauf ce que vous écrivez. L'unité active s'arrête "
+                     + "aux lignes vides, aux titres et à chaque item de liste.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle("Machine à écrire", isOn: $settings.typewriterMode)
                 Text("La ligne active reste à hauteur fixe et le texte défile dessous. "
                      + "Désactivé, le défilement est celui de n'importe quelle app.")
@@ -409,7 +439,11 @@ final class SettingsWindowController: NSWindowController {
         let hosting = NSHostingController(rootView: SettingsView(settings: .shared))
         let window = NSWindow(contentViewController: hosting)
         window.title = "Réglages"
-        window.styleMask = [.titled, .closable]
+        window.styleMask = [.titled, .closable, .resizable]
+        // `idealHeight` ne remonte pas jusqu'à la fenêtre au travers du
+        // `TabView` : on pose la taille de départ ici, et `.resizable` laisse
+        // l'utilisateur agrandir si sa police système est plus grande.
+        window.setContentSize(NSSize(width: 480, height: 660))
         // Une fenêtre de réglages qui reste ouverte derrière l'éditeur brouille
         // le retour au texte ; celle-ci se referme et se rouvre à l'identique.
         window.isReleasedWhenClosed = false

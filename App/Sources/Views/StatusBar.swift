@@ -24,7 +24,7 @@ final class StatusBar: NSView {
         // fond de la page rend la barre opaque là où elle recouvre quelque
         // chose, et parfaitement invisible partout ailleurs — c'est-à-dire
         // presque toujours.
-        layer?.backgroundColor = Theme.NS.window.cgColor
+        applyLayerBackground(Theme.NS.window)
         layer?.cornerRadius = Theme.Radius.control
 
         label.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
@@ -46,6 +46,19 @@ final class StatusBar: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) n'est pas utilisé : aucune vue ne vient d'un xib") }
+
+    /// **Transparente aux événements.**
+    ///
+    /// La barre flotte au-dessus de la colonne, et elle est ajoutée après la
+    /// vue de défilement : elle recevait donc les clics et la molette avant le
+    /// texte. Dans la fenêtre par défaut — 820 points, colonne de 612 — elle
+    /// recouvre la partie droite de la colonne : cliquer en bas à droite du
+    /// document ne posait pas le curseur, et la molette n'y faisait rien.
+    ///
+    /// Un compteur est décoratif : il n'a aucune raison d'intercepter quoi que
+    /// ce soit. Les zones de suivi, elles, sont géométriques et continuent de
+    /// donner l'entrée et la sortie du pointeur.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     // MARK: - Contenu
 
@@ -74,13 +87,17 @@ final class StatusBar: NSView {
 
     // MARK: - Apparence
 
-    /// Le fond est résolu à la pose : un passage en mode sombre ne le met pas à
-    /// jour tout seul, et la barre resterait blanche sur une page noire.
+    /// Le fond est résolu à la pose : voir `applyLayerBackground(_:)`. Une
+    /// fenêtre ouverte alors que le thème de l'app diffère de celui du système
+    /// donnait ici une **capsule gris foncé** posée sur une page blanche.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = Theme.NS.window.cgColor
-        }
+        applyLayerBackground(Theme.NS.window)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyLayerBackground(Theme.NS.window)
     }
 
     override func draw(_ dirtyRect: NSRect) {

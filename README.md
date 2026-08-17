@@ -57,7 +57,7 @@ de reformater ce que vous n'avez pas édité.
   faite s'atténue
 - `⌘V` convertit le texte riche collé depuis un navigateur en markdown,
   `⌘⇧V` colle en texte brut
-- `⌘/` bascule tout le document en markdown brut — le filet de sécurité
+- `⌥⌘S` bascule tout le document en markdown brut — le filet de sécurité
 - Ouverture, enregistrement, onglets, Récents, versions Time Machine,
   restauration de session et iCloud Drive, par `NSDocument`
 - `⌘F` avec le chercheur natif, correction orthographique système

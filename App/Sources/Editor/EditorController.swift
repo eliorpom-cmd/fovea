@@ -82,15 +82,44 @@ final class EditorController: NSObject {
         textView.textStorage?.delegate = self
         textView.handlesDeleteBackward = { [weak self] selection in
             guard let self else { return false }
+            // **La construction avant la paire.**
+            //
+            // L'ordre était l'inverse, et il produisait exactement l'orphelin
+            // que `deleteConstruct` existe pour éviter : le curseur peut se
+            // poser *entre les deux étoiles* d'une ouverture — le marqueur y
+            // est révélé, donc la position est atteignable —, et `⌫` y voyait
+            // une paire `*|*` à défaire. `**gras**` devenait `gras**`, un
+            // marqueur de fermeture seul au milieu de la phrase.
+            //
+            // Rien n'est perdu au change : une paire fraîchement posée — `()`,
+            // `**` vide — n'est jamais une construction analysée, donc
+            // `deleteConstruct` la laisse passer.
             return stepBackInsteadOfBreakingTheGrid(at: selection)
-                || deletePair(at: selection)
                 || deleteConstruct(at: selection)
+                || deletePair(at: selection)
         }
         textView.handlesTyping = { [weak self] character in
             guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return false }
+            // Le troisième accent grave d'abord : sans lui, les paires
+            // automatiques doublent chaque touche et ` ``` ` en produit six.
+            if apply(TypingBehaviour.codeFence(typing: character, in: text,
+                                               selection: textView.selectedRange())) {
+                return true
+            }
             return apply(TypingBehaviour.autoPair(typing: character, in: text,
                                                   selection: textView.selectedRange(),
                                                   insideCode: isInsideCode(at: textView.selectedRange().location)))
+        }
+        // Le rattrapage des touches mortes : même décision, prise après coup.
+        // Voir `EditorTextView.insertText`.
+        textView.handlesTypedCharacter = { [weak self] character in
+            guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return }
+            let selection = textView.selectedRange()
+            guard selection.length == 0 else { return }
+            let caret = selection.location
+            if apply(TypingBehaviour.codeFenceAfterTyping(character, in: text, caret: caret)) { return }
+            _ = apply(TypingBehaviour.autoPairAfterTyping(character, in: text, caret: caret,
+                                                          insideCode: isInsideCode(at: max(0, caret - 1))))
         }
         textView.handlesNewline = { [weak self] in
             guard let self else { return false }
@@ -236,6 +265,42 @@ final class EditorController: NSObject {
         return scope
     }
 
+    /// La largeur **réellement** offerte au texte : celle du conteneur, que
+    /// `applyColumnLayout` a bornée à la place disponible. C'est elle qui doit
+    /// décider de la géométrie d'un tableau, pas la largeur des réglages.
+    private var renderedColumnWidth: CGFloat {
+        let width = textView.textContainer?.size.width ?? 0
+        return width > 0 ? width : typography.columnWidth
+    }
+
+    /// Celle du dernier rendu, pour savoir quand les tableaux doivent être
+    /// reposés.
+    private var lastRenderedColumnWidth: CGFloat = 0
+
+    /// Repose **les seuls tableaux**, sur la largeur courante.
+    ///
+    /// Une grille ne tient pas par une contrainte : elle tient par le crénage
+    /// posé sur ses `|` masqués, c'est-à-dire par des attributs figés dans le
+    /// tampon. Changer la largeur du conteneur ne la repose donc pas, et après
+    /// un redimensionnement de fenêtre le tableau gardait la géométrie de
+    /// l'ancienne largeur jusqu'à la prochaine frappe qui le touchait.
+    private func rerenderTables() {
+        guard !isSourceMode, let storage = textView.textStorage, !spans.isEmpty else { return }
+        let renderer = MarkdownRenderer(typography: typography, availableWidth: renderedColumnWidth)
+        let tables = spans.enumerated().filter { renderer.isTable($0.element) }
+        guard !tables.isEmpty else { return }
+
+        storage.beginEditing()
+        for (index, span) in tables {
+            renderer.applyTable(storage, span: span, revealed: revealed.contains(index))
+        }
+        storage.endEditing()
+        textView.decorations = EditorDecoration.build(from: spans, in: storage,
+                                                      typography: typography,
+                                                      availableWidth: renderedColumnWidth,
+                                                      revealed: revealed)
+    }
+
     private func rerenderEverything() {
         guard let storage = textView.textStorage else { return }
         render(in: NSRange(location: 0, length: storage.length))
@@ -255,12 +320,18 @@ final class EditorController: NSObject {
         revealed = currentRevealedIndices()
         let renderer = MarkdownRenderer(typography: typography,
                                         colorfulCode: AppSettings.shared.colorfulCodeBlocks,
-                                        documentURL: documentURL)
+                                        documentURL: documentURL,
+                                        availableWidth: renderedColumnWidth)
         // Seules les constructions qui touchent la portée sont repassées ; la
         // portée est celle du bloc édité, pas celle du document.
-        let touching = spans.enumerated().filter {
-            NSIntersectionRange($0.element.range, range).length > 0 || range.length == 0
-        }
+        //
+        // « Se touchent », bornes comprises, et non « s'intersectent » : une
+        // portée d'édition peut être **vide** — supprimer le dernier signe du
+        // document en laisse une —, et une intersection vide écartait alors
+        // toutes les constructions. Le repli qui corrigeait ce cas les
+        // repassait **toutes**, document entier compris : le pire moment pour
+        // le faire, puisque c'est une frappe qui l'appelle.
+        let touching = spans.enumerated().filter { Self.touches($0.element.range, range) }
         renderer.render(storage,
                         spans: touching.map(\.element),
                         revealed: Set(touching.indices.filter { revealed.contains(touching[$0].offset) }),
@@ -269,7 +340,14 @@ final class EditorController: NSObject {
         textView.documentURL = documentURL
         textView.decorations = EditorDecoration.build(from: spans, in: storage,
                                                       typography: typography,
+                                                      availableWidth: renderedColumnWidth,
                                                       revealed: revealed)
+    }
+
+    /// Les deux plages se touchent-elles, bornes comprises ? Une plage vide en
+    /// touche une autre dès qu'elle est dedans ou à son bord.
+    static func touches(_ a: NSRange, _ b: NSRange) -> Bool {
+        a.location <= b.upperBound && b.location <= a.upperBound
     }
 
     /// Le filet de sécurité (§4.2) : le texte tel qu'il est dans le fichier,
@@ -302,7 +380,7 @@ final class EditorController: NSObject {
         revealed = next
 
         storage.beginEditing()
-        let renderer = MarkdownRenderer(typography: typography)
+        let renderer = MarkdownRenderer(typography: typography, availableWidth: renderedColumnWidth)
         for index in changed where index < spans.count {
             renderer.applyMarkers(storage, span: spans[index], revealed: next.contains(index))
         }
@@ -332,6 +410,7 @@ final class EditorController: NSObject {
         if rebuiltDecorations {
             textView.decorations = EditorDecoration.build(from: spans, in: storage,
                                                           typography: typography,
+                                                          availableWidth: renderedColumnWidth,
                                                           revealed: next)
         }
     }
@@ -439,7 +518,7 @@ final class EditorController: NSObject {
         for span in spans {
             guard case .table(let table?) = span.kind,
                   RevealPolicy.contains(span.range, location) else { continue }
-            return MarkdownRenderer(typography: typography)
+            return MarkdownRenderer(typography: typography, availableWidth: renderedColumnWidth)
                 .gridLayout(for: table, in: storage) != nil ? table : nil
         }
         return nil
@@ -492,10 +571,20 @@ final class EditorController: NSObject {
             textView.setSelectedRange(cell)
             return true
         }
-        // Reculer depuis la première cellule ne fait rien ; avancer depuis la
-        // dernière ajoute une ligne, qui est ce qu'on voulait en arrivant là.
-        guard !outdent else { return true }
+        // Avancer depuis la dernière cellule ajoute une ligne, qui est ce qu'on
+        // voulait en arrivant là. Reculer depuis la première **sort par le
+        // haut** : la touche renvoyait `true` sans rien faire, et `⇧⇥` était
+        // morte à cet endroit sans que rien ne le dise.
+        guard !outdent else { return leaveTableUpwards(table) }
         return appendRow(to: table)
+    }
+
+    /// Pose le curseur sur la ligne qui précède le tableau, ou au tout début du
+    /// document quand il n'y en a pas.
+    private func leaveTableUpwards(_ table: MarkdownTable) -> Bool {
+        guard let first = table.rows.first, first.line.location > 0 else { return true }
+        textView.setSelectedRange(NSRange(location: first.line.location - 1, length: 0))
+        return true
     }
 
     /// `⏎` descend d'une ligne dans la même colonne, et **sort du tableau**
@@ -619,11 +708,36 @@ final class EditorController: NSObject {
         textView.refreshFocusOverlay()
         guard let container = textView.textContainer else { return }
         let available = scrollView.contentSize.width
-        let column = min(typography.columnWidth, max(240, available - Theme.Space.s40 * 2))
-        let inset = max(Theme.Space.s24, (available - column) / 2)
+        // **Aucune place mesurée, aucune décision.**
+        //
+        // La vue de défilement n'a pas encore de taille tant qu'elle n'est pas
+        // dans une fenêtre mise en page. Le calcul qui suit y répondait par une
+        // colonne d'un point de large — l'ancien plancher de 240 le masquait,
+        // en donnant une largeur fausse plutôt qu'aucune. On attend la passe
+        // suivante, qui viendra de toute façon.
+        guard available > 1 else { return }
+
+        // **La colonne ne dépasse jamais la place disponible.**
+        //
+        // Le calcul posait un plancher fixe de 240 points et une marge fixe de
+        // 24. À la taille minimale de fenêtre avec le plan ouvert il ne reste
+        // que 200 points de large : la colonne débordait, et la vue n'étant pas
+        // redimensionnable horizontalement, le texte était coupé net.
+        //
+        // La marge cède donc avant la colonne, et la colonne avant tout.
+        let margin = min(Theme.Space.s24, available / 8)
+        let column = max(1, min(typography.columnWidth, available - margin * 2))
+        let inset = max(0, (available - column) / 2)
         textView.textContainerInset = NSSize(width: inset, height: Theme.Space.s64)
         container.size = NSSize(width: column, height: .greatestFiniteMagnitude)
         container.widthTracksTextView = false
+
+        // Les tableaux ne suivent pas tout seuls : voir `rerenderTables()`. On
+        // ne paie que lorsque la largeur a réellement bougé — cette méthode est
+        // appelée à chaque passe de mise en page.
+        guard abs(column - lastRenderedColumnWidth) > 0.5 else { return }
+        lastRenderedColumnWidth = column
+        rerenderTables()
     }
 
     // MARK: - Commandes
@@ -883,7 +997,21 @@ final class EditorController: NSObject {
         storage.replaceCharacters(in: span.range, with: kept)
         textView.didChangeText()
 
-        textView.setSelectedRange(NSRange(location: max(0, span.content.location - lengthBefore(span)), length: 0))
+        // **Le curseur reste où il était**, moins ce qui vient de disparaître
+        // devant lui.
+        //
+        // Il allait auparavant au début du contenu. Sur `**mot**`, `⌫` retirait
+        // bien le gras mais renvoyait le curseur trois signes en arrière,
+        // devant le mot : la frappe suivante s'écrivait à gauche de ce qu'on
+        // venait de dé-formater. C'était le défaut le plus fréquent de l'app,
+        // puisqu'il se déclenchait à chaque retrait de format.
+        let removed = span.markers.reduce(0) { total, marker in
+            total + max(0, min(marker.upperBound, selection.location) - marker.location)
+        }
+        let end = span.range.location + kept.utf16.count
+        textView.setSelectedRange(NSRange(
+            location: min(max(span.range.location, selection.location - removed), end),
+            length: 0))
         return true
     }
 
@@ -901,17 +1029,21 @@ final class EditorController: NSObject {
                                                    length: span.range.upperBound - cursor))
     }
 
-    private func lengthBefore(_ span: SyntaxSpan) -> Int {
-        span.markers.filter { $0.location < span.content.location }.reduce(0) { $0 + $1.length }
-    }
-
     // MARK: - Menu slash (§4.5)
 
     /// Ouvre, met à jour ou referme le menu selon ce qui vient d'être tapé.
     ///
     /// Appelé après chaque frappe **et** chaque déplacement du curseur : sortir
     /// de la ligne doit refermer le menu aussi sûrement qu'effacer le `/`.
-    private func refreshSlashMenu() {
+    ///
+    /// - Parameter mayOpen: vrai seulement quand l'appel suit une **frappe**.
+    ///   Un panneau qui prend les flèches et `⏎` ne doit jamais s'ouvrir tout
+    ///   seul : posé le curseur en fin d'une ligne qui se termine par `/`, on
+    ///   se retrouvait avec un menu ouvert qu'on n'avait pas demandé et un
+    ///   clavier qui ne répondait plus au texte. Un déplacement de curseur peut
+    ///   donc **fermer** le menu ou le suivre s'il est déjà ouvert, jamais
+    ///   l'ouvrir.
+    private func refreshSlashMenu(mayOpen: Bool) {
         let selection = textView.selectedRange()
         guard !isSourceMode, selection.length == 0,
               textView.window?.isKeyWindow == true,
@@ -934,6 +1066,10 @@ final class EditorController: NSObject {
         else {
             slashTrigger = nil
             slashMenu.dismiss()
+            return
+        }
+        guard mayOpen || slashMenu.isOpen else {
+            slashTrigger = nil
             return
         }
         slashTrigger = trigger
@@ -996,7 +1132,14 @@ final class EditorController: NSObject {
     /// Appelé au même endroit que le menu slash, et pour la même raison : la
     /// question « le curseur est-il quelque part où l'app peut aider ? » se
     /// repose à chaque frappe et à chaque déplacement.
-    private func refreshLanguagePicker() {
+    ///
+    /// - Parameter mayOpen: comme pour le menu slash, seule une frappe ouvre.
+    ///   C'était ici le piège le plus violent de l'app : poser le curseur en
+    ///   bout d'une ligne ` ``` ` — au clic, à la flèche, après une recherche —
+    ///   ouvrait la liste des onze langages, qui prenait aussitôt `↑`, `↓` et
+    ///   `⏎`. La flèche du bas ne descendait plus d'une ligne et `⏎` écrivait
+    ///   `swift` au lieu d'un retour, sans que rien n'ait été demandé.
+    private func refreshLanguagePicker(mayOpen: Bool) {
         let selection = textView.selectedRange()
         guard !isSourceMode, selection.length == 0, !slashMenu.isOpen,
               textView.window?.isKeyWindow == true,
@@ -1007,13 +1150,18 @@ final class EditorController: NSObject {
             return
         }
         let line = currentLineRange()
-        guard let trigger = CodeFence.languageTrigger(
-            inLine: storage.mutableString.substring(with: line),
-            lineStart: line.location,
-            caret: selection.location)
+        guard isOpeningFence(line: line),
+              let trigger = CodeFence.languageTrigger(
+                inLine: storage.mutableString.substring(with: line),
+                lineStart: line.location,
+                caret: selection.location)
         else {
             languageTrigger = nil
             languagePicker.dismiss()
+            return
+        }
+        guard mayOpen || languagePicker.isOpen else {
+            languageTrigger = nil
             return
         }
         languageTrigger = trigger
@@ -1021,6 +1169,24 @@ final class EditorController: NSObject {
         if !languagePicker.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
             languageTrigger = nil
         }
+    }
+
+    /// Cette ligne est-elle la clôture **ouvrante** d'un bloc de code ?
+    ///
+    /// `CodeFence.languageTrigger` ne voit qu'une ligne : elle ne peut pas
+    /// distinguer l'ouverture de la fermeture, et le sélecteur proposait donc
+    /// de nommer un langage sur la clôture **du bas** — où le mot s'écrirait
+    /// après la fermeture, sans aucun sens. La réponse est dans les
+    /// constructions : le bloc qui contient le curseur commence-t-il sur cette
+    /// ligne ? Une clôture qu'aucun bloc ne referme encore est, elle, une
+    /// ouverture qu'on est en train d'écrire.
+    private func isOpeningFence(line: NSRange) -> Bool {
+        for span in spans {
+            guard case .codeBlock = span.kind,
+                  RevealPolicy.contains(span.range, line.location) else { continue }
+            return span.range.location >= line.location
+        }
+        return true
     }
 
     private func applyLanguage(_ language: String) {
@@ -1118,8 +1284,8 @@ final class EditorController: NSObject {
         correctCaretInsideTable()
         applyFocus()
         applyTypewriterScrolling()
-        refreshSlashMenu()
-        refreshLanguagePicker()
+        refreshSlashMenu(mayOpen: true)
+        refreshLanguagePicker(mayOpen: true)
         onTextChanged?()
     }
 
@@ -1173,8 +1339,10 @@ extension EditorController: NSTextViewDelegate {
         updateReveal()
         applyFocus()
         applyTypewriterScrolling()
-        refreshSlashMenu()
-        refreshLanguagePicker()
+        // Un déplacement de curseur ferme ou suit, mais n'ouvre pas : voir
+        // `refreshSlashMenu(mayOpen:)`.
+        refreshSlashMenu(mayOpen: false)
+        refreshLanguagePicker(mayOpen: false)
         onSelectionChanged?()
     }
 }

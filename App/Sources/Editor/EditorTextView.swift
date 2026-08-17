@@ -22,7 +22,21 @@ final class EditorTextView: NSTextView {
             needsDisplay = true
             // Les cases à cocher posent des zones de pointeur : elles bougent
             // dès que le texte change, donc AppKit doit les redemander.
-            window?.invalidateCursorRects(for: self)
+            //
+            // Mais elles seules. Le rappel partait à chaque frappe, y compris
+            // dans un document qui ne contient pas une seule tâche — et
+            // `resetCursorRects` interroge la mise en page pour chaque case
+            // visible.
+            if Self.hasCheckbox(oldValue) || Self.hasCheckbox(decorations) {
+                window?.invalidateCursorRects(for: self)
+            }
+        }
+    }
+
+    private static func hasCheckbox(_ decorations: [EditorDecoration]) -> Bool {
+        decorations.contains {
+            if case .checkbox = $0.kind { return true }
+            return false
         }
     }
 
@@ -63,6 +77,10 @@ final class EditorTextView: NSTextView {
     /// automatiques. Renvoie `true` si le caractère a été traité autrement.
     var handlesTyping: ((Character) -> Bool)?
 
+    /// Appelé pour un caractère qui vient d'être écrit et qu'on **n'a pas pu**
+    /// intercepter avant — la sortie d'une touche morte. Voir `insertText`.
+    var handlesTypedCharacter: ((Character) -> Void)?
+
     /// Appelé sur `⌘`+clic à une position donnée : une note de bas de page y
     /// répond en sautant vers son autre moitié.
     var handlesFootnoteJump: ((Int) -> Bool)?
@@ -97,7 +115,22 @@ final class EditorTextView: NSTextView {
         isEditable = true
         isSelectable = true
         usesFindBar = true
-        isIncrementalSearchingEnabled = true
+        // **La recherche incrémentale reste éteinte.**
+        //
+        // Elle n'apporte pas que le surlignage au fil de la frappe : elle pose
+        // aussi le voile de `NSTextFinder`, qui assombrit **tout** le document
+        // en gris opaque pour n'y laisser que des trous blancs sur les
+        // résultats, et peint le résultat courant en jaune système. Sur une
+        // page blanche, le texte de l'utilisateur devient gris moyen — le seul
+        // écran de l'app où il cesse d'être lisible — et c'est la seule couleur
+        // saturée qui ait jamais traversé le §7.
+        //
+        // `NSTextView` ne donne pas accès à son `NSTextFinder`, donc pas à
+        // `incrementalSearchingShouldDimContentView` : la seule prise est
+        // l'interrupteur. On la coupe. `⌘F`, `⌘G` et l'indicateur de résultat
+        // continuent de marcher, et le document reste lisible pendant qu'on
+        // cherche dedans.
+        isIncrementalSearchingEnabled = false
 
         registerForDraggedTypes([.fileURL, .png, .tiff])
 
@@ -174,17 +207,34 @@ final class EditorTextView: NSTextView {
             ? "Écrivez."
             : "Écrivez. Tapez « / » pour insérer un titre, une liste, un tableau."
 
+        // **Il revient à la ligne.** Mesurée sur une seule ligne et dessinée
+        // dans une boîte de cette largeur, la phrase était coupée net dès que
+        // la fenêtre se resserrait — sur l'unique écran de l'app dont le seul
+        // rôle est de se faire lire.
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
             .font: typography.body,
             .foregroundColor: Theme.NS.labelTertiary,
+            .paragraphStyle: style,
         ]
         let origin = textContainerOrigin
-        let size = (hint as NSString).size(withAttributes: attributes)
-        let box = NSRect(x: origin.x + (textContainer?.lineFragmentPadding ?? 0),
-                         y: origin.y,
-                         width: size.width, height: size.height)
+        let padding = textContainer?.lineFragmentPadding ?? 0
+        let width = max(1, (textContainer?.size.width ?? bounds.width) - padding * 2)
+        let size = (hint as NSString).boundingRect(
+            with: NSSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: attributes).size
+        // Décalé d'un cheveu : posé pile où le texte commencera, le substitut
+        // passe **sous le curseur**, qui clignote au même endroit. Le « É »
+        // d'« Écrivez » s'y lisait barré d'un trait vertical, ce qui ressemble
+        // à un défaut d'affichage. Deux points ne se remarquent pas ; le trait
+        // dans la lettre, si.
+        let box = NSRect(x: origin.x + padding + 2, y: origin.y,
+                         width: width, height: size.height.rounded(.up))
         guard box.intersects(rect) else { return }
-        (hint as NSString).draw(in: box, withAttributes: attributes)
+        (hint as NSString).draw(with: box, options: [.usesLineFragmentOrigin, .usesFontLeading],
+                                attributes: attributes)
     }
 
     /// Le pointeur devient une main au-dessus d'une case à cocher.
@@ -259,14 +309,36 @@ final class EditorTextView: NSTextView {
     /// La saisie en cours de composition — accents morts, méthodes asiatiques —
     /// est laissée intacte : y intercaler une fermeture couperait la
     /// composition en deux.
+    /// # La seconde porte, pour les touches mortes
+    ///
+    /// Les deux gardes ci-dessous protègent une composition en cours : on ne
+    /// peut pas glisser une fermeture au milieu d'un accent qu'on est en train
+    /// de former. Mais sur un **clavier français**, l'accent grave et le tilde
+    /// *sont* des touches mortes : `` ` `` et `~` n'arrivent jamais bruts, ils
+    /// concluent une composition — et les gardes les écartaient donc en
+    /// silence. Les paires automatiques ne se déclenchaient pas une seule fois
+    /// sur les deux marqueurs markdown qui en ont le plus besoin, et la
+    /// promotion en bloc de code non plus.
+    ///
+    /// La composition doit bien être validée d'abord. On écrit donc, **puis**
+    /// on rejoue la décision sur le texte tel qu'il est — c'est
+    /// `TypingBehaviour.autoPairAfterTyping`, qui dit la même chose depuis
+    /// l'autre côté de la frappe.
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string
-        if !hasMarkedText(), replacementRange.location == NSNotFound,
-           let typed, typed.count == 1, let character = typed.first,
-           handlesTyping?(character) == true {
+        guard let typed, typed.count == 1, let character = typed.first else {
+            super.insertText(string, replacementRange: replacementRange)
             return
         }
+
+        if !hasMarkedText(), replacementRange.location == NSNotFound {
+            if handlesTyping?(character) == true { return }
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
         super.insertText(string, replacementRange: replacementRange)
+        handlesTypedCharacter?(character)
     }
 
     override func insertBacktab(_ sender: Any?) {

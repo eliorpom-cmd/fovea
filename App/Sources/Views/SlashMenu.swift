@@ -23,7 +23,14 @@ final class SlashMenu: FloatingPanel {
 
     private static let rowHeight: CGFloat = 28
     private static let width: CGFloat = 260
-    private static let maximumVisibleRows = 7
+    /// Dix — c'est-à-dire **toutes**.
+    ///
+    /// Sept étaient montrées, sans ascenseur ni le moindre indice qu'il y en
+    /// avait d'autres : « Bloc de code », « Tableau » et « Filet horizontal »
+    /// étaient invisibles. Dont « Tableau », qui est la raison d'être du menu —
+    /// c'est le bloc qu'on ne sait pas écrire à la main, donc celui pour lequel
+    /// on ouvre le menu.
+    private static let maximumVisibleRows = SlashCommand.allCases.count
 
     // MARK: - Construction
 
@@ -44,7 +51,12 @@ final class SlashMenu: FloatingPanel {
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
+        // Le panneau peut rétrécir faute de place sous le curseur (voir
+        // `FloatingPanel.present`) : il lui faut alors de quoi dire qu'il
+        // continue.
+        scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)

@@ -322,6 +322,136 @@ enum TypingBehaviour {
                     caret: caret + 1, undoName: nil)
     }
 
+    /// Le troisième accent grave d'une ligne ouvre un **bloc**, pas un
+    /// troisième `code` en ligne.
+    ///
+    /// Sans ce cas particulier, les paires automatiques doublaient chaque
+    /// touche et le geste le plus courant du markdown ne marchait pas :
+    ///
+    /// | frappe | tampon |
+    /// |---|---|
+    /// | 1 | `` `|` `` |
+    /// | 2 | `` ``|`` `` |
+    /// | 3 | ` ```|``` ` |
+    ///
+    /// Trois touches, six signes, et aucun bloc. Le franchissement ne pouvait
+    /// pas rattraper : en début de ligne, une série de marqueurs **ouvre**
+    /// toujours — c'est ce qui permet à `*` puis `*` de donner le gras — donc
+    /// le troisième accent grave doublait comme les deux premiers.
+    ///
+    /// On reconnaît donc la forme exacte que les deux premières touches ont
+    /// produite — quatre accents graves, le curseur au milieu, en tête de
+    /// ligne — et on la remplace par la clôture, sa ligne vide et sa
+    /// fermeture. Le curseur atterrit là où l'on écrit : dans le bloc.
+    static func codeFence(typing character: Character, in text: String, selection: NSRange) -> Edit? {
+        guard character == "`", selection.length == 0 else { return nil }
+        let units = Array(text.utf16)
+        let caret = selection.location
+        let backtick = UInt16(UnicodeScalar("`").value)
+        guard caret >= 2, caret + 2 <= units.count,
+              units[caret - 1] == backtick, units[caret - 2] == backtick,
+              units[caret] == backtick, units[caret + 1] == backtick else { return nil }
+
+        // Une clôture ouvre une ligne. Ailleurs — au fil d'une phrase — trois
+        // accents graves ne sont pas un bloc, et on laisse la paire faire.
+        let line = lineRange(units, containing: caret)
+        let indent = caret - 2 - line.location
+        guard indent >= 0, indent <= 3,
+              (line.location..<(caret - 2)).allSatisfy({ units[$0] == UInt16(UnicodeScalar(" ").value) })
+        else { return nil }
+
+        return Edit(range: NSRange(location: caret - 2, length: 4),
+                    replacement: "```\n\n```",
+                    caret: caret - 2 + 4,
+                    undoName: "Bloc de code")
+    }
+
+    // MARK: - Les mêmes gestes, mais après coup (touches mortes)
+
+    /// La décision de `autoPair`, prise **après** que le caractère a été écrit.
+    ///
+    /// # Pourquoi cette seconde porte existe
+    ///
+    /// Sur un clavier français, l'accent grave et le tilde sont des **touches
+    /// mortes** : le caractère n'arrive pas brut, il conclut une composition.
+    /// `insertText(_:replacementRange:)` le reçoit alors avec du texte marqué
+    /// et une plage de remplacement, et les deux gardes qui protègent la
+    /// composition — on ne peut pas glisser une fermeture au milieu d'un accent
+    /// en cours — l'écartaient **en silence**.
+    ///
+    /// Résultat mesuré sur le clavier de l'auteur : `(`, `*`, `*`, `"` donne
+    /// bien `(**"**)`, mais trois accents graves donnent trois accents graves.
+    /// Le `` `code` `` ne se refermait jamais, `~~barré~~` non plus, et la
+    /// promotion en bloc de code ne se déclenchait pas une seule fois.
+    ///
+    /// La composition, elle, doit être validée par la vue avant qu'on touche à
+    /// quoi que ce soit. On laisse donc écrire, et on rattrape : le caractère
+    /// est déjà à `caret - 1`, et les trois gestes se réécrivent sur cet état.
+    ///
+    /// - Parameter caret: la position **après** le caractère qui vient d'être
+    ///   écrit.
+    static func autoPairAfterTyping(_ character: Character, in text: String,
+                                    caret: Int, insideCode: Bool) -> Edit? {
+        guard let closing = pairs[character], caret > 0 else { return nil }
+        guard !(insideCode && markdownPairs.contains(character)) else { return nil }
+        let units = Array(text.utf16)
+        guard caret <= units.count, symbol(units[caret - 1]) == character else { return nil }
+
+        // Le voisinage d'**avant** la frappe : ce qui suivait le curseur est
+        // maintenant à `caret`, ce qui le précédait à `caret - 2`.
+        let next = caret < units.count ? symbol(units[caret]) : nil
+        let previous = caret >= 2 ? symbol(units[caret - 2]) : nil
+
+        let isMarkdown = markdownPairs.contains(character)
+        var opens = true
+        if isMarkdown {
+            var start = caret - 1
+            while start > 0, symbol(units[start - 1]) == character { start -= 1 }
+            if let before = start > 0 ? symbol(units[start - 1]) : nil, before.isLetter || before.isNumber {
+                opens = false
+            }
+        }
+
+        // Franchir : le caractère qu'on vient d'écrire fait doublon avec la
+        // fermeture qui était déjà là. On retire le nôtre et on passe devant.
+        if let next, next == character, steppedOver.contains(character), !(isMarkdown && opens) {
+            return Edit(range: NSRange(location: caret - 1, length: 1),
+                        replacement: "", caret: caret, undoName: nil)
+        }
+
+        guard previous != "\\", opens else { return nil }
+        guard next == nil || next!.isWhitespace || next! == character
+                || permissiveNeighbours.contains(next!) else { return nil }
+        // Poser la fermeture derrière le curseur, qui ne bouge pas.
+        return Edit(range: NSRange(location: caret, length: 0),
+                    replacement: String(closing), caret: caret, undoName: nil)
+    }
+
+    /// `codeFence`, après coup — voir `autoPairAfterTyping`.
+    ///
+    /// La forme reconnue est celle que les deux premières touches ont laissée,
+    /// **plus** le troisième accent grave déjà écrit : cinq accents graves, le
+    /// curseur après le troisième.
+    static func codeFenceAfterTyping(_ character: Character, in text: String, caret: Int) -> Edit? {
+        guard character == "`", caret >= 3 else { return nil }
+        let units = Array(text.utf16)
+        let backtick = UInt16(UnicodeScalar("`").value)
+        guard caret + 2 <= units.count,
+              (caret - 3..<caret).allSatisfy({ units[$0] == backtick }),
+              units[caret] == backtick, units[caret + 1] == backtick else { return nil }
+
+        let line = lineRange(units, containing: caret)
+        let indent = caret - 3 - line.location
+        guard indent >= 0, indent <= 3,
+              (line.location..<(caret - 3)).allSatisfy({ units[$0] == UInt16(UnicodeScalar(" ").value) })
+        else { return nil }
+
+        return Edit(range: NSRange(location: caret - 3, length: 5),
+                    replacement: "```\n\n```",
+                    caret: caret - 3 + 4,
+                    undoName: "Bloc de code")
+    }
+
     /// `⌫` entre les deux moitiés d'une paire les efface toutes les deux.
     ///
     /// Sans ça, revenir sur une parenthèse qu'on n'a pas voulue laisse sa

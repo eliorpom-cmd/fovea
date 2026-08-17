@@ -27,8 +27,7 @@ final class DocumentBanner: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = Theme.NS.fillQuaternary.cgColor
+        applyLayerBackground(Theme.NS.fillQuaternary)
 
         label.font = .systemFont(ofSize: 12)
         label.textColor = Theme.NS.labelSecondary
@@ -76,6 +75,17 @@ final class DocumentBanner: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("aucune vue ne vient d'un xib") }
+
+    /// Même raison que dans le plan : voir `applyLayerBackground(_:)`.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyLayerBackground(Theme.NS.fillQuaternary)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyLayerBackground(Theme.NS.fillQuaternary)
+    }
 
     var isShowing: Bool { !isHidden }
 
@@ -136,7 +146,7 @@ extension DocumentBanner {
         }
         if byteCount > 1_000_000 {
             // L'app ne bascule jamais toute seule (§6) : elle informe.
-            result.append("Document volumineux. Le mode source (⌘/) sera plus fluide.")
+            result.append("Document volumineux. Le mode source (⌥⌘S) sera plus fluide.")
         }
         if encoding != .utf8 {
             result.append("Fichier lu en \(name(of: encoding)). Il sera converti "

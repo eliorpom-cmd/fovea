@@ -25,6 +25,7 @@ final class CommandPalette: NSPanel {
     private let field = NSSearchField()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
+    private let emptyLabel = NSTextField(labelWithString: "Aucun résultat.")
 
     private var all: [Entry] = []
     private var filtered: [Entry] = []
@@ -45,6 +46,13 @@ final class CommandPalette: NSPanel {
         isFloatingPanel = true
         level = .modalPanel
         backgroundColor = .clear
+        // **Sans cela, `close()` sur-libère la fenêtre.** Le défaut d'un
+        // `NSWindow` créé en code est `true` : la fermeture envoie un `release`
+        // sur un objet qu'une propriété forte du contrôleur retient déjà. Un
+        // `⌘K`, un `⎋`, un second `⌘K`, et l'app tombait sur un objet mort.
+        // `SettingsWindowController` posait bien le drapeau ; la palette avait
+        // été oubliée.
+        isReleasedWhenClosed = false
 
         let visual = NSVisualEffectView()
         visual.material = .hudWindow
@@ -87,9 +95,20 @@ final class CommandPalette: NSPanel {
         divider.fillColor = Theme.NS.separator
         divider.translatesAutoresizingMaskIntoConstraints = false
 
+        // **Une recherche sans résultat doit le dire.** La liste se vidait et
+        // la fenêtre se refermait sur son champ : une bande grise sans un mot,
+        // qui se lit comme une palette cassée plutôt que comme une recherche
+        // qui n'a rien trouvé.
+        emptyLabel.font = .systemFont(ofSize: 13)
+        emptyLabel.textColor = Theme.NS.labelTertiary
+        emptyLabel.alignment = .center
+        emptyLabel.isHidden = true
+        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
+
         visual.addSubview(field)
         visual.addSubview(divider)
         visual.addSubview(scrollView)
+        visual.addSubview(emptyLabel)
         contentView = visual
 
         NSLayoutConstraint.activate([
@@ -106,8 +125,17 @@ final class CommandPalette: NSPanel {
             scrollView.leadingAnchor.constraint(equalTo: visual.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: visual.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: visual.bottomAnchor),
+
+            emptyLabel.topAnchor.constraint(equalTo: divider.bottomAnchor),
+            emptyLabel.leadingAnchor.constraint(equalTo: visual.leadingAnchor),
+            emptyLabel.trailingAnchor.constraint(equalTo: visual.trailingAnchor),
+            emptyLabel.heightAnchor.constraint(equalToConstant: Self.emptyHeight),
         ])
     }
+
+    /// La hauteur laissée à « Aucun résultat » — celle de deux rangées, assez
+    /// pour que la phrase respire sans que la fenêtre paraisse vide.
+    private static let emptyHeight: CGFloat = 60
 
     // MARK: - Présentation
 
@@ -127,11 +155,46 @@ final class CommandPalette: NSPanel {
         }
         makeKeyAndOrderFront(nil)
         makeFirstResponder(field)
+        // Le point d'insertion d'un champ système est **bleu**, et c'était le
+        // dernier accent de couleur de l'app hors des Réglages. L'éditeur pose
+        // le sien ; le champ de recherche vit dans un éditeur de champ partagé,
+        // qu'on ne peut colorer qu'une fois qu'il existe — c'est-à-dire ici.
+        (currentEditor(for: field) as? NSTextView)?.insertionPointColor = Theme.NS.label
+    }
+
+    private func currentEditor(for control: NSControl) -> NSText? {
+        control.currentEditor() ?? fieldEditor(true, for: control)
     }
 
     /// Un `NSPanel` refuse le focus par défaut ; sans cela, le champ de
     /// recherche ne recevrait pas la frappe.
     override var canBecomeKey: Bool { true }
+
+    /// **Cliquer ailleurs referme.**
+    ///
+    /// `hidesOnDeactivate` ne joue que si l'*application* perd le focus.
+    /// Cliquer dans la fenêtre d'édition ne la désactive pas : la palette, au
+    /// niveau `.modalPanel`, restait posée en travers de l'écran jusqu'à ce
+    /// qu'on pense à `⎋`. Une palette de recherche se ferme dès qu'on regarde
+    /// ailleurs, comme celle de Spotlight.
+    override func resignKey() {
+        super.resignKey()
+        dismiss()
+    }
+
+    /// Referme, une seule fois.
+    ///
+    /// Le garde n'est pas de la prudence gratuite : `close()` fait perdre le
+    /// focus à la fenêtre, donc rappelle `resignKey`, donc rappellerait
+    /// `dismiss`.
+    func dismiss() {
+        guard isVisible, !isDismissing else { return }
+        isDismissing = true
+        close()
+        isDismissing = false
+    }
+
+    private var isDismissing = false
 
     // MARK: - Filtrage
 
@@ -149,6 +212,8 @@ final class CommandPalette: NSPanel {
         if !filtered.isEmpty {
             tableView.selectRowIndexes([0], byExtendingSelection: false)
         }
+        emptyLabel.isHidden = !filtered.isEmpty
+        scrollView.isHidden = filtered.isEmpty
         resizeToFit()
     }
 
@@ -157,6 +222,7 @@ final class CommandPalette: NSPanel {
     /// Au-delà, la palette occuperait la moitié de l'écran pour une liste qu'on
     /// ne lit pas jusqu'en bas : on cherche, on tape deux lettres de plus.
     private static let visibleRows = 11
+
 
     /// Ajuste la hauteur au nombre de résultats.
     ///
@@ -182,7 +248,7 @@ final class CommandPalette: NSPanel {
         let shown = min(filtered.count, Self.visibleRows)
         let rows = shown > 0
             ? tableView.rect(ofRow: shown - 1).maxY + tableView.rect(ofRow: 0).minY
-            : 0
+            : Self.emptyHeight
         let target = (chrome + rows).rounded()
         guard abs(frame.height - target) > 0.5 else { return }
 
@@ -248,13 +314,13 @@ final class CommandPalette: NSPanel {
     private func run(at row: Int) {
         guard filtered.indices.contains(row) else { return }
         let entry = filtered[row]
-        close()
+        dismiss()
         entry.action()
     }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 53: close()                                  // Échap
+        case 53: dismiss()                                // Échap
         case 36, 76: run(at: tableView.selectedRow)       // Entrée
         case 125: move(by: 1)                             // Flèche bas
         case 126: move(by: -1)                            // Flèche haut
@@ -285,7 +351,7 @@ extension CommandPalette: NSSearchFieldDelegate {
         case #selector(NSResponder.moveDown(_:)): move(by: 1); return true
         case #selector(NSResponder.moveUp(_:)): move(by: -1); return true
         case #selector(NSResponder.insertNewline(_:)): run(at: tableView.selectedRow); return true
-        case #selector(NSResponder.cancelOperation(_:)): close(); return true
+        case #selector(NSResponder.cancelOperation(_:)): dismiss(); return true
         default: return false
         }
     }

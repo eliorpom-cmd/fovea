@@ -170,6 +170,10 @@ extension Theme {
         static let separator = ns(light: (0x000000, 0.10), dark: (0xFFFFFF, 0.12))
         static let quoteBar = ns(light: (0x000000, 0.18), dark: (0xFFFFFF, 0.22))
         static let selection = ns(light: (0x000000, 0.12), dark: (0xFFFFFF, 0.18))
+        /// Ligne **survolée** dans une liste. Un cran en dessous de la
+        /// sélection, pour qu'on distingue « ce que je vais cliquer » de « ce
+        /// qui est choisi ».
+        static let rowHover = ns(light: (0x787880, 0.10), dark: (0x787880, 0.20))
         static let rowSelection = ns(light: (0x787880, 0.22), dark: (0x787880, 0.42))
         static let ink = ns(light: (0x0A0A0A, 1.0), dark: (0xF5F5F5, 1.0))
 
@@ -179,6 +183,36 @@ extension Theme {
                     ? NSColor(hex: dark.0, alpha: dark.1)
                     : NSColor(hex: light.0, alpha: light.1)
             }
+        }
+    }
+}
+
+extension NSView {
+
+    /// Pose une couleur de fond sur le calque, **dans l'apparence de la vue**.
+    ///
+    /// # Le piège que cette méthode existe pour fermer
+    ///
+    /// `NSColor.cgColor` résout la couleur avec `NSAppearance.current` — celle
+    /// du **thread au moment de l'appel** — et non celle de la vue. Tant que
+    /// l'app suit le système, les deux coïncident et rien ne se voit.
+    ///
+    /// Dès que l'app est forcée dans l'autre thème, une vue **créée** à ce
+    /// moment-là naît avec les couleurs de l'autre. Mesuré, thème clair sur
+    /// système sombre : le plan était un rectangle **noir** dans une fenêtre
+    /// blanche, et son message d'accueil — dont la couleur, dynamique, est
+    /// résolue au dessin — s'y écrivait en **noir sur noir**. La barre d'état
+    /// devenait une capsule gris foncé posée sur la page.
+    ///
+    /// Et aucun rattrapage n'était possible par `viewDidChangeEffectiveAppearance` :
+    /// il n'y a pas de *changement*, la vue naît fausse.
+    ///
+    /// À rappeler donc aux trois moments où l'apparence peut différer : à la
+    /// construction, à l'entrée dans une fenêtre, et au changement de thème.
+    func applyLayerBackground(_ color: NSColor) {
+        wantsLayer = true
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = color.cgColor
         }
     }
 }

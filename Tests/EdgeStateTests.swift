@@ -23,7 +23,7 @@ final class EdgeStateTests: XCTestCase {
     func testALargeDocumentSuggestsSourceModeWithoutSwitching() {
         let messages = DocumentBanner.messages(byteCount: 2_000_000, encoding: .utf8, isWritable: true)
         XCTAssertEqual(messages.count, 1)
-        XCTAssertTrue(messages[0].contains("⌘/"), messages[0])
+        XCTAssertTrue(messages[0].contains("⌥⌘S"), messages[0])
         // « L'app ne bascule jamais toute seule » : le message informe, il ne
         // dit pas qu'il a agi.
         XCTAssertFalse(messages[0].lowercased().contains("activé"))

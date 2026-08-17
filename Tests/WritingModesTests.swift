@@ -161,4 +161,57 @@ final class WritingModesTests: XCTestCase {
         XCTAssertTrue(controller.textView.isFlipped, "la vue de texte est retournée")
     }
 
+
+    // MARK: - Ce que le mode focus ne délimitait pas
+
+    /// Le curseur **sur** une ligne vide : l'unité est cette ligne, pas les
+    /// deux paragraphes qui l'entourent.
+    ///
+    /// Les deux boucles partaient de part et d'autre et gardaient en pleine
+    /// intensité celui du dessus **et** celui du dessous — c'est-à-dire l'état
+    /// où l'on se trouve après chaque `⏎ ⏎`.
+    func testABlankLineIsItsOwnUnit() {
+        let text = "Premier paragraphe.\n\nSecond paragraphe.\n" as NSString
+        let blank = text.range(of: "\n\n").location + 1
+        let unit = WritingModes.paragraphRange(in: text, containing: blank)
+
+        XCTAssertFalse(text.substring(with: unit).contains("Premier"))
+        XCTAssertFalse(text.substring(with: unit).contains("Second"))
+    }
+
+    /// Chaque item de liste est son propre bloc.
+    ///
+    /// Une liste markdown n'a pas de ligne vide entre ses items : elle était
+    /// donc un seul paragraphe, et comme un item n'a presque jamais de
+    /// ponctuation forte, l'unité « phrase » retombait dessus. Dix items, mode
+    /// focus coché, curseur au milieu : **aucune atténuation**.
+    func testEachListItemIsItsOwnUnit() {
+        let text = "- premier\n- deuxième\n- troisième\n" as NSString
+        let caret = text.range(of: "deuxième").location
+        let unit = WritingModes.paragraphRange(in: text, containing: caret)
+
+        XCTAssertEqual(text.substring(with: unit).trimmingCharacters(in: .newlines), "- deuxième")
+    }
+
+    /// Un titre ne se fond pas dans le paragraphe qui le suit.
+    func testAHeadingIsItsOwnUnit() {
+        let text = "# Le titre\nLe paragraphe qui suit.\n" as NSString
+        let heading = WritingModes.paragraphRange(in: text, containing: 3)
+        XCTAssertEqual(text.substring(with: heading).trimmingCharacters(in: .newlines), "# Le titre")
+
+        let caret = text.range(of: "paragraphe").location
+        let body = WritingModes.paragraphRange(in: text, containing: caret)
+        XCTAssertFalse(text.substring(with: body).contains("titre"))
+    }
+
+    /// Ce qui n'ouvre pas un bloc n'en devient pas une frontière : un tiret
+    /// collé au mot, un dièse sans espace, un nombre sans délimiteur.
+    func testWhatDoesNotStartABlock() {
+        let text = "-collé\n#sans espace\n2024 est une année\n" as NSString
+        for line in [NSRange(location: 0, length: 6),
+                     NSRange(location: 7, length: 12),
+                     NSRange(location: 20, length: 18)] {
+            XCTAssertFalse(WritingModes.startsBlock(text, line), text.substring(with: line))
+        }
+    }
 }

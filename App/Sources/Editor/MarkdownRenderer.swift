@@ -18,6 +18,29 @@ struct MarkdownRenderer {
     /// L'emplacement du document, pour résoudre les images en chemin relatif.
     var documentURL: URL?
 
+    /// La largeur **réellement disponible** pour une grille de tableau.
+    ///
+    /// # Ce que la largeur souhaitée ne dit pas
+    ///
+    /// La mesure se faisait contre `typography.columnWidth`, c'est-à-dire la
+    /// largeur *demandée dans les réglages* — 68 signes, environ 612 points.
+    /// Or `EditorController.applyColumnLayout` borne la colonne réelle à la
+    /// place disponible : dans une fenêtre de 430 points avec le plan ouvert,
+    /// elle tombe à 162.
+    ///
+    /// La grille continuait donc d'être posée sur 612 points. Elle débordait du
+    /// conteneur, la vue n'étant pas redimensionnable horizontalement elle
+    /// était **coupée net par le bord de la fenêtre**, et la dernière colonne
+    /// disparaissait — sans défilement, et sans le repli en source que le §6
+    /// prévoit précisément pour ce cas, puisque ce repli se décidait lui aussi
+    /// sur la largeur souhaitée.
+    ///
+    /// `nil` veut dire « prends celle des réglages » : c'est le cas de l'export
+    /// et de l'impression, qui n'ont pas de conteneur à consulter.
+    var availableWidth: CGFloat?
+
+    var gridWidth: CGFloat { availableWidth ?? typography.columnWidth }
+
     /// Applique le rendu complet à un tampon.
     ///
     /// - Parameters:
@@ -39,7 +62,10 @@ struct MarkdownRenderer {
 
         for index in ordered {
             let span = spans[index]
-            guard NSIntersectionRange(span.range, range).length > 0 || range.length == 0 else { continue }
+            // Bornes comprises : voir `EditorController.touches` — une portée
+            // d'édition vide n'intersecte rien, et le repli qui corrigeait ce
+            // cas repassait le document entier.
+            guard EditorController.touches(span.range, range) else { continue }
             applyContentStyle(storage, span: span)
         }
 
@@ -183,7 +209,7 @@ struct MarkdownRenderer {
     /// code.
     func gridLayout(for table: MarkdownTable, in storage: NSTextStorage) -> TableLayout? {
         TableLayout.measure(table, in: storage, typography: typography,
-                            available: typography.columnWidth)
+                            available: gridWidth)
     }
 
     /// Pose — ou retire — la grille d'un tableau.
@@ -228,7 +254,7 @@ struct MarkdownRenderer {
         // malformé, et un tableau plus large que la colonne — qui se replierait
         // ligne à ligne, et une grille repliée ne se lit plus du tout.
         guard let layout = TableLayout.measure(table, in: storage, typography: typography,
-                                               available: typography.columnWidth) else {
+                                               available: gridWidth) else {
             showTableSource(storage, table: table, font: typography.body)
             return
         }

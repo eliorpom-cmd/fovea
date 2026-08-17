@@ -82,21 +82,49 @@ class FloatingPanel: NSPanel {
         // de la fenêtre, là où le regard est déjà.
         let anchor = caretRect == .zero ? fallbackAnchor(size: size, in: host) : caretRect
 
-        var origin = NSPoint(x: anchor.minX, y: anchor.minY - size.height - 6)
+        // **Il rétrécit avant de basculer.**
+        //
+        // La règle était « pas la place en dessous, on passe au-dessus ». Le
+        // panneau se posait alors **par-dessus les lignes qu'on vient
+        // d'écrire** : dans une fenêtre de 520 points de haut, ouvrir le menu en
+        // bas de page masquait les huit lignes précédentes, c'est-à-dire la
+        // liste qu'on était en train de continuer.
+        //
+        // Un menu ancré au curseur se lit sous le curseur. Quand la place
+        // manque, ce qu'il faut réduire est sa hauteur — il défile — pas le
+        // texte qu'il cache. On ne bascule que lorsqu'il ne reste même plus de
+        // quoi montrer trois entrées.
+        var height = size.height
+        var origin = NSPoint(x: anchor.minX, y: anchor.minY - height - 6)
+
         if let screen = host?.screen ?? NSScreen.main {
-            if origin.y < screen.visibleFrame.minY {
-                origin.y = anchor.maxY + 6
+            let floor = screen.visibleFrame.minY + 8
+            let roomBelow = anchor.minY - 6 - floor
+            let roomAbove = screen.visibleFrame.maxY - 8 - (anchor.maxY + 6)
+
+            if origin.y < floor {
+                if roomBelow >= Self.minimumShrunkHeight {
+                    height = min(height, roomBelow)
+                    origin.y = anchor.minY - height - 6
+                } else {
+                    height = min(height, max(Self.minimumShrunkHeight, roomAbove))
+                    origin.y = anchor.maxY + 6
+                }
             }
             origin.x = min(max(origin.x, screen.visibleFrame.minX + 8),
                            screen.visibleFrame.maxX - size.width - 8)
         }
-        setFrame(NSRect(origin: origin, size: size), display: true)
+        setFrame(NSRect(origin: origin, size: NSSize(width: size.width, height: max(1, height))),
+                 display: true)
 
         if !isVisible {
             host?.addChildWindow(self, ordered: .above)
             orderFront(nil)
         }
     }
+
+    /// En dessous de quoi rétrécir ne sert plus à rien : trois entrées.
+    private static let minimumShrunkHeight: CGFloat = 90
 
     /// Où poser un panneau qui n'a pas de curseur où s'accrocher : au tiers
     /// supérieur de la fenêtre, centré. Ce n'est pas la position du curseur,

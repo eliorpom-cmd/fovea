@@ -32,19 +32,109 @@ enum WritingModes {
     /// phrase qu'on est en train d'écrire.
     static func paragraphRange(in text: NSString, containing caret: Int) -> NSRange {
         let position = min(max(0, caret), text.length)
-        var start = text.lineRange(for: NSRange(location: position, length: 0)).location
-        while start > 0 {
-            let previous = text.lineRange(for: NSRange(location: start - 1, length: 0))
-            if isBlank(text, previous) { break }
-            start = previous.location
+        let current = text.lineRange(for: NSRange(location: position, length: 0))
+
+        // **Sur une ligne vide, l'unité est cette ligne.**
+        //
+        // Les deux boucles partaient sinon de part et d'autre du curseur et se
+        // rejoignaient nulle part : le paragraphe du dessus **et** celui du
+        // dessous restaient en pleine intensité. C'est l'état où l'on se trouve
+        // après chaque `⏎ ⏎`, c'est-à-dire à chaque changement de paragraphe.
+        guard !isBlank(text, current) else { return current }
+
+        // Un titre est un bloc d'**une** ligne : sans ce cas, il absorbait le
+        // paragraphe écrit juste en dessous, et le mode focus laissait les deux
+        // en pleine intensité. Un item de liste, lui, peut se continuer sur la
+        // ligne suivante — c'est la boucle du bas qui s'en charge.
+        if startsHeading(text, current) { return current }
+
+        var start = current.location
+        // **Un item de liste et un titre sont leurs propres blocs.**
+        //
+        // Une liste markdown n'a pas de ligne vide entre ses items : elle était
+        // donc **un seul paragraphe**, et comme un item n'a presque jamais de
+        // ponctuation forte, l'unité « phrase » retombait dessus. Dix items,
+        // mode focus coché, curseur au milieu : aucune atténuation. Le mode
+        // avait l'air cassé alors qu'il appliquait sa règle.
+        if !startsBlock(text, current) {
+            while start > 0 {
+                let previous = text.lineRange(for: NSRange(location: start - 1, length: 0))
+                // Un titre est une frontière qu'on ne franchit pas ; l'item de
+                // liste au-dessus, lui, est la tête du bloc où l'on écrit : on
+                // le prend, puis on s'arrête.
+                if isBlank(text, previous) || startsHeading(text, previous) { break }
+                start = previous.location
+                if startsListItem(text, previous) { break }
+            }
         }
-        var end = text.lineRange(for: NSRange(location: position, length: 0)).upperBound
+
+        var end = current.upperBound
         while end < text.length {
             let next = text.lineRange(for: NSRange(location: end, length: 0))
-            if isBlank(text, next) { break }
+            if isBlank(text, next) || startsBlock(text, next) { break }
             end = next.upperBound
         }
         return NSRange(location: start, length: max(0, end - start))
+    }
+
+    /// Cette ligne ouvre-t-elle un bloc à elle seule — un titre, un item de
+    /// liste ?
+    ///
+    /// Lue directement sur la `NSString`, sans construire de tableau UTF-16 :
+    /// la fonction est appelée pour chaque ligne parcourue, à chaque
+    /// déplacement du curseur.
+    static func startsBlock(_ text: NSString, _ line: NSRange) -> Bool {
+        startsHeading(text, line) || startsListItem(text, line)
+    }
+
+    /// Un titre : jusqu'à six « # », puis une espace.
+    static func startsHeading(_ text: NSString, _ line: NSRange) -> Bool {
+        guard var index = contentStart(text, line) else { return false }
+        let limit = line.upperBound
+        guard text.character(at: index) == 35 else { return false }
+        var hashes = 0
+        while index < limit, text.character(at: index) == 35 {
+            index += 1
+            hashes += 1
+        }
+        return hashes <= 6 && index < limit && isSpace(text.character(at: index))
+    }
+
+    /// Un item de liste : une puce ou un numéro, puis une espace.
+    static func startsListItem(_ text: NSString, _ line: NSRange) -> Bool {
+        guard var index = contentStart(text, line) else { return false }
+        let limit = line.upperBound
+
+        // Une puce : « - », « * » ou « + », puis une espace.
+        let first = text.character(at: index)
+        if first == 45 || first == 42 || first == 43 {
+            return index + 1 < limit && isSpace(text.character(at: index + 1))
+        }
+
+        // Un numéro : des chiffres, « . » ou « ) », puis une espace.
+        var digits = 0
+        while index < limit, text.character(at: index) >= 48, text.character(at: index) <= 57 {
+            index += 1
+            digits += 1
+        }
+        guard digits > 0, index < limit else { return false }
+        let delimiter = text.character(at: index)
+        guard delimiter == 46 || delimiter == 41 else { return false }
+        return index + 1 < limit && isSpace(text.character(at: index + 1))
+    }
+
+    /// Le premier signe non blanc d'une ligne, si elle en a un et qu'il n'est
+    /// pas trop en retrait — au-delà de trois espaces, ce n'est plus un
+    /// marqueur de bloc.
+    private static func contentStart(_ text: NSString, _ line: NSRange) -> Int? {
+        var index = line.location
+        var indent = 0
+        while index < line.upperBound, isSpace(text.character(at: index)) {
+            index += 1
+            indent += 1
+        }
+        guard indent <= 3, index < line.upperBound else { return nil }
+        return index
     }
 
     /// La phrase, bornée par son paragraphe.

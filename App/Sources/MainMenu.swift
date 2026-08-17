@@ -205,7 +205,19 @@ enum MainMenu {
         let menu = NSMenu(title: "Présentation")
 
         // §4.2 : le filet de sécurité. Il mérite un raccourci d'une seule main.
-        menu.addItem(item("Afficher la source", #selector(AppCommands.toggleSourceMode(_:)), "/"))
+        //
+        // **⌥⌘S et non ⌘/.** La barre oblique n'est pas au même endroit d'un
+        // clavier à l'autre : en français elle demande une majuscule, si bien
+        // que macOS remappe l'équivalent sur `⇧⌘:` — ce que le menu affichait,
+        // pendant que la palette et le README annonçaient `⌘/`. Et aucune des
+        // deux combinaisons ne déclenchait quoi que ce soit, alors que `⌘K`
+        // passait par le même chemin : un équivalent de touche fondé sur une
+        // ponctuation ne survit pas au changement de disposition.
+        //
+        // Une lettre, elle, est à la même place partout. « S » comme source.
+        let source = item("Afficher la source", #selector(AppCommands.toggleSourceMode(_:)), "s")
+        source.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(source)
         menu.addItem(.separator())
 
         let outline = item("Plan du document", #selector(AppCommands.toggleOutline(_:)), "0")
@@ -248,6 +260,51 @@ enum MainMenu {
 
     private static func item(_ title: String, _ action: Selector, _ key: String = "") -> NSMenuItem {
         NSMenuItem(title: title, action: action, keyEquivalent: key)
+    }
+
+    // MARK: - Le raccourci réel d'une commande
+
+    /// Le raccourci d'une commande **tel que la barre de menus le porte**.
+    ///
+    /// # Pourquoi ce n'est pas une chaîne écrite à la main
+    ///
+    /// La palette affichait ses raccourcis en dur : `"⌘/"`, `"⌘⌥0"`, `"⌘⌃1"`.
+    /// Or macOS remappe les équivalents fondés sur une ponctuation ou un
+    /// chiffre selon la disposition du clavier : sur un clavier français, la
+    /// même commande s'y annonce `⇧⌘:` ou `⌥⌘à`. La palette était donc le seul
+    /// endroit de l'app qui affiche des raccourcis, et le seul qui se trompait.
+    ///
+    /// Un seul endroit décide désormais, et c'est celui qui les déclenche.
+    static func shortcut(for action: Selector, tag: Int? = nil) -> String {
+        guard let item = item(for: action, tag: tag, in: NSApp.mainMenu) else { return "" }
+        guard !item.keyEquivalent.isEmpty else { return "" }
+
+        // L'ordre est celui du guide d'interface : contrôle, option, majuscule,
+        // commande. Le lire autrement se remarque tout de suite.
+        var result = ""
+        let flags = item.keyEquivalentModifierMask
+        if flags.contains(.control) { result += "⌃" }
+        if flags.contains(.option) { result += "⌥" }
+        if flags.contains(.shift) { result += "⇧" }
+        if flags.contains(.command) { result += "⌘" }
+
+        switch item.keyEquivalent {
+        case "\r": result += "⏎"
+        case "\t": result += "⇥"
+        case "\u{8}": result += "⌫"
+        case "\u{1b}": result += "⎋"
+        default: result += item.keyEquivalent.uppercased()
+        }
+        return result
+    }
+
+    private static func item(for action: Selector, tag: Int?, in menu: NSMenu?) -> NSMenuItem? {
+        guard let menu else { return nil }
+        for entry in menu.items {
+            if entry.action == action, tag == nil || entry.tag == tag { return entry }
+            if let found = item(for: action, tag: tag, in: entry.submenu) { return found }
+        }
+        return nil
     }
 
     private static func finder(_ title: String, tag: Int, key: String,

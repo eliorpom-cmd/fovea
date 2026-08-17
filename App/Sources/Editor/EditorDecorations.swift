@@ -99,6 +99,7 @@ extension EditorDecoration {
     static func build(from spans: [SyntaxSpan],
                       in storage: NSTextStorage,
                       typography: EditorTypography,
+                      availableWidth: CGFloat? = nil,
                       revealed: Set<Int> = []) -> [EditorDecoration] {
         let text = storage.mutableString
         var decorations: [EditorDecoration] = []
@@ -108,7 +109,8 @@ extension EditorDecoration {
             // Les filets ne s'effacent plus sous le curseur : la grille non plus.
             // On écrit dedans, elle doit donc rester cadrée pendant qu'on écrit.
             case .table(let table?):
-                decorations.append(contentsOf: rules(for: table, in: storage, typography: typography))
+                decorations.append(contentsOf: rules(for: table, in: storage, typography: typography,
+                                                     availableWidth: availableWidth))
             case .blockQuote:
                 decorations.append(EditorDecoration(kind: .quoteBar,
                                                     range: span.range,
@@ -168,8 +170,12 @@ extension EditorDecoration {
     @MainActor
     private static func rules(for table: MarkdownTable,
                               in storage: NSTextStorage,
-                              typography: EditorTypography) -> [EditorDecoration] {
-        guard let layout = MarkdownRenderer(typography: typography).gridLayout(for: table, in: storage),
+                              typography: EditorTypography,
+                              availableWidth: CGFloat?) -> [EditorDecoration] {
+        // La même largeur que celle qui a posé le crénage : deux mesures
+        // différentes donneraient des filets à côté des colonnes.
+        let renderer = MarkdownRenderer(typography: typography, availableWidth: availableWidth)
+        guard let layout = renderer.gridLayout(for: table, in: storage),
               let first = table.rows.first, let last = table.rows.last else { return [] }
 
         let width = layout.width

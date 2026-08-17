@@ -38,7 +38,9 @@ final class LanguagePicker: FloatingPanel {
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = false
+        scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
@@ -92,6 +94,15 @@ final class LanguagePicker: FloatingPanel {
 extension LanguagePicker: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
+
+    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    ///
+    /// Ce sélecteur avait été oublié : c'était la seule liste de l'app où la
+    /// ligne choisie restait peinte à la couleur d'accent du système, ce que le
+    /// §7 réserve au contenu de l'utilisateur.
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        ListRowView()
+    }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let label = NSTextField(labelWithString: entries[row])
