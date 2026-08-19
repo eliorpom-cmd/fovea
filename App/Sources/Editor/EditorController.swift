@@ -312,6 +312,7 @@ final class EditorController: NSObject {
     /// negligible next to applying attributes.
     private func render(in range: NSRange) {
         guard let storage = textView.textStorage else { return }
+        textView.showsSource = isSourceMode
         guard !isSourceMode else {
             renderSourceMode(storage)
             return
@@ -352,8 +353,7 @@ final class EditorController: NSObject {
     /// The safety net (§4.2): the text as it is in the file, in a fixed-pitch
     /// font, without a single rendering attribute.
     private func renderSourceMode(_ storage: NSTextStorage) {
-        let style = NSMutableParagraphStyle()
-        style.lineHeightMultiple = 1.35
+        let style = typography.sourceParagraphStyle()
         storage.beginEditing()
         storage.setAttributes([
             .font: typography.codeBlock,

@@ -39,7 +39,25 @@ final class EditorTextView: NSTextView {
         }
     }
 
-    var typography: EditorTypography = .default
+    /// Reassigned by `EditorController` on every render, hence the guard:
+    /// only a genuine change is worth anything.
+    var typography: EditorTypography = .default {
+        didSet {
+            guard typography != oldValue else { return }
+            refreshTypingAttributes()
+        }
+    }
+
+    /// Source mode (§4.2) lays the buffer out in the fixed-pitch font, on
+    /// tighter lines. The empty line has to follow, or the caret would
+    /// change size the moment the mode is switched.
+    var showsSource = false {
+        didSet {
+            guard showsSource != oldValue else { return }
+            refreshTypingAttributes()
+        }
+    }
+
     var documentURL: URL?
 
     /// The range left at full intensity by focus mode (§4.5).
@@ -161,6 +179,7 @@ final class EditorTextView: NSTextView {
         drawsBackground = true
         backgroundColor = Theme.NS.window
         insertionPointColor = Theme.NS.label
+        refreshTypingAttributes()
 
         isVerticallyResizable = true
         isHorizontallyResizable = false
@@ -177,6 +196,122 @@ final class EditorTextView: NSTextView {
         guard focusRange != nil else { return }
         focusOverlay.frame = bounds
         focusOverlay.needsDisplay = true
+    }
+
+    // MARK: - The caret
+
+    /// The attributes an empty line is measured with.
+    ///
+    /// # Why a new line had a caret of its own size
+    ///
+    /// A view with `isRichText = false` does not take its typing attributes
+    /// from the buffer: it rebuilds them from `font`, `textColor` and
+    /// `defaultParagraphStyle` — none of which this editor had ever set,
+    /// since every attribute it displays is applied to the storage by
+    /// `MarkdownRenderer`. They therefore stayed at the `NSTextView`
+    /// default, Helvetica 12, and that default is exactly what TextKit
+    /// measures a **line with no characters** with. Pressing `⏎` opened a
+    /// 12-point line fragment, so a 12-point caret, in a document set in
+    /// 16-point type; the first character typed handed the line back to the
+    /// render and the caret jumped to its real size.
+    ///
+    /// Set explicitly, they make the empty line exactly as tall as a full
+    /// one, and the caret stops changing size under the fingers.
+    private func refreshTypingAttributes() {
+        typingAttributes = [
+            .font: showsSource ? typography.codeBlock : typography.body,
+            .foregroundColor: Theme.NS.label,
+            .paragraphStyle: showsSource ? typography.sourceParagraphStyle()
+                                         : typography.paragraphStyle(),
+        ]
+    }
+
+    /// Since macOS 14 the caret is a view, not something drawn: the text
+    /// view keeps exactly one, alongside the focus veil.
+    private var insertionIndicator: NSTextInsertionIndicator? {
+        subviews.lazy.compactMap { $0 as? NSTextInsertionIndicator }.first
+    }
+
+    /// The caret, brought back to the height of the text.
+    ///
+    /// # Why it stood taller than the letters
+    ///
+    /// Line spacing (§4.7, 1.5 by default) is a `lineHeightMultiple`, and
+    /// TextKit spends it *above* the baseline: a 16-point line is laid out
+    /// 27 points tall, 9 of which are empty sky over the capitals. The text
+    /// view sizes the indicator to the **whole line fragment** — so the
+    /// caret filled those 27 points and stood a third of its height above
+    /// the tallest letter. It read as a bar placed next to the text rather
+    /// than a caret inside it.
+    ///
+    /// Nothing exposes the caret's height, but the indicator is a public
+    /// view, and the frame it is given can be brought back to the text's own
+    /// metrics: ascender to descender, standing on the line's baseline.
+    /// Everything else about it — blinking, color, the dictation glow — is
+    /// left alone.
+    private func fitCaretToText() {
+        guard let indicator = insertionIndicator else { return }
+        let box = indicator.frame
+        let font = caretFont()
+        let height = (font.ascender - font.descender).rounded()
+        // The call comes in bursts — a layout pass, then the blink timer —
+        // and lands on its own result: it must not shrink what it already
+        // shrank, which is what this comparison rules out.
+        guard height < box.height, let baseline = caretBaseline(in: box) else { return }
+        indicator.frame = NSRect(x: box.minX, y: (baseline - font.ascender).rounded(),
+                                 width: box.width, height: height)
+    }
+
+    /// The font the caret must match: the one of the character it stands on.
+    ///
+    /// Hidden markers are stepped over: they carry a 0.01-point font
+    /// (`MarkerMask`), and a caret measured on that has no height at all. At
+    /// the very end of the buffer there is no character left to ask, and the
+    /// typing attributes are the right answer — they are what the empty line
+    /// was measured with in the first place.
+    private func caretFont() -> NSFont {
+        let fallback = (typingAttributes[.font] as? NSFont) ?? typography.body
+        guard let storage = textStorage, storage.length > 0 else { return fallback }
+        let caret = selectedRange().location
+        for index in [caret, caret - 1] where index >= 0 && index < storage.length {
+            let attributes = storage.attributes(at: index, effectiveRange: nil)
+            guard attributes[.foveaMasked] == nil,
+                  let font = attributes[.font] as? NSFont else { continue }
+            return font
+        }
+        return fallback
+    }
+
+    /// The baseline, in the view's coordinates, of the line the caret is on.
+    private func caretBaseline(in box: NSRect) -> CGFloat? {
+        guard let layout = textLayoutManager else { return nil }
+        let origin = textContainerOrigin
+        guard let fragment = layout.textLayoutFragment(
+            for: NSPoint(x: box.midX - origin.x, y: box.midY - origin.y)) else { return nil }
+
+        // A fragment can hold several lines — a wrapped paragraph is a
+        // single fragment — so the one to measure is the line the caret sits
+        // in, i.e. the last one that starts above it.
+        let top = fragment.layoutFragmentFrame.minY + origin.y
+        var line = fragment.textLineFragments.first
+        for candidate in fragment.textLineFragments {
+            guard top + candidate.typographicBounds.minY <= box.midY + 0.5 else { break }
+            line = candidate
+        }
+        guard let line else { return nil }
+        return top + line.typographicBounds.minY + line.glyphOrigin.y
+    }
+
+    /// The two moments the text view moves the indicator: a layout pass, and
+    /// every caret move or keystroke.
+    override func layout() {
+        super.layout()
+        fitCaretToText()
+    }
+
+    override func updateInsertionPointStateAndRestartTimer(_ restartFlag: Bool) {
+        super.updateInsertionPointStateAndRestartTimer(restartFlag)
+        fitCaretToText()
     }
 
     // MARK: - Decorations

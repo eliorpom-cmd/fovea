@@ -126,6 +126,18 @@ struct EditorTypography: Equatable {
         return style
     }
 
+    /// Source mode (§4.2) is laid out tighter than prose: it shows a file,
+    /// and a file reads in blocks. The value lives here rather than at the
+    /// point of use, because the caret is measured against it too — an empty
+    /// line in source mode has no character to take its metrics from.
+    static let sourceLineHeightMultiple: CGFloat = 1.35
+
+    func sourceParagraphStyle() -> NSMutableParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineHeightMultiple = Self.sourceLineHeightMultiple
+        return style
+    }
+
     /// A system font at a free size, for what the editor **draws** rather
     /// than lays out: missing-image frame, bullets, numbers.
     func uiFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
