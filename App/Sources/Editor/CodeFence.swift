@@ -1,38 +1,38 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// La ligne d'ouverture d'un bloc de code, et le mot de langage qu'elle porte.
+/// A code block's opening line, and the language word it carries.
 ///
-/// Fovea colore une dizaine de langages depuis toujours, et n'offrait **aucun
-/// moyen d'en choisir un** : il fallait savoir qu'on écrit ` ```swift `, donc
-/// connaître la syntaxe que l'app passe son temps à masquer. C'est la
-/// contradiction que ce fichier lève.
+/// Fovea has always highlighted about a dozen languages, and offered **no
+/// way to pick one**: you had to already know that you write ` ```swift `,
+/// i.e. know the syntax the app spends its time hiding. This file resolves
+/// that contradiction.
 ///
-/// Tout y est pur : une ligne, une position de curseur, et la réponse.
+/// Everything here is pure: a line, a caret position, and the answer.
 enum CodeFence {
 
-    /// Ce qu'il y a à compléter sur la ligne d'ouverture.
+    /// What's left to complete on the opening line.
     struct LanguageTrigger: Equatable {
-        /// La plage du mot de langage dans le document — vide quand il n'y a
-        /// encore rien après les accents graves.
+        /// The language word's range in the document — empty when there is
+        /// nothing yet after the backticks.
         var range: NSRange
-        /// Ce qui a déjà été tapé, pour filtrer la liste.
+        /// What has already been typed, to filter the list.
         var query: String
     }
 
-    /// Le curseur est-il posé sur le mot de langage d'une ouverture de bloc ?
+    /// Is the caret sitting on the language word of a block's opening fence?
     ///
     /// - Parameters:
-    ///   - line: la ligne courante, terminateur exclu.
-    ///   - lineStart: son offset dans le document.
-    ///   - caret: la position du curseur dans le document.
-    /// - Returns: `nil` dès que la ligne n'est pas une ouverture, ou que le
-    ///   curseur est ailleurs que dans le mot de langage.
+    ///   - line: the current line, terminator excluded.
+    ///   - lineStart: its offset in the document.
+    ///   - caret: the caret's position in the document.
+    /// - Returns: `nil` as soon as the line is not an opening fence, or the
+    ///   caret is anywhere but in the language word.
     static func languageTrigger(inLine line: String, lineStart: Int, caret: Int) -> LanguageTrigger? {
         let units = Array(line.utf16)
         var index = 0
-        // Jusqu'à trois espaces d'indentation sont permis avant la clôture.
+        // Up to three spaces of indentation are allowed before the fence.
         while index < units.count, index < 3, units[index] == UInt16(UnicodeScalar(" ").value) {
             index += 1
         }
@@ -46,14 +46,14 @@ enum CodeFence {
         guard run >= 3 else { return nil }
 
         let infoStart = index + run
-        // Le curseur doit être **après** la clôture et sur cette ligne. Poser
-        // le curseur dans les accents graves eux-mêmes, c'est vouloir les
-        // modifier, pas nommer un langage.
+        // The caret must be **after** the fence and on this line. Placing
+        // the caret inside the backticks themselves means editing them, not
+        // naming a language.
         let caretInLine = caret - lineStart
         guard caretInLine >= infoStart, caretInLine <= units.count else { return nil }
 
-        // Un langage ne contient pas d'espace : `csv sans en-tête` est une note
-        // que l'auteur s'est écrite, pas un nom à compléter.
+        // A language name contains no space: `csv no header` is a note the
+        // author wrote to themselves, not a name to complete.
         let info = String(decoding: units[infoStart...], as: UTF16.self)
         guard !info.contains(" ") else { return nil }
 
@@ -62,24 +62,24 @@ enum CodeFence {
                                query: String(decoding: units[infoStart..<caretInLine], as: UTF16.self))
     }
 
-    /// Les langages proposés, dans l'ordre où on les propose.
+    /// The languages offered, in the order they're offered.
     ///
-    /// Le jeu est celui que la coloration connaît (§4.3) : proposer un langage
-    /// qu'on ne saurait pas colorer serait une promesse en l'air. Les alias
-    /// (`js`, `py`) sont écartés de la liste — ils restent acceptés à la
-    /// frappe, mais un menu n'a pas à proposer deux fois la même chose.
+    /// The set is exactly what highlighting knows (§4.3): offering a
+    /// language it couldn't highlight would be an empty promise. Aliases
+    /// (`js`, `py`) are left out of the list — they're still accepted while
+    /// typing, but a menu doesn't need to offer the same thing twice.
     static let languages: [String] = [
         "swift", "javascript", "typescript", "python", "bash",
         "json", "yaml", "css", "html", "sql", "xml",
     ]
 
-    /// Le markdown d'un tableau vide aux dimensions demandées.
+    /// The markdown for an empty table of the requested dimensions.
     ///
-    /// Placé ici plutôt que dans le damier : c'est du texte, pas de
-    /// l'interface, et un test le vérifie sans ouvrir de fenêtre.
+    /// Placed here rather than in the grid editor: it's text, not interface,
+    /// and a test can verify it without opening a window.
     ///
-    /// - Returns: le texte, et l'offset où poser le curseur — la première
-    ///   cellule, celle qu'on va remplir.
+    /// - Returns: the text, and the offset where the caret should land — the
+    ///   first cell, the one about to be filled in.
     static func table(columns: Int, rows: Int) -> (markdown: String, caret: Int) {
         let columns = max(1, columns)
         let rows = max(1, rows)
@@ -90,10 +90,10 @@ enum CodeFence {
         return (lines.joined(separator: "\n"), 2)
     }
 
-    /// Les langages qui correspondent à ce qui a été tapé.
+    /// The languages that match what was typed.
     ///
-    /// Le préfixe d'abord, puis le reste : taper `s` doit proposer `swift`
-    /// avant `css`, parce qu'on tape le début d'un mot, pas son milieu.
+    /// Prefix first, then the rest: typing `s` should offer `swift` before
+    /// `css`, because you're typing the start of a word, not its middle.
     static func matching(_ query: String) -> [String] {
         let needle = query.lowercased()
         guard !needle.isEmpty else { return languages }

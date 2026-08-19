@@ -1,17 +1,17 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Une construction markdown repérée dans le texte source, avec ses plages
-/// exprimées en unités UTF-16 — celles de `NSTextStorage`.
+/// A markdown construct located in the source text, with its ranges
+/// expressed in UTF-16 units — the ones `NSTextStorage` uses.
 ///
-/// C'est le seul objet que la couche de rendu reçoit du parseur. Il ne contient
-/// **aucun texte**, seulement des positions : le texte reste dans le tampon,
-/// qui est la source de vérité (§3.1).
+/// This is the only object the rendering layer receives from the parser. It
+/// carries **no text**, only positions: the text stays in the buffer, which
+/// is the source of truth (§3.1).
 struct SyntaxSpan: Equatable, Sendable {
 
     enum Kind: Equatable, Sendable {
-        // Inline — révélé au niveau de la construction la plus intérieure.
+        // Inline — revealed at the level of the innermost construct.
         case strong
         case emphasis
         case inlineCode
@@ -20,25 +20,25 @@ struct SyntaxSpan: Equatable, Sendable {
         case image(source: String, alt: String)
         case footnoteReference(identifier: String)
 
-        // Portée ligne — révélé dès que le curseur est sur la ligne (§2.2).
+        // Line-scoped — revealed as soon as the caret is on the line (§2.2).
         case heading(level: Int)
         case blockQuote(depth: Int)
         case listItem(marker: ListMarker)
         case taskItem(marker: ListMarker, checked: Bool)
         case thematicBreak
-        /// La ligne `[^1]: …` qui porte le texte de la note.
+        /// The `[^1]: …` line that carries the footnote's text.
         case footnoteDefinition(identifier: String)
 
-        // Bloc délimité — les deux clôtures révélées ensemble.
+        // Delimited block — both fences revealed together.
         case codeBlock(language: String?)
         case frontMatter
-        /// La géométrie est portée par la construction elle-même : le rendu en
-        /// a besoin à chaque déplacement du curseur, et la relire dans le texte
-        /// à ce moment-là coûterait un balayage par frappe. `nil` quand le
-        /// bloc n'est pas une grille lisible — voir §6, tableau malformé.
+        /// The geometry is carried by the construct itself: rendering needs
+        /// it on every caret movement, and re-reading it from the text at
+        /// that point would cost a scan per keystroke. `nil` when the block
+        /// is not a readable grid — see §6, malformed table.
         case table(MarkdownTable?)
 
-        /// La portée de révélation, telle que définie par le tableau du §2.2.
+        /// The reveal scope, as defined by the table in §2.2.
         var revealScope: RevealScope {
             switch self {
             case .strong, .emphasis, .inlineCode, .strikethrough,
@@ -59,50 +59,49 @@ struct SyntaxSpan: Equatable, Sendable {
     }
 
     enum RevealScope: Equatable, Sendable {
-        /// Seule la construction la plus intérieure contenant le curseur.
+        /// Only the innermost construct containing the caret.
         case innermostInline
-        /// Révélé dès que le curseur est n'importe où sur la ligne.
+        /// Revealed as soon as the caret is anywhere on the line.
         case wholeLine
-        /// Les deux clôtures révélées ensemble dès que le curseur est dedans.
+        /// Both fences revealed together as soon as the caret is inside.
         case wholeBlock
     }
 
     var kind: Kind
 
-    /// La plage complète, **marqueurs compris**. C'est elle qui décide de la
-    /// révélation (voir `RevealPolicy`).
+    /// The full range, **markers included**. This is what decides the reveal
+    /// (see `RevealPolicy`).
     var range: NSRange
 
-    /// Les sous-plages qui sont de la syntaxe pure, à masquer quand la
-    /// construction n'est pas révélée. Ordonnées, disjointes, incluses dans
-    /// `range`.
+    /// The sub-ranges that are pure syntax, to hide when the construct is
+    /// not revealed. Ordered, disjoint, included in `range`.
     var markers: [NSRange]
 
-    /// La plage du contenu porteur — le texte que l'utilisateur a écrit et qui
-    /// doit rester visible quoi qu'il arrive.
+    /// The range of the carried content: the text the user wrote, which must
+    /// stay visible no matter what.
     var content: NSRange
 
-    /// Profondeur d'imbrication, la plus intérieure étant la plus grande.
-    /// Renseignée par le parseur, elle évite de la recalculer à chaque
-    /// changement de sélection.
+    /// Nesting depth, the innermost being the greatest. Set by the parser,
+    /// this avoids recomputing it on every selection change.
     var depth: Int
 
-    /// La plage du bloc entier, quand `range` a dû être rétrécie.
+    /// The range of the whole block, when `range` had to be narrowed.
     ///
-    /// Un item de liste multi-lignes se révèle **à la ligne** (§2.2) : `range`
-    /// s'arrête donc au premier `\n`, sinon la puce reviendrait à l'écran alors
-    /// que le curseur est trois lignes plus bas. Mais sa **mise en page** — le
-    /// retrait, et le retrait de continuation qui aligne les lignes suivantes
-    /// sous le texte plutôt que sous la puce — porte sur tout l'item. Les deux
-    /// besoins sont contradictoires, d'où deux plages. `nil` quand elles
-    /// coïncident, ce qui est le cas de tout le reste.
+    /// A multi-line list item is revealed **at the line** (§2.2): `range`
+    /// therefore stops at the first `\n`, otherwise the bullet would come
+    /// back on screen while the caret is three lines further down. But its
+    /// **layout** — the indentation, and the continuation indentation that
+    /// aligns the following lines under the text rather than under the
+    /// bullet — applies to the whole item. The two needs are contradictory,
+    /// hence two ranges. `nil` when they coincide, which is the case for
+    /// everything else.
     var blockRange: NSRange?
 
-    /// Niveau d'imbrication d'un item de liste, à partir de 0.
+    /// Nesting level of a list item, starting at 0.
     ///
-    /// L'AST alterne liste et item : `Document > List > Item > List > Item`.
-    /// Un item de premier niveau est donc à la profondeur 2, un item imbriqué
-    /// à la profondeur 4 — d'où la division par deux.
+    /// The AST alternates list and item: `Document > List > Item > List >
+    /// Item`. A top-level item is therefore at depth 2, a nested item at
+    /// depth 4 — hence the division by two.
     static func listLevel(forDepth depth: Int) -> Int {
         max(0, (depth - 2) / 2)
     }
@@ -117,16 +116,16 @@ struct SyntaxSpan: Equatable, Sendable {
         self.blockRange = blockRange
     }
 
-    /// La plage sur laquelle poser la mise en page du bloc.
+    /// The range on which to apply the block's layout.
     var layoutRange: NSRange { blockRange ?? range }
 
-    /// Décale toutes les positions de la construction.
+    /// Shifts all of the construct's positions.
     ///
-    /// Un seul endroit fait ce calcul, et c'est important : l'analyse par
-    /// fragment (§3.3) le déclenche à chaque frappe, et une construction qui
-    /// porte des positions ailleurs que dans `range`, `content` et `markers` —
-    /// un tableau, avec sa grille — serait laissée en arrière par un décalage
-    /// écrit à la main sur le lieu d'appel.
+    /// A single place does this computation, and that matters: fragment
+    /// parsing (§3.3) triggers it on every keystroke, and a construct
+    /// carrying positions outside `range`, `content` and `markers` — a
+    /// table, with its grid — would be left behind by a shift written by
+    /// hand at the call site.
     func shifted(by delta: Int) -> SyntaxSpan {
         guard delta != 0 else { return self }
         var moved = self

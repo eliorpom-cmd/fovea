@@ -1,23 +1,23 @@
 #!/bin/bash
-# Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-# Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+# Fovea — native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+# Licensed under the GNU AGPL v3 or later. See LICENSE.
 #
-# Régénère l'icône de l'app depuis son dessin.
+# Regenerates the app icon from its drawing.
 #
-# L'icône est **produite par du code**, pas par un fichier binaire déposé dans
-# le dépôt : elle se relit dans un diff, elle se corrige d'une constante, et
-# elle ne demande à personne d'ouvrir un éditeur graphique pour changer une
-# opacité. Voir scripts/make-icon.swift.
+# The icon is **produced by code**, not by a binary file checked into the
+# repository: it can be read in a diff, it can be fixed by changing a
+# constant, and it doesn't ask anyone to open a graphics editor to change an
+# opacity. See scripts/make-icon.swift.
 set -euo pipefail
 
-racine="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-sortie="$racine/App/Resources/AppIcon.icns"
-travail="$(mktemp -d)/Fovea.iconset"
-trap 'rm -rf "$(dirname "$travail")"' EXIT
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+output="$root/App/Resources/AppIcon.icns"
+work="$(mktemp -d)/Fovea.iconset"
+trap 'rm -rf "$(dirname "$work")"' EXIT
 
-swift "$racine/scripts/make-icon.swift" "$travail"
+swift "$root/scripts/make-icon.swift" "$work"
 
-mkdir -p "$racine/App/Resources"
-iconutil --convert icns --output "$sortie" "$travail"
+mkdir -p "$root/App/Resources"
+iconutil --convert icns --output "$output" "$work"
 
-echo "✓ $(basename "$sortie") — $(du -h "$sortie" | cut -f1)"
+echo "✓ $(basename "$output") — $(du -h "$output" | cut -f1)"

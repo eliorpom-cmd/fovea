@@ -1,13 +1,13 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Identité de l'app, en un seul endroit.
+/// The app's identity, in a single place.
 ///
-/// Contrairement à TBD qui portait trois noms selon la largeur d'affichage,
-/// « Fovea » est assez court pour servir partout : bundle, exécutable, module
-/// Swift, Finder et menu de l'app. Les valeurs ci-dessous doivent rester
-/// d'accord avec `project.yml` et `App/Info.plist`.
+/// Unlike TBD, which carried three names depending on display width, "Fovea"
+/// is short enough to serve everywhere: bundle, executable, Swift module,
+/// Finder and the app menu. The values below must stay in agreement with
+/// `project.yml` and `App/Info.plist`.
 enum AppConfig {
     static let name = "Fovea"
     static let bundleIdentifier = "com.byelior.fovea"
@@ -20,14 +20,14 @@ enum AppConfig {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
     }
 
-    /// Extensions **lues**. `.txt` est accepté mais Fovea n'en est pas le
-    /// propriétaire (voir `LSHandlerRank` dans Info.plist).
+    /// **Readable** extensions. `.txt` is accepted, but Fovea doesn't own it
+    /// (see `LSHandlerRank` in Info.plist).
     static let readableExtensions = ["md", "markdown", "mdown", "mkd", "mdtext", "txt"]
 
-    /// Extension **écrite**, toujours. Voir §5 du cahier des charges.
+    /// **Written** extension, always. See §5 of the spec.
     static let defaultExtension = "md"
 
-    /// Dossier où sont copiées les images déposées (§4.4). Réglable.
+    /// Folder where dropped images are copied (§4.4). Configurable.
     static let defaultAssetsFolderName = "assets"
 
     static let repositoryURL = URL(string: "https://github.com/byelior/fovea")!

@@ -1,99 +1,100 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
-/// Les comportements de frappe du §2.5, testés comme des fonctions pures.
+/// The typing behaviors from §2.5, tested as pure functions.
 ///
-/// Tout ce fichier vérifie des transformations texte → texte : aucune fenêtre
-/// n'est ouverte, aucune touche n'est simulée. C'est ce qui permet de couvrir
-/// les cas tordus — item vide, liste imbriquée, formatage déjà posé — sans
-/// écrire un seul test d'interface.
+/// This whole file verifies text-to-text transformations: no window is
+/// opened, no key is simulated. This is what makes it possible to cover
+/// the twisted cases (empty item, nested list, formatting already applied)
+/// without writing a single UI test.
 final class TypingBehaviourTests: XCTestCase {
 
-    // MARK: - Continuation de liste
+    // MARK: - List Continuation
 
     func testNewlineContinuesABulletList() {
-        let edit = TypingBehaviour.newline(in: "- premier", selection: NSRange(location: 9, length: 0))
+        let edit = TypingBehaviour.newline(in: "- initial", selection: NSRange(location: 9, length: 0))
         XCTAssertEqual(edit?.replacement, "\n- ")
         XCTAssertEqual(edit?.caret, 12)
     }
 
     func testNewlineIncrementsAnOrderedList() {
-        let edit = TypingBehaviour.newline(in: "3. troisième", selection: NSRange(location: 12, length: 0))
-        XCTAssertEqual(edit?.replacement, "\n4. ", "Le numéro suivant, pas une copie du précédent")
+        let edit = TypingBehaviour.newline(in: "3. the third", selection: NSRange(location: 12, length: 0))
+        XCTAssertEqual(edit?.replacement, "\n4. ", "The next number, not a copy of the previous one")
     }
 
     func testNewlinePreservesNestingIndentation() {
-        let text = "- parent\n  - enfant"
+        let text = "- parent\n  - infant"
         let edit = TypingBehaviour.newline(in: text, selection: NSRange(location: 19, length: 0))
-        XCTAssertEqual(edit?.replacement, "\n  - ", "L'item suivant reste au même niveau")
+        XCTAssertEqual(edit?.replacement, "\n  - ", "The next item stays at the same level")
     }
 
     func testNewlineOnAnEmptyItemLeavesTheList() {
-        // Deux `⏎` de suite sortent de la liste : c'est le geste que tout le
-        // monde fait, et ne pas le prévoir oblige à effacer le marqueur à la
-        // main.
-        let text = "- premier\n- "
+        // Two `⏎` in a row leave the list: it is the gesture everyone makes,
+        // and not accounting for it means having to erase the marker by
+        // hand.
+        let text = "- initial\n- "
         let edit = TypingBehaviour.newline(in: text, selection: NSRange(location: 12, length: 0))
         XCTAssertEqual(edit?.range, NSRange(location: 10, length: 2))
-        // La ligne vide n'est pas un ornement : sans elle, le premier mot tapé
-        // ensuite serait une continuation paresseuse de « premier ».
+        // The blank line is not decorative: without it, the next word typed
+        // would be a lazy continuation of "initial".
         XCTAssertEqual(edit?.replacement, "\n")
         XCTAssertEqual(edit?.caret, 11)
     }
 
     func testLeavingAListReallyLeavesIt() {
-        // Le test qui compte : ce que dit le **fichier** une fois la phrase
-        // tapée. Sans la ligne vide, cmark range « Après » dans la puce, et
-        // l'éditeur qui affichait un paragraphe à part mentait sur le document.
-        let text = "- premier\n- "
+        // The test that matters: what the **file** says once the sentence
+        // has been typed. Without the blank line, cmark files "After" inside
+        // the bullet, and an editor that displayed it as a separate
+        // paragraph would misrepresent the document.
+        let text = "- initial\n- "
         let edit = try? XCTUnwrap(TypingBehaviour.newline(in: text, selection: NSRange(location: 12, length: 0)))
         let after = (text as NSString).replacingCharacters(in: edit!.range, with: edit!.replacement)
         let typed = (after as NSString).replacingCharacters(in: NSRange(location: edit!.caret, length: 0),
-                                                           with: "Après.")
-        XCTAssertEqual(typed, "- premier\n\nAprès.")
+                                                           with: "After.")
+        XCTAssertEqual(typed, "- initial\n\nAfter.")
 
         let spans = MarkdownParser.parse(typed).spans
         let items = spans.filter { if case .listItem = $0.kind { return true } else { return false } }
-        XCTAssertEqual(items.count, 1, "Un seul item : « Après. » est dehors")
+        XCTAssertEqual(items.count, 1, "Only one item: \"After.\" is outside")
         XCTAssertFalse(items.contains { NSLocationInRange(typed.utf16.count - 1, $0.range) },
-                       "La dernière phrase ne doit appartenir à aucun item")
+                       "The last sentence must not belong to any item")
     }
 
     func testLeavingAListDoesNotStackBlankLines() {
-        // Une ligne vide au-dessus suffit déjà à couper la continuation : en
-        // ajouter une seconde creuserait un trou dans le document.
-        let text = "du texte\n\n- "
+        // A blank line above is already enough to break continuation: adding
+        // a second one would dig a hole in the document.
+        let text = "any text\n\n- "
         let edit = TypingBehaviour.newline(in: text, selection: NSRange(location: 12, length: 0))
         XCTAssertEqual(edit?.replacement, "")
         XCTAssertEqual(edit?.caret, 10)
     }
 
     func testLeavingAListAtTheTopOfTheDocumentAddsNothing() {
-        // Rien au-dessus, donc rien à couper : un document qui s'ouvrirait sur
-        // une ligne vide serait une régression à lui tout seul.
+        // Nothing above, so nothing to cut: a document that opened on a
+        // blank line would be a regression all by itself.
         let edit = TypingBehaviour.newline(in: "- ", selection: NSRange(location: 2, length: 0))
         XCTAssertEqual(edit?.replacement, "")
         XCTAssertEqual(edit?.caret, 0)
     }
 
     func testNewlineOnATaskItemStartsAnUncheckedOne() {
-        // Une case cochée ne se recopie pas cochée : personne ne veut créer dix
-        // tâches déjà faites.
-        let edit = TypingBehaviour.newline(in: "- [x] fait", selection: NSRange(location: 10, length: 0))
+        // A checked box is not copied as checked: nobody wants to create ten
+        // tasks that are already done.
+        let edit = TypingBehaviour.newline(in: "- [x] done", selection: NSRange(location: 10, length: 0))
         XCTAssertEqual(edit?.replacement, "\n- [ ] ")
     }
 
     func testNewlineOutsideAListIsLeftAlone() {
-        XCTAssertNil(TypingBehaviour.newline(in: "du texte", selection: NSRange(location: 8, length: 0)),
-                     "Hors liste, ⏎ doit garder son comportement habituel")
+        XCTAssertNil(TypingBehaviour.newline(in: "any text", selection: NSRange(location: 8, length: 0)),
+                     "Outside a list, ⏎ must keep its usual behavior")
     }
 
     func testNewlineIgnoresADashWithoutASpace() {
-        // `-texte` n'est pas une liste. Le confondre transformerait un tiret
-        // cadratin mal tapé en puce.
-        XCTAssertNil(TypingBehaviour.newline(in: "-texte", selection: NSRange(location: 6, length: 0)))
+        // `-words` is not a list. Treating it as one would turn a mistyped
+        // dash into a bullet.
+        XCTAssertNil(TypingBehaviour.newline(in: "-words", selection: NSRange(location: 6, length: 0)))
     }
 
     // MARK: - Indentation
@@ -116,167 +117,169 @@ final class TypingBehaviourTests: XCTestCase {
     }
 
     func testTabOutsideAListStaysATab() {
-        XCTAssertNil(TypingBehaviour.indent(in: "du texte", selection: NSRange(location: 4, length: 0), outdent: false),
-                     "Hors liste, ⇥ doit rester une tabulation")
+        XCTAssertNil(TypingBehaviour.indent(in: "any text", selection: NSRange(location: 4, length: 0), outdent: false),
+                     "Outside a list, ⇥ must stay a tab")
     }
 
-    // MARK: - Encadrement
+    // MARK: - Wrapping
 
     func testWrapSurroundsTheSelection() {
-        let edit = TypingBehaviour.wrap("un mot ici", selection: NSRange(location: 3, length: 3), with: "**")
-        XCTAssertEqual(edit.replacement, "**mot**")
-        // **La sélection survit au formatage**, sur le même texte qu'avant.
+        let edit = TypingBehaviour.wrap("my box now", selection: NSRange(location: 3, length: 3), with: "**")
+        XCTAssertEqual(edit.replacement, "**box**")
+        // **The selection survives formatting**, on the same text as before.
         //
-        // Elle ne survivait pas : `⌘B` la repliait en un curseur, et le `⌘I`
-        // qui suit n'avait plus rien à mettre en italique. La frappe d'un `*`
-        // sur une sélection, elle, la conservait déjà (voir `autoPair`) : deux
-        // chemins vers le même geste, deux comportements. Le curseur reste
-        // entre les étoiles dans les deux cas.
-        XCTAssertEqual(edit.caret, 5, "Le mot commence après les deux étoiles ouvrantes")
-        XCTAssertEqual(edit.selectionLength, 3, "Le mot reste sélectionné, prêt pour un second format")
+        // It did not survive: `⌘B` collapsed it to a caret, and the `⌘I`
+        // that follows had nothing left to italicize. Typing a `*` over a
+        // selection, on the other hand, already kept it (see `autoPair`):
+        // two paths to the same gesture, two behaviors. The caret stays
+        // between the stars in both cases.
+        XCTAssertEqual(edit.caret, 5, "The word starts after the two opening stars")
+        XCTAssertEqual(edit.selectionLength, 3, "The word stays selected, ready for a second format")
     }
 
     func testWrapOnACaretPlacesItBetweenTheMarkers() {
-        // L'utilisateur a demandé du gras pour écrire en gras, pas pour poser
-        // deux étoiles et chercher où taper.
-        let edit = TypingBehaviour.wrap("un  ici", selection: NSRange(location: 3, length: 0), with: "**")
+        // The user asked for bold to write in bold, not to place two stars
+        // and then hunt for where to type.
+        let edit = TypingBehaviour.wrap("my  now", selection: NSRange(location: 3, length: 0), with: "**")
         XCTAssertEqual(edit.replacement, "****")
         XCTAssertEqual(edit.caret, 5)
     }
 
     func testWrapOnAlreadyFormattedTextRemovesTheFormatting() {
-        // §2.5 : appliqués à du texte déjà formaté, les raccourcis retirent le
-        // formatage plutôt que d'empiler un second niveau.
-        let text = "un **mot** ici"
+        // §2.5: applied to already-formatted text, the shortcuts remove the
+        // formatting rather than stacking a second level.
+        let text = "my **box** now"
         let edit = TypingBehaviour.wrap(text, selection: NSRange(location: 5, length: 3), with: "**")
         XCTAssertEqual(edit.range, NSRange(location: 3, length: 7))
-        XCTAssertEqual(edit.replacement, "mot")
+        XCTAssertEqual(edit.replacement, "box")
     }
 
     func testWrapHandlesAccentedSelections() {
-        let edit = TypingBehaviour.wrap("Été crucial", selection: NSRange(location: 4, length: 7), with: "*")
+        // Accented text: exercises the UTF-8 → UTF-16 offset conversion.
+        let edit = TypingBehaviour.wrap("Zoë crucial", selection: NSRange(location: 4, length: 7), with: "*")
         XCTAssertEqual(edit.replacement, "*crucial*")
     }
 
-    // MARK: - Niveau de titre
+    // MARK: - Heading Level
 
     func testSetHeadingLevelOnAPlainParagraph() {
-        let edit = TypingBehaviour.setHeadingLevel(2, in: "Un titre", selection: NSRange(location: 3, length: 0))
+        let edit = TypingBehaviour.setHeadingLevel(2, in: "My title", selection: NSRange(location: 3, length: 0))
         XCTAssertEqual(edit.range, NSRange(location: 0, length: 0))
         XCTAssertEqual(edit.replacement, "## ")
-        XCTAssertEqual(edit.caret, 6, "Le curseur suit le texte, il ne reste pas à sa position absolue")
+        XCTAssertEqual(edit.caret, 6, "The caret follows the text, it does not stay at its absolute position")
     }
 
     func testChangingHeadingLevelReplacesTheExistingHashes() {
-        let edit = TypingBehaviour.setHeadingLevel(3, in: "## Un titre", selection: NSRange(location: 5, length: 0))
+        let edit = TypingBehaviour.setHeadingLevel(3, in: "## My title", selection: NSRange(location: 5, length: 0))
         XCTAssertEqual(edit.range, NSRange(location: 0, length: 3))
         XCTAssertEqual(edit.replacement, "### ")
     }
 
     func testLevelZeroRemovesTheHeading() {
-        let edit = TypingBehaviour.setHeadingLevel(0, in: "### Un titre", selection: NSRange(location: 6, length: 0))
+        let edit = TypingBehaviour.setHeadingLevel(0, in: "### My title", selection: NSRange(location: 6, length: 0))
         XCTAssertEqual(edit.replacement, "")
         XCTAssertEqual(edit.caret, 2)
     }
 
-    // MARK: - Reconnaissance à la frappe
+    // MARK: - Recognition While Typing
 
     func testRecognizedConstructs() {
-        // Elle n'est pas une fonctionnalité mais une conséquence du §3.1 : le
-        // marqueur est déjà dans le texte, le parseur le voit, le rendu suit.
-        // Ce test dit lesquelles sont reconnues plutôt que de le supposer.
+        // It is not a feature but a consequence of §3.1: the marker is
+        // already in the text, the parser sees it, the rendering follows.
+        // This test states which ones are recognized instead of assuming it.
         XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "# "))
-        XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "###### Titre 6"))
+        XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "###### Heading 6"))
         XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "- item"))
         XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "* item"))
         XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "1. item"))
         XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "12) item"))
-        XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "> citation"))
-        XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "  - item indenté"))
+        XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "> quote"))
+        XCTAssertTrue(TypingBehaviour.recognizesConstruct(onLine: "  - indented item"))
     }
 
     func testNonConstructs() {
-        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "####### sept dièses"))
-        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "#sans espace"))
-        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "-sans espace"))
-        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "1.sans espace"))
-        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "du texte ordinaire"))
+        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "####### seven hashes"))
+        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "#no space"))
+        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "-no space"))
+        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "1.no space"))
+        XCTAssertFalse(TypingBehaviour.recognizesConstruct(onLine: "ordinary text"))
     }
 
-    // MARK: - Cocher une tâche
+    // MARK: - Toggling a Task
 
-    /// La case est dessinée : cocher, c'est réécrire **un signe** du fichier.
+    /// The checkbox is drawn: toggling it means rewriting **one character**
+    /// in the file.
     func testTogglingATaskChangesOneCharacter() throws {
-        let text = "- [ ] à faire"
+        let text = "- [ ] to do"
         let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: text,
                                                             marker: NSRange(location: 0, length: 6),
                                                             caret: 9))
         XCTAssertEqual(edit.range, NSRange(location: 3, length: 1))
         XCTAssertEqual(edit.replacement, "x")
-        XCTAssertEqual(edit.caret, 9, "Cocher ne déplace pas le curseur")
+        XCTAssertEqual(edit.caret, 9, "Toggling does not move the caret")
     }
 
     func testTogglingBackClearsTheBox() throws {
-        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: "- [x] fait",
+        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: "- [x] done",
                                                             marker: NSRange(location: 0, length: 6),
                                                             caret: 0))
         XCTAssertEqual(edit.replacement, " ")
     }
 
-    /// Le §5 vaut aussi pour ce que l'app écrit elle-même : un `[X]` majuscule
-    /// se décoche, il ne se normalise pas.
+    /// §5 also applies to what the app writes itself: an uppercase `[X]`
+    /// gets unchecked, it does not get normalized.
     func testAnUppercaseBoxIsRecognisedAndNotRewritten() throws {
-        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: "- [X] fait",
+        let edit = try XCTUnwrap(TypingBehaviour.toggleTask(in: "- [X] done",
                                                             marker: NSRange(location: 0, length: 6),
                                                             caret: 0))
-        XCTAssertEqual(edit.replacement, " ", "Un [X] est bien lu comme coché")
+        XCTAssertEqual(edit.replacement, " ", "An [X] is indeed read as checked")
     }
 
     func testAPlainListItemHasNothingToToggle() {
-        XCTAssertNil(TypingBehaviour.toggleTask(in: "- un item",
+        XCTAssertNil(TypingBehaviour.toggleTask(in: "- an item",
                                                 marker: NSRange(location: 0, length: 2),
                                                 caret: 0))
     }
 
-    // MARK: - Insérer un lien
+    // MARK: - Inserting a Link
 
     func testALinkWrapsTheSelectionAndTakesTheURLFromTheClipboard() {
-        let edit = TypingBehaviour.link(in: "Voir le site ici",
+        let edit = TypingBehaviour.link(in: "View my site now",
                                         selection: NSRange(location: 13, length: 3),
-                                        url: "https://exemple.fr")
-        XCTAssertEqual(edit.replacement, "[ici](https://exemple.fr)")
-        XCTAssertEqual(edit.caret, 38, "Le curseur sort du lien, prêt à continuer la phrase")
+                                        url: "https://example.fr")
+        XCTAssertEqual(edit.replacement, "[now](https://example.fr)")
+        XCTAssertEqual(edit.caret, 38, "The caret moves past the link, ready to continue the sentence")
     }
 
     func testALinkWithoutAnAddressPutsTheCaretWhereOneWritesIt() {
-        let edit = TypingBehaviour.link(in: "Voir le site ici",
+        let edit = TypingBehaviour.link(in: "View my site now",
                                         selection: NSRange(location: 13, length: 3),
                                         url: nil)
-        XCTAssertEqual(edit.replacement, "[ici]()")
-        XCTAssertEqual(edit.caret, 19, "Entre les parenthèses : il ne reste qu'à coller l'adresse")
+        XCTAssertEqual(edit.replacement, "[now]()")
+        XCTAssertEqual(edit.caret, 19, "Between the parentheses: pasting the address is all that is left")
     }
 
     func testALinkWithoutSelectionPutsTheCaretWhereOneWritesTheLabel() {
         let edit = TypingBehaviour.link(in: "", selection: NSRange(location: 0, length: 0), url: nil)
         XCTAssertEqual(edit.replacement, "[]()")
-        XCTAssertEqual(edit.caret, 1, "Entre les crochets : on écrit le texte avant l'adresse")
+        XCTAssertEqual(edit.caret, 1, "Between the brackets: the text is written before the address")
     }
 
-    /// Deviner large ferait coller n'importe quelle phrase copiée entre les
-    /// parenthèses d'un lien, ce qui est plus pénible à défaire qu'à taper.
+    /// Guessing too broadly would paste any copied sentence between a
+    /// link's parentheses, which is more painful to undo than to type.
     func testOnlyRealAddressesAreTakenFromTheClipboard() {
-        XCTAssertTrue(TypingBehaviour.looksLikeURL("https://exemple.fr"))
-        XCTAssertTrue(TypingBehaviour.looksLikeURL("www.exemple.fr"))
-        XCTAssertTrue(TypingBehaviour.looksLikeURL("mailto:elior@exemple.fr"))
-        XCTAssertFalse(TypingBehaviour.looksLikeURL("une phrase copiée"))
-        XCTAssertFalse(TypingBehaviour.looksLikeURL("exemple.fr"))
+        XCTAssertTrue(TypingBehaviour.looksLikeURL("https://example.fr"))
+        XCTAssertTrue(TypingBehaviour.looksLikeURL("www.example.fr"))
+        XCTAssertTrue(TypingBehaviour.looksLikeURL("mailto:elior@example.fr"))
+        XCTAssertFalse(TypingBehaviour.looksLikeURL("a copied sentence"))
+        XCTAssertFalse(TypingBehaviour.looksLikeURL("example.fr"))
         XCTAssertFalse(TypingBehaviour.looksLikeURL(""))
     }
 
-    // MARK: - Paires automatiques
+    // MARK: - Auto-Pairing
 
-    /// Outil : ce que la frappe produit, en texte, pour lire les cas d'un coup
-    /// d'œil. Le curseur est marqué `|`, la sélection par deux `|`.
+    /// Helper: what typing produces, as text, to read the cases at a
+    /// glance. The caret is marked `|`, the selection by two `|`.
     private func typing(_ character: Character, into text: String,
                         selection: NSRange, insideCode: Bool = false) -> String {
         guard let edit = TypingBehaviour.autoPair(typing: character, in: text,
@@ -290,84 +293,85 @@ final class TypingBehaviourTests: XCTestCase {
     }
 
     func testAnOpeningBracketPosesItsClosing() {
-        XCTAssertEqual(typing("(", into: "Voir ", selection: NSRange(location: 5, length: 0)),
-                       "Voir (|)")
+        XCTAssertEqual(typing("(", into: "View ", selection: NSRange(location: 5, length: 0)),
+                       "View (|)")
         XCTAssertEqual(typing("[", into: "", selection: NSRange(location: 0, length: 0)), "[|]")
     }
 
-    /// Le cas qui décide de tout en français : l'apostrophe est une lettre du
-    /// mot. Aucune paire, jamais, quel que soit le contexte.
+    /// The case that decides everything in French: the apostrophe is a
+    /// letter within the word. No pairing, ever, regardless of context.
     func testTheApostropheIsNeverPaired() {
         XCTAssertEqual(typing("'", into: "l", selection: NSRange(location: 1, length: 0)), "—")
         XCTAssertEqual(typing("'", into: "", selection: NSRange(location: 0, length: 0)), "—")
-        XCTAssertEqual(typing("'", into: "dit ", selection: NSRange(location: 4, length: 0)), "—")
+        XCTAssertEqual(typing("'", into: "cat ", selection: NSRange(location: 4, length: 0)), "—")
     }
 
-    /// `2*3` ne doit pas poser d'étoile fantôme, ni `snake_case` d'italique.
+    /// `2*3` must not place a phantom star, nor should `snake_case` produce
+    /// italics.
     func testAMarkdownMarkerNeverOpensInsideAWord() {
         XCTAssertEqual(typing("*", into: "2", selection: NSRange(location: 1, length: 0)), "—")
         XCTAssertEqual(typing("_", into: "snake", selection: NSRange(location: 5, length: 0)), "—")
-        XCTAssertEqual(typing("*", into: "du ", selection: NSRange(location: 3, length: 0)), "du *|*")
+        XCTAssertEqual(typing("*", into: "my ", selection: NSRange(location: 3, length: 0)), "my *|*")
     }
 
-    /// Une paire au milieu d'un mot serait presque toujours fausse ; devant une
-    /// ponctuation fermante, elle est presque toujours juste.
+    /// A pair in the middle of a word would almost always be wrong; before
+    /// closing punctuation, it is almost always right.
     func testAPairOnlyOpensBeforeABoundary() {
         XCTAssertEqual(typing("(", into: "abc", selection: NSRange(location: 0, length: 0)), "—")
         XCTAssertEqual(typing("(", into: " abc", selection: NSRange(location: 0, length: 0)), "(|) abc")
-        XCTAssertEqual(typing("*", into: "du .", selection: NSRange(location: 3, length: 0)), "du *|*.")
+        XCTAssertEqual(typing("*", into: "my .", selection: NSRange(location: 3, length: 0)), "my *|*.")
     }
 
     func testABackslashCancelsThePair() {
-        XCTAssertEqual(typing("*", into: "un \\", selection: NSRange(location: 4, length: 0)), "—")
+        XCTAssertEqual(typing("*", into: "my \\", selection: NSRange(location: 4, length: 0)), "—")
     }
 
-    /// Retaper la fermeture avance au lieu d'en écrire une seconde : c'est ce
-    /// qui rend la paire invisible à l'usage.
+    /// Retyping the closing character steps over it instead of writing a
+    /// second one: that is what makes the pair invisible in use.
     func testRetypingTheClosingStepsOverIt() {
-        XCTAssertEqual(typing(")", into: "(essai)", selection: NSRange(location: 6, length: 0)),
-                       "(essai)|")
-        // Qui tape les deux étoiles de fermeture à la main les franchit toutes
-        // les deux : `**gras|**` puis `*` puis `*` donne `**gras**|`.
-        XCTAssertEqual(typing("*", into: "**gras**", selection: NSRange(location: 6, length: 0)),
-                       "**gras*|*")
-        XCTAssertEqual(typing("*", into: "**gras**", selection: NSRange(location: 7, length: 0)),
-                       "**gras**|")
+        XCTAssertEqual(typing(")", into: "(trial)", selection: NSRange(location: 6, length: 0)),
+                       "(trial)|")
+        // Typing both closing stars by hand steps over both of them:
+        // `**bold|**` then `*` then `*` gives `**bold**|`.
+        XCTAssertEqual(typing("*", into: "**bold**", selection: NSRange(location: 6, length: 0)),
+                       "**bold*|*")
+        XCTAssertEqual(typing("*", into: "**bold**", selection: NSRange(location: 7, length: 0)),
+                       "**bold**|")
     }
 
-    /// Le cœur du confort : `**` puis le texte puis `⇥`. Ici, la première
-    /// moitié — la pose de `****` avec le curseur au milieu.
+    /// The heart of the convenience: `**` then the text then `⇥`. Here, the
+    /// first half: placing `****` with the caret in the middle.
     func testTypingTwoStarsLandsBetweenFour() {
-        XCTAssertEqual(typing("*", into: "du ", selection: NSRange(location: 3, length: 0)), "du *|*")
-        XCTAssertEqual(typing("*", into: "du **", selection: NSRange(location: 4, length: 0)), "du **|**")
+        XCTAssertEqual(typing("*", into: "my ", selection: NSRange(location: 3, length: 0)), "my *|*")
+        XCTAssertEqual(typing("*", into: "my **", selection: NSRange(location: 4, length: 0)), "my **|**")
     }
 
     func testMarkdownMarkersAreNotPairedInsideCode() {
         XCTAssertEqual(typing("*", into: "let a = ", selection: NSRange(location: 8, length: 0),
                               insideCode: true), "—")
-        // Les parenthèses, elles, gardent tout leur sens dans du code.
+        // Parentheses, on the other hand, keep their full meaning inside code.
         XCTAssertEqual(typing("(", into: "print", selection: NSRange(location: 5, length: 0),
                               insideCode: true), "print(|)")
     }
 
-    /// Avec du texte sélectionné, la touche entoure au lieu d'effacer — et la
-    /// sélection reste sur le même texte, pour pouvoir enchaîner `*` puis `*`.
+    /// With text selected, the key surrounds instead of replacing: the
+    /// selection stays on the same text, so `*` then `*` can be chained.
     func testASelectionIsSurroundedAndKept() {
-        XCTAssertEqual(typing("*", into: "du gras ici", selection: NSRange(location: 3, length: 4)),
-                       "du *|gras|* ici")
-        XCTAssertEqual(typing("(", into: "un aparté", selection: NSRange(location: 3, length: 6)),
-                       "un (|aparté|)")
+        XCTAssertEqual(typing("*", into: "my bold now", selection: NSRange(location: 3, length: 4)),
+                       "my *|bold|* now")
+        XCTAssertEqual(typing("(", into: "my remark", selection: NSRange(location: 3, length: 6)),
+                       "my (|remark|)")
     }
 
     func testAnUnpairedCharacterIsLeftAlone() {
         XCTAssertEqual(typing("a", into: "", selection: NSRange(location: 0, length: 0)), "—")
-        XCTAssertEqual(typing("a", into: "mot", selection: NSRange(location: 0, length: 3)), "—")
+        XCTAssertEqual(typing("a", into: "box", selection: NSRange(location: 0, length: 3)), "—")
     }
 
-    /// Revenir sur une parenthèse qu'on n'a pas voulue ne doit pas laisser sa
-    /// jumelle orpheline.
+    /// Backspacing over a parenthesis you did not want must not leave its
+    /// twin orphaned.
     func testBackspaceBetweenAPairRemovesBoth() throws {
-        let edit = try XCTUnwrap(TypingBehaviour.deletingPair(in: "Voir ()",
+        let edit = try XCTUnwrap(TypingBehaviour.deletingPair(in: "View ()",
                                                               selection: NSRange(location: 6, length: 0)))
         XCTAssertEqual(edit.range, NSRange(location: 5, length: 2))
         XCTAssertEqual(edit.replacement, "")
@@ -375,43 +379,44 @@ final class TypingBehaviourTests: XCTestCase {
     }
 
     func testBackspaceElsewhereIsLeftAlone() {
-        // La fermeture n'est pas collée : ce que l'on efface n'est plus une paire.
-        XCTAssertNil(TypingBehaviour.deletingPair(in: "Voir (a)", selection: NSRange(location: 6, length: 0)))
-        XCTAssertNil(TypingBehaviour.deletingPair(in: "Voir ()", selection: NSRange(location: 7, length: 0)))
+        // The closing character is not adjacent: what gets deleted is no
+        // longer a pair.
+        XCTAssertNil(TypingBehaviour.deletingPair(in: "View (a)", selection: NSRange(location: 6, length: 0)))
+        XCTAssertNil(TypingBehaviour.deletingPair(in: "View ()", selection: NSRange(location: 7, length: 0)))
         XCTAssertNil(TypingBehaviour.deletingPair(in: "", selection: NSRange(location: 0, length: 0)))
     }
 
-    // MARK: - Analyse de ligne
+    // MARK: - Line Analysis
 
     func testLineRangeExcludesTheTerminator() {
-        let units = Array("un\ndeux\ntrois".utf16)
+        let units = Array("my\ntext\nblock".utf16)
         XCTAssertEqual(TypingBehaviour.lineRange(units, containing: 0), NSRange(location: 0, length: 2))
         XCTAssertEqual(TypingBehaviour.lineRange(units, containing: 5), NSRange(location: 3, length: 4))
         XCTAssertEqual(TypingBehaviour.lineRange(units, containing: 13), NSRange(location: 8, length: 5))
     }
 
     func testListPrefixCoversTheWholeCheckbox() {
-        let units = Array("- [ ] à faire".utf16)
+        let units = Array("- [ ] to do".utf16)
         let line = TypingBehaviour.lineRange(units, containing: 0)
         XCTAssertEqual(TypingBehaviour.listPrefix(units, line: line), NSRange(location: 0, length: 6))
     }
 
-    /// **Devant le marqueur, `⏎` reste un `⏎`.**
+    /// **In front of the marker, `⏎` stays a `⏎`.**
     ///
-    /// Le curseur peut se poser au tout début d'une ligne de liste — `⌘←` l'y
-    /// envoie, et la règle de révélation l'y laisse entrer. La continuation
-    /// s'appliquait quand même : on obtenait `- - item`, une seconde puce
-    /// devant celle qu'on n'avait pas quittée. Ce qu'on veut là est une ligne
-    /// vide au-dessus, c'est-à-dire le comportement ordinaire.
+    /// The caret can land at the very start of a list line: `⌘←` sends it
+    /// there, and the reveal rule lets it in. Continuation still applied
+    /// regardless: the result was `- - item`, a second bullet in front of
+    /// the one that had not been left. What is wanted there is a blank line
+    /// above, that is, the ordinary behavior.
     func testNewlineBeforeTheMarkerDoesNotDuplicateIt() {
-        XCTAssertNil(TypingBehaviour.newline(in: "- un item", selection: NSRange(location: 0, length: 0)),
-                     "En tête de ligne, ⏎ doit rester un simple retour")
-        XCTAssertNil(TypingBehaviour.newline(in: "- un item", selection: NSRange(location: 1, length: 0)),
-                     "Dans le marqueur non plus, la liste ne se continue pas")
+        XCTAssertNil(TypingBehaviour.newline(in: "- an item", selection: NSRange(location: 0, length: 0)),
+                     "At the start of a line, ⏎ must stay a simple return")
+        XCTAssertNil(TypingBehaviour.newline(in: "- an item", selection: NSRange(location: 1, length: 0)),
+                     "Within the marker either, the list must not continue")
 
-        // Juste après le marqueur, en revanche, la continuation reprend : c'est
-        // le geste qui crée l'item vide au-dessus.
-        let edit = TypingBehaviour.newline(in: "- un item", selection: NSRange(location: 2, length: 0))
+        // Right after the marker, however, continuation resumes: this is
+        // the gesture that creates the empty item above.
+        let edit = TypingBehaviour.newline(in: "- an item", selection: NSRange(location: 2, length: 0))
         XCTAssertEqual(edit?.replacement, "\n- ")
     }
 }

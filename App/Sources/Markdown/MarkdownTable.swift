@@ -1,86 +1,87 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// La géométrie d'un tableau GFM, lue **directement dans la source**.
+/// The geometry of a GFM table, read **directly from the source**.
 ///
-/// # Pourquoi ne pas prendre l'arbre de cmark
+/// # Why not use cmark's tree
 ///
-/// `swift-markdown` donne bien un `Table`, ses lignes et ses cellules, mais il
-/// ne donne pas ce dont le rendu a besoin : la position de chaque `|`, celle
-/// des blancs de remplissage, et la ligne de délimitation — que l'analyseur
-/// consomme et fait disparaître. Or ce sont exactement les caractères à
-/// masquer.
+/// `swift-markdown` does give a `Table`, its rows and its cells, but it does
+/// not give what the rendering needs: the position of each `|`, that of the
+/// padding whitespace, and the delimiter row, which the parser consumes and
+/// makes disappear. Yet those are exactly the characters that need to be
+/// hidden.
 ///
-/// Le balayage est donc fait ici, à la main. Il est court, il n'a aucune
-/// ambiguïté à lever, et il travaille dans les mêmes unités UTF-16 que tout le
-/// reste de l'éditeur.
+/// The scan is therefore done here, by hand. It is short, has no ambiguity to
+/// resolve, and works in the same UTF-16 units as the rest of the editor.
 ///
-/// # La règle de découpe
+/// # The splitting rule
 ///
-/// GFM découpe les cellules sur les `|` **avant** toute autre analyse inline.
-/// Un `|` dans un `code span` coupe donc quand même, et le seul moyen d'en
-/// écrire un dans une cellule est `\|`. C'est cette règle qui est appliquée —
-/// pas une plus intelligente, qui produirait un rendu différent de GitHub.
+/// GFM splits cells on `|` **before** any other inline parsing. A `|` inside
+/// a code span therefore still splits, and the only way to write one inside a
+/// cell is `\|`. This is the rule that is applied here, not a smarter one
+/// that would produce a rendering different from GitHub's.
 struct MarkdownTable: Equatable, Sendable {
 
-    /// L'alignement d'une colonne, lu dans la ligne `|:--|--:|:-:|`.
+    /// The alignment of a column, read from the `|:--|--:|:-:|` row.
     enum Alignment: Equatable, Sendable {
         case leading, center, trailing
     }
 
     struct Cell: Equatable, Sendable {
-        /// Le contenu, blancs de remplissage exclus. C'est la seule partie qui
-        /// reste visible quand la grille est affichée.
+        /// The content, padding whitespace excluded. It is the only part
+        /// that stays visible when the grid is displayed.
         var content: NSRange
-        /// Les blancs entre les `|` et le contenu. Masqués avec les `|` : la
-        /// grille place les colonnes elle-même, l'espacement de la source ne la
-        /// regarde pas.
+        /// The whitespace between the `|` and the content. Hidden along with
+        /// the `|`: the grid places the columns itself, the source's spacing
+        /// is not its concern.
         var padding: [NSRange]
-        /// Largeur d'affichage du contenu, en signes de chasse fixe.
+        /// Display width of the content, in monospaced characters.
         var width: Int
     }
 
     struct Row: Equatable, Sendable {
         var line: NSRange
-        /// Les `|` de la ligne, dans l'ordre où ils apparaissent.
+        /// The `|` of the row, in the order they appear.
         var pipes: [NSRange]
         var cells: [Cell]
-        /// Vrai si la ligne s'ouvre par un `|`, qui sert alors de bord gauche.
+        /// True if the row opens with a `|`, which then serves as the left
+        /// border.
         var hasLeadingPipe: Bool
     }
 
-    /// La ligne `|---|:--:|`. Elle ne porte aucun contenu : entièrement masquée
-    /// en lecture, elle laisse la place au filet d'en-tête.
+    /// The `|---|:--:|` row. It carries no content: entirely hidden when
+    /// read, it leaves room for the header rule.
     var delimiter: NSRange
-    /// Les plages des `---` de cette ligne, une par colonne.
+    /// The ranges of the `---` on that row, one per column.
     ///
-    /// Elles ne se rendent jamais. Elles servent à **la navigation** : la ligne
-    /// est invisible mais reste une ligne, donc une flèche vers le bas y tombe.
-    /// Savoir dans quelle colonne elle est tombée permet de la faire ressortir
-    /// dans la même colonne de la ligne suivante, au lieu de la renvoyer au
-    /// début du tableau. Voir `TableEditing`.
+    /// They never render. They serve **navigation**: the row is invisible
+    /// but is still a row, so a down arrow can land on it. Knowing which
+    /// column it landed in lets it come back out in the same column on the
+    /// next row, instead of being sent back to the start of the table. See
+    /// `TableEditing`.
     var delimiterCells: [NSRange]
-    /// L'en-tête puis le corps. La ligne de délimitation n'en fait pas partie.
+    /// The header row followed by the body. The delimiter row is not part of
+    /// it.
     var rows: [Row]
     var alignments: [Alignment]
-    /// Largeur de chaque colonne, en signes : le plus large de ses contenus.
+    /// Width of each column, in characters: the widest of its contents.
     var columnWidths: [Int]
 
     var columnCount: Int { alignments.count }
 
-    /// Largeur totale de la grille, gouttières comprises, en signes.
+    /// Total width of the grid, gutters included, in characters.
     ///
-    /// Sert au garde-fou du rendu : un tableau plus large que la colonne de
-    /// texte reviendrait à la ligne, et une grille qui se replie ne se lit plus
-    /// du tout. Dans ce cas on renonce à la grille et on montre la source.
+    /// Used as the rendering's guard rail: a table wider than the text
+    /// column would wrap, and a grid that wraps becomes unreadable. In that
+    /// case the grid is abandoned and the source is shown instead.
     func totalWidth(gutter: Int) -> Int {
         guard !columnWidths.isEmpty else { return 0 }
         return columnWidths.reduce(0, +) + gutter * (columnWidths.count - 1)
     }
 
-    /// Tout ce qui doit disparaître en lecture : les `|`, les blancs de
-    /// remplissage, et la ligne de délimitation entière.
+    /// Everything that must disappear when read: the `|`, the padding
+    /// whitespace, and the whole delimiter row.
     var markerRanges: [NSRange] {
         var result: [NSRange] = [delimiter]
         for row in rows {
@@ -92,7 +93,7 @@ struct MarkdownTable: Equatable, Sendable {
         return result.filter { $0.length > 0 }.sorted { $0.location < $1.location }
     }
 
-    /// Décale toutes les positions — après une analyse par fragment (§3.3).
+    /// Shifts all positions, after a per-fragment parse (§3.3).
     func shifted(by delta: Int) -> MarkdownTable {
         guard delta != 0 else { return self }
         func move(_ range: NSRange) -> NSRange {
@@ -116,13 +117,13 @@ struct MarkdownTable: Equatable, Sendable {
         return copy
     }
 
-    // MARK: - Balayage
+    // MARK: - Scanning
 
-    /// Lit un tableau dans `range`, ou renvoie `nil` si ce n'en est pas un.
+    /// Reads a table inside `range`, or returns `nil` if it is not one.
     ///
-    /// Renvoyer `nil` n'est pas un échec : c'est le comportement du §6 pour un
-    /// tableau malformé. Aucune grille n'est dessinée, la source reste affichée
-    /// telle quelle, et on ne devine jamais l'intention.
+    /// Returning `nil` is not a failure: it is the §6 behaviour for a
+    /// malformed table. No grid is drawn, the source stays displayed as is,
+    /// and intent is never guessed at.
     static func scan(utf16: [UInt16], in range: NSRange) -> MarkdownTable? {
         let lines = lineRanges(utf16: utf16, in: range)
         guard lines.count >= 2 else { return nil }
@@ -146,7 +147,7 @@ struct MarkdownTable: Equatable, Sendable {
                              columnWidths: widths)
     }
 
-    // MARK: - Découpe d'une ligne
+    // MARK: - Splitting a row
 
     private static let pipe = UInt16(UnicodeScalar("|").value)
     private static let backslash = UInt16(UnicodeScalar("\\").value)
@@ -161,7 +162,7 @@ struct MarkdownTable: Equatable, Sendable {
             offset += 1
         }
 
-        // Les segments entre les `|`, bords compris.
+        // The segments between the `|`, edges included.
         var segments: [NSRange] = []
         var start = line.location
         for pipeRange in pipes {
@@ -170,8 +171,8 @@ struct MarkdownTable: Equatable, Sendable {
         }
         segments.append(NSRange(location: start, length: line.upperBound - start))
 
-        // Un `|` de bord n'ouvre pas de cellule : le segment qui le précède,
-        // vide ou blanc, n'en est pas une. Même chose à droite.
+        // A border `|` does not open a cell: the segment preceding it,
+        // empty or blank, is not one. Same on the right.
         var hasLeadingPipe = false
         if !pipes.isEmpty, let first = segments.first, isBlank(utf16: utf16, in: first) {
             hasLeadingPipe = true
@@ -191,10 +192,10 @@ struct MarkdownTable: Equatable, Sendable {
         while start < end, isSpace(utf16[start]) { start += 1 }
         while end > start, isSpace(utf16[end - 1]) { end -= 1 }
 
-        // Une cellule vide n'est que du blanc : les deux boucles se rejoignent
-        // contre le `|` fermant, et tout ce qu'on y tapait s'écrivait là —
-        // `|  Nom|` au lieu de `| Nom |`. On garde une espace de chaque côté,
-        // qui est la forme que tout le monde écrit à la main.
+        // An empty cell is only whitespace: the two loops meet against the
+        // closing `|`, and anything typed there would get written there:
+        // `|  Name|` instead of `| Name |`. A space is kept on each side,
+        // which is the form everyone writes by hand.
         if start == end, segment.length >= 2 {
             start = segment.location + 1
             end = start
@@ -212,8 +213,8 @@ struct MarkdownTable: Equatable, Sendable {
                     width: displayWidth(utf16: utf16, in: content))
     }
 
-    /// Lit les alignements dans la ligne de délimitation, ou `nil` si elle n'en
-    /// est pas une.
+    /// Reads the alignments from the delimiter row, or `nil` if it is not
+    /// one.
     private static func delimiterAlignments(_ row: Row, utf16: [UInt16]) -> [Alignment]? {
         var result: [Alignment] = []
         for cell in row.cells {
@@ -230,8 +231,8 @@ struct MarkdownTable: Equatable, Sendable {
             let closes = offset < end && utf16[offset] == colon
             if closes { offset += 1 }
 
-            // Rien d'autre n'est toléré : `|--x--|` n'est pas une délimitation,
-            // et le bloc n'est alors pas un tableau.
+            // Nothing else is tolerated: `|--x--|` is not a delimiter, and
+            // the block is then not a table.
             guard dashes >= 1, offset == end else { return nil }
 
             switch (opens, closes) {
@@ -243,9 +244,9 @@ struct MarkdownTable: Equatable, Sendable {
         return result.isEmpty ? nil : result
     }
 
-    // MARK: - Outils
+    // MARK: - Tools
 
-    /// Les lignes d'une plage, terminateur exclu.
+    /// The lines of a range, terminator excluded.
     private static func lineRanges(utf16: [UInt16], in range: NSRange) -> [NSRange] {
         let newline = UInt16(10)
         var result: [NSRange] = []
@@ -264,7 +265,7 @@ struct MarkdownTable: Equatable, Sendable {
         return result
     }
 
-    /// Un `|` précédé d'un nombre **impair** de contre-obliques est échappé.
+    /// A `|` preceded by an **odd** number of backslashes is escaped.
     private static func isEscaped(utf16: [UInt16], at location: Int, from start: Int) -> Bool {
         var count = 0
         var offset = location - 1
@@ -284,12 +285,12 @@ struct MarkdownTable: Equatable, Sendable {
         return true
     }
 
-    /// Largeur d'affichage en chasse fixe.
+    /// Display width in a monospaced font.
     ///
-    /// Ce n'est **pas** le nombre d'unités UTF-16 : un idéogramme occupe deux
-    /// cellules dans toutes les polices à chasse fixe, un accent combinant n'en
-    /// occupe aucune, et un emoji en occupe deux pour deux unités. Compter les
-    /// unités désalignerait toute colonne contenant du CJK.
+    /// This is **not** the number of UTF-16 code units: an ideograph occupies
+    /// two cells in every monospaced font, a combining accent occupies none,
+    /// and an emoji occupies two for two code units. Counting code units
+    /// would misalign any column containing CJK.
     static func displayWidth(utf16: [UInt16], in range: NSRange) -> Int {
         var width = 0
         var offset = range.location
@@ -311,18 +312,18 @@ struct MarkdownTable: Equatable, Sendable {
     }
 
     private static func cellWidth(of scalar: Unicode.Scalar) -> Int {
-        // Marques combinantes : posées sur le signe précédent, sans avance.
+        // Combining marks: placed on the preceding character, no advance.
         if scalar.properties.canonicalCombiningClass != .notReordered { return 0 }
         switch scalar.value {
-        case 0x1100...0x115F,      // jamo hangul initiaux
-             0x2E80...0xA4CF,      // radicaux, kana, idéogrammes
-             0xAC00...0xD7A3,      // syllabes hangul
-             0xF900...0xFAFF,      // idéogrammes de compatibilité
-             0xFE30...0xFE6F,      // formes de ponctuation verticale
-             0xFF00...0xFF60,      // formes pleine chasse
+        case 0x1100...0x115F,      // initial hangul jamo
+             0x2E80...0xA4CF,      // radicals, kana, ideographs
+             0xAC00...0xD7A3,      // hangul syllables
+             0xF900...0xFAFF,      // compatibility ideographs
+             0xFE30...0xFE6F,      // vertical punctuation forms
+             0xFF00...0xFF60,      // fullwidth forms
              0xFFE0...0xFFE6,
              0x1F300...0x1F9FF,    // emoji
-             0x20000...0x3FFFD:    // plans idéographiques supplémentaires
+             0x20000...0x3FFFD:    // supplementary ideographic planes
             return 2
         default:
             return 1

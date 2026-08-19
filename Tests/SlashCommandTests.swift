@@ -1,14 +1,14 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// Le menu d'insertion de bloc (§4.5).
+/// The block insertion menu (§4.5).
 ///
-/// La moitié du travail est de savoir **quand ne pas s'ouvrir**. Un menu qui
-/// surgit sur chaque barre oblique rendrait la touche inutilisable dans un
-/// texte qui parle de chemins de fichiers ou de dates.
+/// Half the work is knowing **when not to open**. A menu that pops up on
+/// every forward slash would make the key unusable in text that talks about
+/// file paths or dates.
 final class SlashCommandTests: XCTestCase {
 
     private func trigger(_ line: String, caret: Int? = nil, lineStart: Int = 0,
@@ -19,7 +19,7 @@ final class SlashCommandTests: XCTestCase {
                                      scope: scope)
     }
 
-    // MARK: - Quand il s'ouvre
+    // MARK: - When it opens
 
     func testASlashAloneOpensTheMenu() throws {
         let found = try XCTUnwrap(trigger("/"))
@@ -34,54 +34,54 @@ final class SlashCommandTests: XCTestCase {
     }
 
     func testThePositionIsAbsoluteInTheDocument() throws {
-        // La ligne est passée seule, mais la plage rendue doit désigner le
-        // document : c'est elle qui sera remplacée par le bloc.
+        // The line is passed alone, but the returned range must point into
+        // the document: it's what gets replaced by the block.
         let found = try XCTUnwrap(trigger("/code", lineStart: 420))
         XCTAssertEqual(found.range, NSRange(location: 420, length: 5))
     }
 
-    // MARK: - Quand il ne s'ouvre pas
+    // MARK: - When it doesn't open
 
-    /// La règle qui remplace « seulement sur une ligne vide » : **le `/` doit
-    /// ouvrir un mot**. Collé à un caractère, il reste une barre oblique.
+    /// The rule that replaces "only on a blank line": **the `/` must open a
+    /// word**. Glued to a character, it stays a forward slash.
     func testASlashGluedToACharacterIsJustASlash() {
-        XCTAssertNil(trigger("voir docs/api"))
-        XCTAssertNil(trigger("le 12/08/2026"))
-        XCTAssertNil(trigger("https://exemple.fr"))
-        XCTAssertNil(trigger("et/ou"))
+        XCTAssertNil(trigger("see docs/api"))
+        XCTAssertNil(trigger("on 12/08/2026"))
+        XCTAssertNil(trigger("https://example.com"))
+        XCTAssertNil(trigger("and/or"))
     }
 
-    /// Et son pendant, qui est tout l'objet du changement : au milieu d'une
-    /// phrase, après un blanc, le menu s'ouvre. Sans ça, il ne servait qu'à qui
-    /// savait déjà qu'il fallait d'abord une ligne vide.
+    /// And its counterpart, which is the whole point of the change: in the
+    /// middle of a sentence, after a space, the menu opens. Without that, it
+    /// only served people who already knew a blank line was needed first.
     func testASlashAfterASpaceOpensTheMenuMidSentence() throws {
-        let found = try XCTUnwrap(trigger("Voici un tableau /tab"))
+        let found = try XCTUnwrap(trigger("Here's a table /tab"))
         XCTAssertEqual(found.query, "tab")
-        XCTAssertEqual(found.range, NSRange(location: 17, length: 4))
-        XCTAssertTrue(found.startsNewLine, "Le bloc devra commencer à la ligne")
+        XCTAssertEqual(found.range, NSRange(location: 15, length: 4))
+        XCTAssertTrue(found.startsNewLine, "The block must start on its own line")
     }
 
     func testTheLineStartScopeKeepsTheOldBehaviour() {
-        XCTAssertNil(trigger("Voici un tableau /tab", scope: .lineStart))
+        XCTAssertNil(trigger("Here's a table /tab", scope: .lineStart))
         XCTAssertNotNil(trigger("/tab", scope: .lineStart))
         XCTAssertNil(trigger("/tab", scope: .off))
     }
 
     func testASpaceClosesTheMenu() {
-        // « /note à moi » est une phrase, pas une commande.
-        XCTAssertNil(trigger("/note à"))
+        // "/note to self" is a sentence, not a command.
+        XCTAssertNil(trigger("/note to"))
     }
 
     func testTextAfterTheCaretClosesTheMenu() {
-        // On insère un bloc entre deux mots, pas au milieu de l'un d'eux.
-        XCTAssertNil(trigger("/tab et la suite", caret: 4))
+        // A block is inserted between two words, not in the middle of one.
+        XCTAssertNil(trigger("/tab and the rest", caret: 4))
     }
 
     func testTheCaretMustBeAfterTheSlash() {
         XCTAssertNil(trigger("/tab", caret: 0))
     }
 
-    // MARK: - Filtrage
+    // MARK: - Filtering
 
     func testTheQueryFindsByPrefix() {
         XCTAssertEqual(SlashCommand.matching("tab").first, .table)
@@ -89,12 +89,12 @@ final class SlashCommandTests: XCTestCase {
     }
 
     func testTheQueryFindsBySubsequence() {
-        // Même règle que ⌘K : taper « tb » doit trouver « Tableau ».
+        // Same rule as ⌘K: typing `tb` must find `Table`.
         XCTAssertEqual(SlashCommand.matching("tb").first, .table)
     }
 
     func testEnglishKeywordsWorkToo() {
-        // La moitié des gens tapent /code ou /todo sans réfléchir.
+        // Half of people type /code or /todo without thinking.
         XCTAssertEqual(SlashCommand.matching("todo").first, .taskList)
         XCTAssertEqual(SlashCommand.matching("hr").first, .rule)
     }
@@ -104,11 +104,11 @@ final class SlashCommandTests: XCTestCase {
     }
 
     func testNonsenseMatchesNothing() {
-        // Le menu se referme alors, et la frappe redevient du texte ordinaire.
+        // The menu then closes, and typing becomes ordinary text again.
         XCTAssertTrue(SlashCommand.matching("zzzzq").isEmpty)
     }
 
-    // MARK: - Ce qui est inséré
+    // MARK: - What gets inserted
 
     private func insertion(_ command: SlashCommand, at location: Int, length: Int,
                            startsNewLine: Bool = false) -> TypingBehaviour.Edit {
@@ -124,32 +124,32 @@ final class SlashCommandTests: XCTestCase {
         XCTAssertEqual(edit.replacement, "## ")
     }
 
-    /// Un bloc demandé au milieu d'une phrase commence à la ligne : collé à ce
-    /// qui précède, un `## ` ne serait pas un titre, et un tableau avalerait la
-    /// fin de la phrase dans sa première cellule.
+    /// A block requested in the middle of a sentence starts on its own
+    /// line: glued to what precedes it, a `## ` wouldn't be a heading, and
+    /// a table would swallow the rest of the sentence into its first cell.
     func testABlockAskedMidSentenceStartsOnItsOwnLine() {
         let edit = insertion(.heading2, at: 10, length: 3, startsNewLine: true)
         XCTAssertEqual(edit.replacement, "\n## ")
-        XCTAssertEqual(edit.caret, 14, "Le curseur suit le retour ajouté")
+        XCTAssertEqual(edit.caret, 14, "The caret follows the added newline")
     }
 
     func testTheCaretLandsWhereOneWrites() {
-        // Dans le bloc de code, pas après sa clôture.
+        // Inside the code block, not after its closing fence.
         let code = insertion(.codeBlock, at: 0, length: 1)
         XCTAssertEqual(code.replacement, "```\n\n```")
-        XCTAssertEqual(code.caret, 4, "Le curseur doit être sur la ligne vide, entre les clôtures")
+        XCTAssertEqual(code.caret, 4, "The caret must be on the blank line, between the fences")
 
-        // Dans la première cellule du tableau, pas à la ligne suivante.
+        // In the table's first cell, not on the next line.
         XCTAssertEqual(insertion(.table, at: 0, length: 1).caret, 2)
     }
 
     func testEveryInsertedBlockIsValidMarkdown() {
-        // Le menu existe parce que les marqueurs sont masqués : ce qu'il pose
-        // doit être relu par le parseur comme la construction annoncée.
+        // The menu exists because markers are hidden: what it inserts must
+        // be read back by the parser as the announced construct.
         for command in SlashCommand.allCases {
             let edit = insertion(command, at: 0, length: 0)
-            let spans = MarkdownParser.parse(edit.replacement + "texte\n").spans
-            XCTAssertFalse(spans.isEmpty, "« \(command.title) » ne produit aucune construction")
+            let spans = MarkdownParser.parse(edit.replacement + "text\n").spans
+            XCTAssertFalse(spans.isEmpty, "`\(command.title)` produces no construct")
         }
     }
 
@@ -158,7 +158,7 @@ final class SlashCommandTests: XCTestCase {
         let spans = MarkdownParser.parse(edit.replacement + "\n").spans
         let table = try XCTUnwrap(spans.first { if case .table = $0.kind { return true } else { return false } })
         guard case .table(let grid?) = table.kind else {
-            return XCTFail("Le tableau inséré doit être lu comme une grille")
+            return XCTFail("The inserted table must be read as a grid")
         }
         XCTAssertEqual(grid.columnCount, 2)
         XCTAssertEqual(grid.rows.count, 2)
@@ -167,16 +167,16 @@ final class SlashCommandTests: XCTestCase {
     func testEveryCommandHasATitleAndAHint() {
         for command in SlashCommand.allCases {
             XCTAssertFalse(command.title.isEmpty)
-            XCTAssertFalse(command.hint.isEmpty, "Le menu montre la syntaxe qu'il pose")
+            XCTAssertFalse(command.hint.isEmpty, "The menu shows the syntax it inserts")
         }
     }
 }
 
-/// Le panneau lui-même.
+/// The panel itself.
 ///
-/// Ce qui est vérifié ici n'est pas l'apparence mais **le contrat** : il
-/// s'ouvre, il se place sous le curseur, il ne prend jamais le focus, et il se
-/// referme tout seul quand plus rien ne correspond.
+/// What's checked here isn't the appearance but **the contract**: it opens,
+/// it places itself under the caret, it never takes focus, and it closes
+/// itself when nothing matches anymore.
 @MainActor
 final class SlashMenuTests: XCTestCase {
 
@@ -188,8 +188,8 @@ final class SlashMenuTests: XCTestCase {
     }
 
     func testItNeverBecomesKey() {
-        // Tout le principe : le curseur reste dans le texte et la frappe
-        // continue d'y aller pendant que le menu filtre.
+        // The whole point: the caret stays in the text and typing keeps
+        // going there while the menu filters.
         XCTAssertFalse(SlashMenu().canBecomeKey)
     }
 
@@ -210,17 +210,17 @@ final class SlashMenuTests: XCTestCase {
         _ = menu.present(query: "", caretRect: caret, over: window)
 
         XCTAssertEqual(menu.frame.minX, caret.minX, accuracy: 1,
-                       "Aligné sur le curseur, pas sur la fenêtre")
+                       "Aligned on the caret, not on the window")
         XCTAssertLessThanOrEqual(menu.frame.maxY, caret.minY,
-                                 "Posé dessus, il masquerait le mot en cours de frappe")
+                                 "Placed on top, it would hide the word being typed")
         menu.dismiss()
     }
 
     func testItFlipsAboveTheCaretWhenThereIsNoRoomBelow() {
         let menu = SlashMenu()
         let window = host()
-        // Un curseur tout en bas de l'écran : le menu doit repasser au-dessus
-        // plutôt que de sortir par le bas.
+        // A caret right at the bottom of the screen: the menu must flip
+        // back above rather than run off the bottom.
         let screen = window.screen ?? NSScreen.main!
         let caret = NSRect(x: 300, y: screen.visibleFrame.minY + 4, width: 1, height: 20)
         _ = menu.present(query: "", caretRect: caret, over: window)
@@ -235,8 +235,8 @@ final class SlashMenuTests: XCTestCase {
         _ = menu.present(query: "", caretRect: NSRect(x: 300, y: 500, width: 1, height: 20), over: window)
         XCTAssertTrue(menu.isOpen)
 
-        // La frappe redevient du texte ordinaire, et l'appelant l'apprend par
-        // la valeur de retour.
+        // Typing becomes ordinary text again, and the caller learns this
+        // through the return value.
         XCTAssertFalse(menu.present(query: "zzzzq",
                                     caretRect: NSRect(x: 300, y: 500, width: 1, height: 20),
                                     over: window))
@@ -253,7 +253,7 @@ final class SlashMenuTests: XCTestCase {
         menu.confirmSelection()
 
         XCTAssertEqual(chosen, .table)
-        XCTAssertFalse(menu.isOpen, "Valider referme le menu")
+        XCTAssertFalse(menu.isOpen, "Confirming closes the menu")
     }
 
     func testArrowsMoveWithinTheList() {
@@ -276,7 +276,7 @@ final class SlashMenuTests: XCTestCase {
         menu.onChoose = { chosen = $0 }
 
         _ = menu.present(query: "", caretRect: NSRect(x: 300, y: 500, width: 1, height: 20), over: window)
-        // Remonter depuis la première entrée ne doit pas sortir de la liste.
+        // Moving up from the first entry must not go outside the list.
         menu.moveSelection(by: -5)
         menu.confirmSelection()
 

@@ -1,11 +1,11 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le chef d'orchestre : tampon, parseur, rendu, sélection.
+/// The orchestrator: buffer, parser, rendering, selection.
 ///
-/// Il n'y a **qu'un seul tampon**, et c'est le texte markdown (§3.1). Tout ce
-/// que fait ce contrôleur, c'est décider quels attributs y sont posés et quand.
+/// There is **only one buffer**, and it holds the markdown text (§3.1). Everything
+/// this controller does is decide which attributes are applied to it, and when.
 @MainActor
 final class EditorController: NSObject {
 
@@ -14,11 +14,11 @@ final class EditorController: NSObject {
 
     private(set) var spans: [SyntaxSpan] = []
     private var revealed: Set<Int> = []
-    /// Reconstruit à chaque analyse, consulté à chaque déplacement du curseur.
+    /// Rebuilt on every parse, consulted on every caret move.
     private var spanIndex = SpanIndex([])
 
-    /// La dernière édition signalée par `NSTextStorage`, pour que le cycle de
-    /// frappe sache quel bloc ré-analyser.
+    /// The last edit reported by `NSTextStorage`, so the typing cycle knows which
+    /// block to re-parse.
     private var lastEditedRange: NSRange?
     private var lastChangeInLength = 0
 
@@ -29,8 +29,8 @@ final class EditorController: NSObject {
         }
     }
 
-    /// L'emplacement du document, pour résoudre les images en chemin relatif
-    /// (§4.4). `nil` tant que le document n'a pas été enregistré.
+    /// The document's location, to resolve relatively-pathed images (§4.4). `nil`
+    /// until the document has been saved.
     var documentURL: URL? {
         didSet {
             guard documentURL != oldValue else { return }
@@ -39,30 +39,30 @@ final class EditorController: NSObject {
         }
     }
 
-    /// Mode source (§4.2) : le même tampon, sans la couche de style.
+    /// Source mode (§4.2): the same buffer, without the styling layer.
     private(set) var isSourceMode = false
 
-    /// Le menu d'insertion de bloc (§4.5), et ce qui l'a déclenché.
+    /// The block insertion menu (§4.5), and what triggered it.
     private let slashMenu = SlashMenu()
     private let languagePicker = LanguagePicker()
     private let tableSizePicker = TableSizePicker()
-    /// La plage du mot de langage que le sélecteur remplacera.
+    /// The range of the language word the picker will replace.
     private var languageTrigger: CodeFence.LanguageTrigger?
-    /// Le `/tab` que le damier remplacera quand il aura une réponse.
+    /// The `/tab` the grid picker will replace once it has an answer.
     private var pendingTableTrigger: TypingBehaviour.SlashTrigger?
     private var slashTrigger: TypingBehaviour.SlashTrigger?
 
-    /// Appelé après chaque modification du texte, pour que le document sache
-    /// qu'il est sale et que la barre d'état se rafraîchisse.
+    /// Called after every text modification, so the document knows it is dirty
+    /// and the status bar can refresh.
     var onTextChanged: (() -> Void)?
 
-    /// Appelé quand la sélection bouge, pour rafraîchir les statistiques.
+    /// Called when the selection moves, to refresh the statistics.
     var onSelectionChanged: (() -> Void)?
 
-    /// Appelé quand les constructions ont changé, pour que le plan suive.
+    /// Called when the constructs have changed, so the outline stays in sync.
     var onSpansChanged: (() -> Void)?
 
-    // MARK: - Construction
+    // MARK: - Setup
 
     init(typography: EditorTypography? = nil) {
         self.typography = typography ?? AppSettings.shared.typography
@@ -75,33 +75,33 @@ final class EditorController: NSObject {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = Theme.NS.window
-        // §7 : l'app doit disparaître. Un ascenseur permanent est du chrome.
+        // §7: the app must disappear. A permanent scroller is chrome.
         scrollView.scrollerStyle = .overlay
 
         textView.delegate = self
         textView.textStorage?.delegate = self
         textView.handlesDeleteBackward = { [weak self] selection in
             guard let self else { return false }
-            // **La construction avant la paire.**
+            // **The construct before the pair.**
             //
-            // L'ordre était l'inverse, et il produisait exactement l'orphelin
-            // que `deleteConstruct` existe pour éviter : le curseur peut se
-            // poser *entre les deux étoiles* d'une ouverture — le marqueur y
-            // est révélé, donc la position est atteignable —, et `⌫` y voyait
-            // une paire `*|*` à défaire. `**gras**` devenait `gras**`, un
-            // marqueur de fermeture seul au milieu de la phrase.
+            // The order used to be reversed, and it produced exactly the orphan
+            // `deleteConstruct` exists to avoid: the caret can land *between the
+            // two asterisks* of an opening marker — the marker is revealed there,
+            // so the position is reachable — and `⌫` would see a `*|*` pair to
+            // undo there. `**bold**` became `bold**`, a lone closing marker in
+            // the middle of the sentence.
             //
-            // Rien n'est perdu au change : une paire fraîchement posée — `()`,
-            // `**` vide — n'est jamais une construction analysée, donc
-            // `deleteConstruct` la laisse passer.
+            // Nothing is lost by the change: a freshly typed pair — `()`, an
+            // empty `**` — is never a parsed construct, so `deleteConstruct` lets
+            // it pass through.
             return stepBackInsteadOfBreakingTheGrid(at: selection)
                 || deleteConstruct(at: selection)
                 || deletePair(at: selection)
         }
         textView.handlesTyping = { [weak self] character in
             guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return false }
-            // Le troisième accent grave d'abord : sans lui, les paires
-            // automatiques doublent chaque touche et ` ``` ` en produit six.
+            // The third backtick first: without it, the auto-pairs double every
+            // keystroke and ` ``` ` produces six.
             if apply(TypingBehaviour.codeFence(typing: character, in: text,
                                                selection: textView.selectedRange())) {
                 return true
@@ -110,8 +110,8 @@ final class EditorController: NSObject {
                                                   selection: textView.selectedRange(),
                                                   insideCode: isInsideCode(at: textView.selectedRange().location)))
         }
-        // Le rattrapage des touches mortes : même décision, prise après coup.
-        // Voir `EditorTextView.insertText`.
+        // Catching up on dead keys: the same decision, made after the fact.
+        // See `EditorTextView.insertText`.
         textView.handlesTypedCharacter = { [weak self] character in
             guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return }
             let selection = textView.selectedRange()
@@ -123,16 +123,16 @@ final class EditorController: NSObject {
         }
         textView.handlesNewline = { [weak self] in
             guard let self else { return false }
-            // Le tableau d'abord : dedans, `⏎` descend d'une ligne au lieu
-            // d'insérer un retour qui couperait la grille en deux.
+            // The table first: inside one, `⏎` moves down a row instead of
+            // inserting a return that would split the grid in two.
             if moveToRowBelow() { return true }
             guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.newline(in: text, selection: textView.selectedRange()))
         }
         textView.handlesIndent = { [weak self] outdent in
             guard let self else { return false }
-            // Sortir d'un format passe avant tout le reste : c'est le geste qui
-            // ferme la boucle ouverte par les paires automatiques.
+            // Escaping a format comes before everything else: it is the gesture
+            // that closes the loop opened by the auto-pairs.
             if !outdent, escapeFormat() { return true }
             if moveBetweenCells(outdent: outdent) { return true }
             guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
@@ -149,8 +149,8 @@ final class EditorController: NSObject {
             self?.handleSlashMenuKey(key) ?? false
         }
         slashMenu.onChoose = { [weak self] command in
-            // Le tableau est le seul bloc dont la forme se demande avant de
-            // l'écrire : le damier prend le relais du menu.
+            // The table is the only block whose shape is asked before it is
+            // written: the grid picker takes over from the menu.
             if command == .table {
                 self?.presentTableSizePicker(replacing: self?.slashTrigger)
             } else {
@@ -172,16 +172,16 @@ final class EditorController: NSObject {
             name: AppSettings.didChange, object: nil)
     }
 
-    // MARK: - Contenu
+    // MARK: - Content
 
     var text: String {
         textView.string
     }
 
-    /// Longueur analysée et stylée **avant** le premier affichage.
+    /// Length parsed and styled **before** the first paint.
     ///
-    /// Assez pour plusieurs écrans à n'importe quelle taille de police ; le
-    /// reste attend le tour de boucle suivant. Voir `setText(_:)`.
+    /// Enough for several screens at any font size; the rest waits for the next
+    /// runloop turn. See `setText(_:)`.
     private static let firstPaintLength = 40_000
 
     func setText(_ newText: String) {
@@ -189,8 +189,8 @@ final class EditorController: NSObject {
         storage.beginEditing()
         storage.replaceCharacters(in: NSRange(location: 0, length: storage.length), with: newText)
         storage.endEditing()
-        // Le remplacement initial n'est pas une modification de l'utilisateur :
-        // il ne doit ni salir le document ni entrer dans la pile d'annulation.
+        // The initial replacement is not a user edit: it must neither mark the
+        // document dirty nor enter the undo stack.
         textView.undoManager?.removeAllActions()
         lastEditedRange = nil
         lastChangeInLength = 0
@@ -202,14 +202,14 @@ final class EditorController: NSObject {
             return
         }
 
-        // **Ouverture progressive.** Analyser et styler 600 pages avant de
-        // montrer quoi que ce soit coûtait plus d'une seconde, pour un budget
-        // de 500 ms (§9) — et l'utilisateur n'a besoin que du premier écran.
+        // **Progressive opening.** Parsing and styling 600 pages before showing
+        // anything cost more than a second, against a 500 ms budget (§9) — and
+        // the user only needs the first screen.
         //
-        // TextKit 2 ne met déjà en page que le viewport ; ce qui restait
-        // proportionnel au document, c'était l'analyse et la pose d'attributs.
-        // On en fait juste assez pour peindre, le reste suit immédiatement
-        // après, avant même que la main n'ait quitté le clavier.
+        // TextKit 2 already only lays out the viewport; what remained
+        // proportional to the document was parsing and applying attributes. This
+        // does just enough to paint, and the rest follows immediately after,
+        // before the hand has even left the keyboard.
         let head = IncrementalParse.blockRange(
             in: storage.mutableString,
             around: NSRange(location: 0, length: Self.firstPaintLength))
@@ -225,7 +225,7 @@ final class EditorController: NSObject {
         }
     }
 
-    // MARK: - Analyse et rendu
+    // MARK: - Parsing and rendering
 
     private func reparse() {
         spans = MarkdownParser.parse(textView.string).spans
@@ -234,10 +234,10 @@ final class EditorController: NSObject {
         onSpansChanged?()
     }
 
-    /// Ré-analyse **le seul bloc touché**, et retombe sur le document entier
-    /// quand son sens en dépend (voir `IncrementalParse`).
+    /// Re-parses **only the touched block**, and falls back to the whole document
+    /// when its meaning depends on it (see `IncrementalParse`).
     ///
-    /// - Returns: la plage à re-styler.
+    /// - Returns: the range to re-style.
     private func reparseIncrementally(editedRange: NSRange, delta: Int) -> NSRange {
         guard let storage = textView.textStorage else { return NSRange(location: 0, length: 0) }
         let whole = NSRange(location: 0, length: storage.length)
@@ -265,25 +265,24 @@ final class EditorController: NSObject {
         return scope
     }
 
-    /// La largeur **réellement** offerte au texte : celle du conteneur, que
-    /// `applyColumnLayout` a bornée à la place disponible. C'est elle qui doit
-    /// décider de la géométrie d'un tableau, pas la largeur des réglages.
+    /// The width **actually** offered to the text: the container's width, which
+    /// `applyColumnLayout` has bounded to the available space. It is this width
+    /// that must decide a table's geometry, not the settings' width.
     private var renderedColumnWidth: CGFloat {
         let width = textView.textContainer?.size.width ?? 0
         return width > 0 ? width : typography.columnWidth
     }
 
-    /// Celle du dernier rendu, pour savoir quand les tableaux doivent être
-    /// reposés.
+    /// The width at the last render, to know when tables need to be repositioned.
     private var lastRenderedColumnWidth: CGFloat = 0
 
-    /// Repose **les seuls tableaux**, sur la largeur courante.
+    /// Repositions **only the tables**, at the current width.
     ///
-    /// Une grille ne tient pas par une contrainte : elle tient par le crénage
-    /// posé sur ses `|` masqués, c'est-à-dire par des attributs figés dans le
-    /// tampon. Changer la largeur du conteneur ne la repose donc pas, et après
-    /// un redimensionnement de fenêtre le tableau gardait la géométrie de
-    /// l'ancienne largeur jusqu'à la prochaine frappe qui le touchait.
+    /// A grid doesn't hold together through a constraint: it holds together
+    /// through the kerning applied to its hidden `|` characters, which is to say
+    /// through attributes frozen in the buffer. Changing the container's width
+    /// therefore does not reposition it, and after a window resize the table used
+    /// to keep the old width's geometry until the next keystroke that touched it.
     private func rerenderTables() {
         guard !isSourceMode, let storage = textView.textStorage, !spans.isEmpty else { return }
         let renderer = MarkdownRenderer(typography: typography, availableWidth: renderedColumnWidth)
@@ -306,11 +305,11 @@ final class EditorController: NSObject {
         render(in: NSRange(location: 0, length: storage.length))
     }
 
-    /// Pose les attributs sur une portée, et rien qu'elle.
+    /// Applies attributes to a range, and only that range.
     ///
-    /// Les décorations, elles, sont toujours reconstruites en entier : leur
-    /// calcul ne fait que parcourir la liste des constructions, sans toucher au
-    /// tampon, et il est négligeable face à la pose d'attributs.
+    /// The decorations, meanwhile, are always rebuilt in full: their computation
+    /// only walks the list of constructs without touching the buffer, and it is
+    /// negligible next to applying attributes.
     private func render(in range: NSRange) {
         guard let storage = textView.textStorage else { return }
         guard !isSourceMode else {
@@ -322,15 +321,15 @@ final class EditorController: NSObject {
                                         colorfulCode: AppSettings.shared.colorfulCodeBlocks,
                                         documentURL: documentURL,
                                         availableWidth: renderedColumnWidth)
-        // Seules les constructions qui touchent la portée sont repassées ; la
-        // portée est celle du bloc édité, pas celle du document.
+        // Only the constructs that touch the range are re-passed; the range is
+        // that of the edited block, not of the document.
         //
-        // « Se touchent », bornes comprises, et non « s'intersectent » : une
-        // portée d'édition peut être **vide** — supprimer le dernier signe du
-        // document en laisse une —, et une intersection vide écartait alors
-        // toutes les constructions. Le repli qui corrigeait ce cas les
-        // repassait **toutes**, document entier compris : le pire moment pour
-        // le faire, puisque c'est une frappe qui l'appelle.
+        // "Touch", boundaries included, rather than "intersect": an edit range
+        // can be **empty** — deleting the document's last character leaves
+        // one — and an empty intersection would then discard every construct.
+        // The fallback that used to fix this case re-passed **all** of them,
+        // whole document included: the worst possible moment to do it, since a
+        // keystroke is what calls it.
         let touching = spans.enumerated().filter { Self.touches($0.element.range, range) }
         renderer.render(storage,
                         spans: touching.map(\.element),
@@ -344,14 +343,14 @@ final class EditorController: NSObject {
                                                       revealed: revealed)
     }
 
-    /// Les deux plages se touchent-elles, bornes comprises ? Une plage vide en
-    /// touche une autre dès qu'elle est dedans ou à son bord.
+    /// Do the two ranges touch, boundaries included? An empty range touches
+    /// another as soon as it is inside it or at its edge.
     static func touches(_ a: NSRange, _ b: NSRange) -> Bool {
         a.location <= b.upperBound && b.location <= a.upperBound
     }
 
-    /// Le filet de sécurité (§4.2) : le texte tel qu'il est dans le fichier,
-    /// en chasse fixe, sans un seul attribut de rendu.
+    /// The safety net (§4.2): the text as it is in the file, in a fixed-pitch
+    /// font, without a single rendering attribute.
     private func renderSourceMode(_ storage: NSTextStorage) {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = 1.35
@@ -362,15 +361,14 @@ final class EditorController: NSObject {
             .paragraphStyle: style,
         ], range: NSRange(location: 0, length: storage.length))
         storage.endEditing()
-        // Le mode source montre le fichier, pas une interprétation : aucune
-        // marque dessinée n'y a sa place.
+        // Source mode shows the file, not an interpretation: no drawn mark
+        // belongs there.
         textView.decorations = []
     }
 
-    /// Recalcule uniquement les constructions dont l'état de révélation a
-    /// changé. C'est l'opération la plus fréquente de l'app — une flèche du
-    /// clavier la déclenche — et la seule qui doive rester en dessous de la
-    /// milliseconde quelle que soit la taille du document.
+    /// Recomputes only the constructs whose reveal state has changed. This is the
+    /// app's most frequent operation — an arrow key triggers it — and the only
+    /// one that must stay under a millisecond regardless of document size.
     private func updateReveal() {
         guard !isSourceMode, let storage = textView.textStorage else { return }
         let next = currentRevealedIndices()
@@ -385,10 +383,10 @@ final class EditorController: NSObject {
             renderer.applyMarkers(storage, span: spans[index], revealed: next.contains(index))
         }
 
-        // Un tableau dont une cellule vient de révéler ses `**` a changé de
-        // largeur : ses colonnes doivent être reposées, sinon toutes celles de
-        // droite glissent de la largeur des marqueurs réapparus. On ne repose
-        // que les tableaux réellement concernés — il y en a rarement plus d'un.
+        // A table whose cell just revealed its `**` has changed width: its
+        // columns must be repositioned, or every column to the right shifts by
+        // the width of the markers that reappeared. Only the tables actually
+        // affected are repositioned — there are rarely more than one.
         let touched = changed.compactMap { $0 < spans.count ? spans[$0].range : nil }
         var rebuiltDecorations = changed.contains {
             $0 < spans.count && EditorDecoration.hasRevealDependentMark(spans[$0].kind)
@@ -402,11 +400,10 @@ final class EditorController: NSObject {
         }
         storage.endEditing()
 
-        // Les marques dessinées suivent l'état de révélation : la puce, la case
-        // à cocher, le filet et les cadres de tableau s'effacent quand leur
-        // source réapparaît sous le curseur. On ne reconstruit la couche que
-        // lorsque l'une d'elles est concernée — ce chemin est celui de chaque
-        // flèche du clavier.
+        // The drawn marks follow the reveal state: the bullet, the checkbox,
+        // the rule and the table borders disappear when their source reappears
+        // under the caret. The layer is only rebuilt when one of them is
+        // affected — this path runs on every arrow key.
         if rebuiltDecorations {
             textView.decorations = EditorDecoration.build(from: spans, in: storage,
                                                           typography: typography,
@@ -415,9 +412,9 @@ final class EditorController: NSObject {
         }
     }
 
-    // MARK: - Fonctions d'écriture (§4.5)
+    // MARK: - Writing modes (§4.5)
 
-    /// Statistiques du document, ou de la sélection quand il y en a une.
+    /// Document statistics, or of the selection when there is one.
     var statistics: WritingModes.Statistics {
         guard let storage = textView.textStorage else {
             return WritingModes.Statistics(words: 0, characters: 0, readingMinutes: 0)
@@ -426,8 +423,8 @@ final class EditorController: NSObject {
         guard selection.length > 0 else {
             return WritingModes.statistics(of: storage.string, spans: spans)
         }
-        // Sur une sélection, on compte la sélection — et les constructions
-        // ramenées à ses coordonnées, sinon la syntaxe ne serait plus exclue.
+        // On a selection, the selection is counted — with its constructs mapped
+        // to its own coordinates, or the syntax would no longer be excluded.
         let fragment = storage.mutableString.substring(with: selection)
         let local = spans
             .filter { NSIntersectionRange($0.range, selection).length > 0 }
@@ -435,12 +432,12 @@ final class EditorController: NSObject {
         return WritingModes.statistics(of: fragment, spans: local)
     }
 
-    /// Atténue tout sauf l'unité courante (§4.5).
+    /// Dims everything but the current unit (§4.5).
     ///
-    /// L'atténuation est une couche d'opacité posée par-dessus le rendu, et
-    /// **jamais** un changement de couleur : les attributs de couleur portent
-    /// déjà le sens — code, citation, marqueur révélé — et les écraser
-    /// obligerait à tout recalculer pour revenir en arrière.
+    /// The dimming is a layer of opacity applied over the rendering, and
+    /// **never** a color change: the color attributes already carry meaning —
+    /// code, blockquote, revealed marker — and overwriting them would require
+    /// recomputing everything to revert.
     private func applyFocus() {
         guard let storage = textView.textStorage, !isSourceMode else { return }
         let settings = AppSettings.shared
@@ -453,17 +450,17 @@ final class EditorController: NSObject {
                                                       unit: settings.focusUnit)
     }
 
-    /// Maintient la ligne active à une hauteur fixe (§4.5).
+    /// Keeps the active line at a fixed height (§4.5).
     ///
-    /// **Désactivé par défaut** : le défilement normal est le défaut, et ce
-    /// mode déroute plus qu'il n'aide tant qu'on ne l'a pas demandé.
+    /// **Disabled by default**: normal scrolling is the default, and this mode
+    /// confuses more than it helps until it has been requested.
     private func applyTypewriterScrolling() {
         guard AppSettings.shared.typewriterMode,
-              // **Jamais pendant qu'une sélection s'étend.** Ce rappel est
-              // aussi celui de chaque changement de sélection, glissement de
-              // souris compris : faire défiler à ce moment-là tire le texte
-              // sous le pointeur, et la sélection s'étend vers ce qu'on ne
-              // vise pas. On ne recentre que sur un curseur posé.
+              // **Never while a selection is extending.** This guard is also
+              // the one for every selection change, mouse drag included:
+              // scrolling at that moment pulls the text out from under the
+              // pointer, and the selection extends toward something not being
+              // aimed at. Recentering only happens on a settled caret.
               textView.selectedRange().length == 0,
               let layout = textView.textLayoutManager,
               let content = textView.textContentStorage,
@@ -481,38 +478,38 @@ final class EditorController: NSObject {
 
         let clip = scrollView.contentView
         let visible = clip.bounds
-        // Un tiers de la hauteur, pas la moitié : on écrit vers le bas, et
-        // laisser deux tiers de contexte au-dessus se lit mieux qu'un partage
-        // égal.
+        // A third of the height, not half: writing happens downward, and
+        // leaving two thirds of context above reads better than an even split.
         let target = caretFrame.midY + textView.textContainerOrigin.y - visible.height / 3
 
-        // **Les bornes sont celles des encarts, pas zéro et l'infini.** La
-        // fenêtre est en `fullSizeContentView` : AppKit pose un encart en haut
-        // pour que le texte ne défile pas sous la barre de titre, et l'origine
-        // valide commence donc à `-contentInsets.top`. Un plancher à zéro
-        // décalait la ligne active de la hauteur de cette barre, et rien ne
-        // retenait le bas — `setBoundsOrigin` ne passe pas par le calage de
-        // `NSClipView`, si bien qu'une frappe en fin de document poussait le
-        // texte hors de l'écran.
+        // **The bounds are those of the insets, not zero and infinity.** The
+        // window is `fullSizeContentView`: AppKit places an inset at the top so
+        // the text doesn't scroll under the title bar, so the valid origin
+        // starts at `-contentInsets.top`. A floor at zero used to offset the
+        // active line by the height of that bar, and nothing held the bottom
+        // back — `setBoundsOrigin` doesn't go through `NSClipView`'s clamping,
+        // so a keystroke at the end of the document used to push the text off
+        // screen.
         let top = -clip.contentInsets.top
         let bottom = max(top, textView.frame.height + clip.contentInsets.bottom - visible.height)
         clip.setBoundsOrigin(NSPoint(x: visible.origin.x, y: min(max(top, target), bottom)))
         scrollView.reflectScrolledClipView(clip)
     }
 
-    // MARK: - Écrire dans un tableau (§2.6)
+    // MARK: - Writing inside a table (§2.6)
 
-    /// La dernière position connue du curseur, pour savoir dans quel sens il
-    /// allait quand il est tombé entre deux cellules.
+    /// The caret's last known position, to know which direction it was moving
+    /// when it fell between two cells.
     private var previousCaret = 0
-    /// Empêche la correction de se rappeler elle-même : reposer la sélection
-    /// renvoie `textViewDidChangeSelection`.
+    /// Prevents the correction from re-triggering itself: repositioning the
+    /// selection calls `textViewDidChangeSelection` back.
     private var isCorrectingCaret = false
 
-    /// Le tableau qui contient cette position, s'il est rendu en grille.
+    /// The table that contains this position, if it is rendered as a grid.
     ///
-    /// Un tableau resté en source — malformé, ou trop large — s'édite comme du
-    /// texte ordinaire : ses `|` sont visibles, il n'y a donc rien à corriger.
+    /// A table left in source form — malformed, or too wide — is edited as
+    /// plain text: its `|` characters are visible, so there is nothing to
+    /// correct.
     private func grid(at location: Int) -> MarkdownTable? {
         guard let storage = textView.textStorage else { return nil }
         for span in spans {
@@ -524,25 +521,26 @@ final class EditorController: NSObject {
         return nil
     }
 
-    /// Ramène le curseur dans une cellule quand il est tombé dans ce que la
-    /// grille ne montre pas.
+    /// Brings the caret back into a cell when it fell somewhere the grid
+    /// doesn't show.
     ///
-    /// Corriger **après** le déplacement plutôt qu'intercepter chaque commande :
-    /// il y en a une trentaine avec leurs variantes, et il en manquerait une.
-    /// Ici, tout ce qui bouge le curseur passe par le même point — flèches,
-    /// clic, `⌘↓`, dictée, recherche.
+    /// Correcting **after** the move rather than intercepting every command:
+    /// there are about thirty of them with their variants, and one would be
+    /// missed. Here, everything that moves the caret goes through the same
+    /// point: arrow keys, click, `⌘↓`, dictation, search.
     private func correctCaretInsideTable() {
         guard !isSourceMode, !isCorrectingCaret else { return }
-        // Le tampon vient de changer et l'analyse date d'avant : `spans` décrit
-        // un tableau qui n'existe plus. Corriger là-dessus rangeait le curseur
-        // d'après l'**ancienne** géométrie — en tapant la première lettre d'une
-        // cellule vide, il sautait dans la suivante, et le mot se répandait
-        // d'une cellule à l'autre. `handleTextChange()` rappelle après coup.
+        // The buffer just changed and the parse predates it: `spans` describes
+        // a table that no longer exists. Correcting against that used to place
+        // the caret according to the **old** geometry — typing the first
+        // letter of an empty cell, it jumped to the next one, and the word
+        // spread from one cell to another. `handleTextChange()` calls back
+        // afterward.
         guard lastEditedRange == nil else { return }
 
         let selection = textView.selectedRange()
-        // Une sélection est un geste en cours : on ne la déplace pas sous la
-        // main de l'utilisateur.
+        // A selection is a gesture in progress: it is not moved out from under
+        // the user's hand.
         guard selection.length == 0, let table = grid(at: selection.location) else {
             previousCaret = selection.location
             return
@@ -560,9 +558,8 @@ final class EditorController: NSObject {
         isCorrectingCaret = false
     }
 
-    /// `⇥` passe à la cellule suivante et **sélectionne son contenu**, comme
-    /// dans un tableur : on remplace en tapant. Au-delà de la dernière, une
-    /// ligne est ajoutée.
+    /// `⇥` moves to the next cell and **selects its content**, like in a
+    /// spreadsheet: typing replaces it. Past the last one, a row is added.
     private func moveBetweenCells(outdent: Bool) -> Bool {
         let caret = textView.selectedRange().location
         guard !isSourceMode, let table = grid(at: caret) else { return false }
@@ -571,29 +568,29 @@ final class EditorController: NSObject {
             textView.setSelectedRange(cell)
             return true
         }
-        // Avancer depuis la dernière cellule ajoute une ligne, qui est ce qu'on
-        // voulait en arrivant là. Reculer depuis la première **sort par le
-        // haut** : la touche renvoyait `true` sans rien faire, et `⇧⇥` était
-        // morte à cet endroit sans que rien ne le dise.
+        // Advancing from the last cell adds a row, which is what was wanted by
+        // getting there. Backing up from the first **exits upward**: the key
+        // used to return `true` without doing anything, and `⇧⇥` was dead at
+        // that spot without anything saying so.
         guard !outdent else { return leaveTableUpwards(table) }
         return appendRow(to: table)
     }
 
-    /// Pose le curseur sur la ligne qui précède le tableau, ou au tout début du
-    /// document quand il n'y en a pas.
+    /// Places the caret on the line before the table, or at the very start of
+    /// the document when there isn't one.
     private func leaveTableUpwards(_ table: MarkdownTable) -> Bool {
         guard let first = table.rows.first, first.line.location > 0 else { return true }
         textView.setSelectedRange(NSRange(location: first.line.location - 1, length: 0))
         return true
     }
 
-    /// `⏎` descend d'une ligne dans la même colonne, et **sort du tableau**
-    /// quand on est sur la dernière.
+    /// `⏎` moves down a row in the same column, and **exits the table** on the
+    /// last one.
     ///
-    /// Sortir plutôt qu'ajouter une ligne : `⇥` ajoute déjà, et sans ça il n'y
-    /// aurait littéralement aucun moyen de quitter un tableau au clavier par la
-    /// touche qu'on essaie en premier — on en ajouterait une ligne à chaque
-    /// tentative. C'est le choix de MarkText, et il est juste.
+    /// Exiting rather than adding a row: `⇥` already adds one, and without this
+    /// there would be literally no way to leave a table by keyboard through the
+    /// key one tries first — every attempt would add another row. This is
+    /// MarkText's choice, and it is the right one.
     private func moveToRowBelow() -> Bool {
         let caret = textView.selectedRange().location
         guard !isSourceMode, let table = grid(at: caret) else { return false }
@@ -605,18 +602,18 @@ final class EditorController: NSObject {
         return leaveTable(table)
     }
 
-    /// Pose le curseur sous le tableau, en créant la ligne vide qui manque.
+    /// Places the caret below the table, creating the missing empty line.
     private func leaveTable(_ table: MarkdownTable) -> Bool {
         guard let storage = textView.textStorage, let last = table.rows.last else { return false }
         let end = min(last.line.upperBound, storage.length)
 
-        // Un tableau en fin de document n'a pas de ligne où aller : on en écrit
-        // une, sinon la touche ne ferait rien et l'utilisateur serait enfermé.
+        // A table at the end of the document has no line to go to: one is
+        // written, or the key would do nothing and the user would be trapped.
         guard end < storage.length else {
             return apply(TypingBehaviour.Edit(range: NSRange(location: end, length: 0),
                                               replacement: "\n\n",
                                               caret: end + 2,
-                                              undoName: "Sortir du tableau"))
+                                              undoName: "Exit Table"))
         }
         textView.setSelectedRange(NSRange(location: end + 1, length: 0))
         return true
@@ -629,14 +626,14 @@ final class EditorController: NSObject {
         return apply(TypingBehaviour.Edit(range: NSRange(location: last.line.upperBound, length: 0),
                                           replacement: row.text,
                                           caret: last.line.upperBound + row.caret,
-                                          undoName: "Ajouter une ligne"))
+                                          undoName: "Add Row"))
     }
 
-    /// `⌫` au début d'une cellule ne supprime rien : il recule d'une cellule.
+    /// `⌫` at the start of a cell deletes nothing: it steps back a cell.
     ///
-    /// Le caractère qui précède est un `|` que personne ne voit ; l'effacer
-    /// fusionnerait deux colonnes sans que rien ne l'ait demandé, et le tableau
-    /// entier se réécrirait sous les yeux de l'utilisateur.
+    /// The preceding character is a `|` nobody sees; deleting it would merge
+    /// two columns without anything having asked for it, and the whole table
+    /// would rewrite itself in front of the user.
     private func stepBackInsteadOfBreakingTheGrid(at selection: NSRange) -> Bool {
         guard !isSourceMode, selection.length == 0,
               let table = grid(at: selection.location),
@@ -649,10 +646,10 @@ final class EditorController: NSObject {
         return true
     }
 
-    /// Le loquet de la portée ligne : voir `RevealPolicy`. On retient le début
-    /// de la ligne et non ses spans, parce qu'une analyse incrémentale renumérote
-    /// les constructions — le début de ligne, lui, ne bouge pas tant qu'on tape
-    /// dedans.
+    /// The line-scope latch: see `RevealPolicy`. The start of the line is
+    /// retained rather than its spans, because incremental parsing renumbers
+    /// the constructs — the start of the line, however, doesn't move while
+    /// typing inside it.
     private var latchedLineStart: Int?
 
     private func currentRevealedIndices() -> Set<Int> {
@@ -664,26 +661,26 @@ final class EditorController: NSObject {
                                                     selection: selection,
                                                     lineRange: line,
                                                     linePrefixesLatched: latchedLineStart != nil)
-        // Le loquet se pose dès qu'un préfixe est révélé, et se relève de
-        // lui-même au prochain appel fait depuis une autre ligne.
+        // The latch engages as soon as a prefix is revealed, and releases
+        // itself on the next call made from a different line.
         latchedLineStart = revealed.contains { index in
             index < spanIndex.spans.count && spanIndex.spans[index].kind.revealScope == .wholeLine
         } ? line.location : nil
         return revealed
     }
 
-    /// La plage de la ligne du curseur, terminateur exclu.
+    /// The range of the caret's line, terminator excluded.
     ///
-    /// Calculée directement sur le tampon plutôt que lue dans une table des
-    /// lignes : `NSString.lineRange(for:)` coûte la longueur d'**une ligne**,
-    /// là où reconstruire la table coûtait le document entier — 1,7 ms par
-    /// tranche de 10 000 mots, à chaque frappe, pour une seule ligne utile.
+    /// Computed directly on the buffer rather than read from a line table:
+    /// `NSString.lineRange(for:)` costs the length of **one line**, where
+    /// rebuilding the table cost the whole document — 1.7 ms per 10,000-word
+    /// chunk, on every keystroke, for a single useful line.
     private func currentLineRange() -> NSRange {
         guard let storage = textView.textStorage else { return NSRange(location: 0, length: 0) }
         let caret = min(textView.selectedRange().location, storage.length)
         var line = storage.mutableString.lineRange(for: NSRange(location: caret, length: 0))
-        // `lineRange(for:)` inclut le terminateur ; le §2.2 le veut exclu, sans
-        // quoi un curseur en début de ligne suivante révélerait la précédente.
+        // `lineRange(for:)` includes the terminator; §2.2 wants it excluded, or
+        // a caret at the start of the next line would reveal the previous one.
         while line.length > 0 {
             let last = storage.mutableString.character(at: line.upperBound - 1)
             guard last == 10 || last == 13 else { break }
@@ -692,39 +689,41 @@ final class EditorController: NSObject {
         return line
     }
 
-    // MARK: - Mise en page de la colonne
+    // MARK: - Column layout
 
-    /// Centre la colonne de texte dans la fenêtre (§7). La largeur est mesurée
-    /// en signes sur la fonte réelle, pas fixée en points, pour qu'elle suive
-    /// le choix de police et de taille.
-    /// **À ne jamais appeler depuis le cycle de frappe.**
+    /// Centers the text column in the window (§7). The width is measured in
+    /// characters on the actual font, not fixed in points, so it follows the
+    /// choice of font and size.
+    /// **Never call this from the typing cycle.**
     ///
-    /// Réécrire `textContainerInset` et la taille du conteneur invalide la mise
-    /// en page de *tout* le document. Appelée à chaque touche, cette seule
-    /// ligne coûtait plus cher que l'analyse et le rendu réunis. Elle n'a de
-    /// raison de tourner que lorsque la largeur disponible ou la typographie
-    /// change — c'est-à-dire au redimensionnement et dans les réglages.
+    /// Rewriting `textContainerInset` and the container's size invalidates the
+    /// layout of the *entire* document. Called on every keystroke, this single
+    /// line used to cost more than parsing and rendering combined. It only
+    /// needs to run when the available width or the typography changes: that
+    /// is, on resize and in settings.
     func applyColumnLayout() {
         textView.refreshFocusOverlay()
         guard let container = textView.textContainer else { return }
         let available = scrollView.contentSize.width
-        // **Aucune place mesurée, aucune décision.**
+        // **No measured space, no decision.**
         //
-        // La vue de défilement n'a pas encore de taille tant qu'elle n'est pas
-        // dans une fenêtre mise en page. Le calcul qui suit y répondait par une
-        // colonne d'un point de large — l'ancien plancher de 240 le masquait,
-        // en donnant une largeur fausse plutôt qu'aucune. On attend la passe
-        // suivante, qui viendra de toute façon.
+        // The scroll view has no size yet until it is inside a laid-out
+        // window. The calculation that follows used to answer that with a
+        // one-point-wide column — the old 240 floor masked it, giving a wrong
+        // width rather than none. The next pass is waited for, since it is
+        // coming anyway.
         guard available > 1 else { return }
 
-        // **La colonne ne dépasse jamais la place disponible.**
+        // **The column never exceeds the available space.**
         //
-        // Le calcul posait un plancher fixe de 240 points et une marge fixe de
-        // 24. À la taille minimale de fenêtre avec le plan ouvert il ne reste
-        // que 200 points de large : la colonne débordait, et la vue n'étant pas
-        // redimensionnable horizontalement, le texte était coupé net.
+        // The calculation used to set a fixed 240-point floor and a fixed
+        // 24-point margin. At the minimum window size with the outline open,
+        // only 200 points of width remain: the column overflowed, and since
+        // the view isn't horizontally resizable, the text was cut off
+        // outright.
         //
-        // La marge cède donc avant la colonne, et la colonne avant tout.
+        // The margin yields before the column, and the column before
+        // everything.
         let margin = min(Theme.Space.s24, available / 8)
         let column = max(1, min(typography.columnWidth, available - margin * 2))
         let inset = max(0, (available - column) / 2)
@@ -732,15 +731,15 @@ final class EditorController: NSObject {
         container.size = NSSize(width: column, height: .greatestFiniteMagnitude)
         container.widthTracksTextView = false
 
-        // Les tableaux ne suivent pas tout seuls : voir `rerenderTables()`. On
-        // ne paie que lorsque la largeur a réellement bougé — cette méthode est
-        // appelée à chaque passe de mise en page.
+        // Tables don't follow on their own: see `rerenderTables()`. The cost
+        // is only paid when the width has actually changed — this method is
+        // called on every layout pass.
         guard abs(column - lastRenderedColumnWidth) > 0.5 else { return }
         lastRenderedColumnWidth = column
         rerenderTables()
     }
 
-    // MARK: - Commandes
+    // MARK: - Commands
 
     func toggleSourceMode() {
         let selection = textView.selectedRange()
@@ -748,20 +747,20 @@ final class EditorController: NSObject {
         slashMenu.dismiss()
         rerenderEverything()
 
-        // §6 : la sélection est conservée, mais **étendue aux marqueurs de ses
-        // constructions**. Sélectionner un mot en gras ne sélectionne que le
-        // mot — ses `**` étaient invisibles. Passer en source sans étendre
-        // laisserait une sélection qui coupe la construction en deux, et un
-        // `⌘X` produirait un `**` orphelin.
+        // §6: the selection is kept, but **extended to the markers of its
+        // constructs**. Selecting a bold word only selects the word — its `**`
+        // were invisible. Switching to source without extending would leave a
+        // selection that cuts a construct in two, and a `⌘X` would produce an
+        // orphaned `**`.
         if isSourceMode, selection.length > 0 {
             textView.setSelectedRange(extendedToConstructs(selection))
         }
     }
 
-    /// La sélection élargie aux constructions inline qu'elle touche.
+    /// The selection widened to the inline constructs it touches.
     ///
-    /// Seules les constructions inline : élargir aux blocs ferait sauter la
-    /// sélection d'un mot à un chapitre entier dès qu'on est sous un titre.
+    /// Inline constructs only: widening to blocks would jump the selection
+    /// from a word to an entire chapter as soon as it is under a heading.
     private func extendedToConstructs(_ selection: NSRange) -> NSRange {
         var result = selection
         for span in spans where span.kind.revealScope == .innermostInline {
@@ -772,7 +771,8 @@ final class EditorController: NSObject {
         return NSIntersectionRange(result, NSRange(location: 0, length: length))
     }
 
-    /// Encadre la sélection, ou retire le formatage s'il est déjà là (§2.5).
+    /// Wraps the selection, or removes the formatting if it is already there
+    /// (§2.5).
     func wrapSelection(with marker: String) {
         guard !isSourceMode else { return }
         _ = apply(TypingBehaviour.wrap(text, selection: textView.selectedRange(), with: marker))
@@ -783,8 +783,8 @@ final class EditorController: NSObject {
         _ = apply(TypingBehaviour.setHeadingLevel(level, in: text, selection: textView.selectedRange()))
     }
 
-    /// Pose un lien autour de la sélection, l'adresse venant du presse-papier
-    /// s'il en contient une.
+    /// Places a link around the selection, the address coming from the
+    /// pasteboard if it contains one.
     func insertLink() {
         guard !isSourceMode else { return }
         let pasted = NSPasteboard.general.string(forType: .string)
@@ -792,11 +792,11 @@ final class EditorController: NSObject {
         _ = apply(TypingBehaviour.link(in: text, selection: textView.selectedRange(), url: url))
     }
 
-    /// Coche ou décoche la tâche de la ligne du curseur (`⌘⏎`).
+    /// Checks or unchecks the task on the caret's line (`⌘⏎`).
     ///
-    /// Le clic sur la case suffirait à un utilisateur voyant. Il ne suffit pas
-    /// au §8 : une fonction qui n'existe qu'à la souris n'existe pas pour qui
-    /// n'en tient pas.
+    /// Clicking the checkbox would be enough for a sighted user. It is not
+    /// enough for §8: a function that only exists with a mouse doesn't exist
+    /// for anyone without one.
     @discardableResult
     func toggleTaskAtCaret() -> Bool {
         let caret = textView.selectedRange().location
@@ -807,8 +807,8 @@ final class EditorController: NSObject {
         return toggle(spans[index])
     }
 
-    /// Coche ou décoche la tâche dont le contenu est cette plage — c'est celle
-    /// que porte la décoration cliquée.
+    /// Checks or unchecks the task whose content is this range — the one the
+    /// clicked decoration carries.
     private func toggleTask(atContent range: NSRange) -> Bool {
         guard let index = spans.firstIndex(where: { span in
             guard case .taskItem = span.kind else { return false }
@@ -824,20 +824,20 @@ final class EditorController: NSObject {
                                                 caret: textView.selectedRange().location))
     }
 
-    /// Applique une édition calculée par `TypingBehaviour`.
+    /// Applies an edit computed by `TypingBehaviour`.
     ///
-    /// Elle passe par `shouldChangeText(in:replacementString:)`, ce qui est ce
-    /// qui inscrit l'annulation dans le `NSUndoManager` de la vue plutôt que
-    /// dans une pile parallèle : un `⌘Z` défait la continuation de liste comme
-    /// il défait une frappe, sans que rien n'ait été écrit pour ça.
+    /// It goes through `shouldChangeText(in:replacementString:)`, which is
+    /// what registers the undo in the view's `NSUndoManager` rather than in a
+    /// parallel stack: a `⌘Z` undoes list continuation the same way it undoes
+    /// a keystroke, without anything having been written for it.
     @discardableResult
     private func apply(_ edit: TypingBehaviour.Edit?) -> Bool {
         guard let edit, let storage = textView.textStorage,
               edit.range.upperBound <= storage.length else { return false }
 
-        // Une édition qui ne change aucun caractère ne déplace que le curseur —
-        // c'est le cas de la fermeture qu'on franchit. La faire passer par la
-        // pile d'annulation y inscrirait une étape qui ne défait rien.
+        // An edit that changes no character only moves the caret — this is
+        // the case of the closing marker being crossed. Sending it through
+        // the undo stack would register a step that undoes nothing.
         let selection = { (caret: Int) in
             NSRange(location: min(caret, storage.length),
                     length: min(edit.selectionLength, storage.length - min(caret, storage.length)))
@@ -859,15 +859,15 @@ final class EditorController: NSObject {
         return true
     }
 
-    /// `⌫` entre les deux moitiés d'une paire les efface toutes les deux.
+    /// `⌫` between the two halves of a pair deletes both of them.
     private func deletePair(at selection: NSRange) -> Bool {
         guard !isSourceMode, AppSettings.shared.automaticPairs else { return false }
         return apply(TypingBehaviour.deletingPair(in: text, selection: selection))
     }
 
-    /// Le curseur est-il dans du code, où les marqueurs markdown n'ont pas
-    /// cours ? Passe par l'index plutôt que par la liste entière : la question
-    /// est posée à chaque caractère tapé (§9).
+    /// Is the caret inside code, where markdown markers don't apply? Goes
+    /// through the index rather than the full list: the question is asked on
+    /// every character typed (§9).
     private func isInsideCode(at location: Int) -> Bool {
         spanIndex.candidates(near: location, line: currentLineRange()).contains { index in
             guard index < spanIndex.spans.count else { return false }
@@ -881,15 +881,16 @@ final class EditorController: NSObject {
         }
     }
 
-    /// `⌘`+clic sur une note de bas de page mène à son autre moitié.
+    /// `⌘`+click on a footnote reference jumps to its other half.
     ///
-    /// Une note vit en deux endroits : le renvoi `[^1]` au fil du texte, et sa
-    /// définition `[^1]: …` tout en bas. Les relier à la souris est ce qui les
-    /// rend utilisables — sans ça, vérifier une note demande de faire défiler
-    /// le document, de la lire, puis de retrouver où l'on en était.
+    /// A footnote lives in two places: the `[^1]` reference in the flow of the
+    /// text, and its `[^1]: …` definition down at the bottom. Linking them by
+    /// mouse is what makes them usable: without it, checking a footnote
+    /// requires scrolling the document, reading it, and then finding where one
+    /// left off.
     ///
-    /// Le geste est le même dans les deux sens, et c'est celui des liens : rien
-    /// de nouveau à apprendre.
+    /// The gesture is the same in both directions, and it is the one used for
+    /// links: nothing new to learn.
     private func jumpBetweenFootnoteHalves(at index: Int) -> Bool {
         guard !isSourceMode else { return false }
 
@@ -902,8 +903,8 @@ final class EditorController: NSObject {
             (identifier, goingToDefinition) = (name, true)
         } else if let span = spans.first(where: { span in
             guard case .footnoteDefinition = span.kind else { return false }
-            // Seul le libellé répond, pas le texte de la note : autrement, tout
-            // clic dans une note qu'on est en train d'écrire sauterait ailleurs.
+            // Only the label answers, not the note's text: otherwise, every
+            // click inside a note being written would jump elsewhere.
             return span.markers.contains { NSLocationInRange(index, $0) }
                 || NSLocationInRange(index, NSRange(location: span.range.location,
                                                     length: span.content.location - span.range.location))
@@ -922,21 +923,22 @@ final class EditorController: NSObject {
         }
         guard let destination else { return false }
 
-        // Le curseur va sur le **contenu**, jamais sur un marqueur : arriver
-        // dans un `[^` rouvrirait la syntaxe au moment précis où l'on vient
-        // lire du texte.
+        // The caret goes to the **content**, never to a marker: landing inside
+        // a `[^` would reopen the syntax at the exact moment text is being
+        // read.
         textView.setSelectedRange(NSRange(location: destination.content.location, length: 0))
         textView.scrollRangeToVisible(destination.range)
         textView.showFindIndicator(for: destination.range)
         return true
     }
 
-    /// `⇥` collé devant la balise fermante saute par-dessus.
+    /// `⇥` placed right before the closing tag jumps over it.
     ///
-    /// C'est la sortie de `**gras|**` sans lever la main, et le pendant exact
-    /// des paires automatiques : elles posent la fermeture, celle-ci la
-    /// franchit. La condition est stricte — le curseur doit être **à la fin du
-    /// contenu**, pas n'importe où dedans — sinon `⇥` cesserait d'indenter.
+    /// This is the exit from `**bold|**` without lifting the hand, and the
+    /// exact counterpart of the auto-pairs: they place the closing marker,
+    /// this crosses it. The condition is strict — the caret must be **at the
+    /// end of the content**, not anywhere inside it — or `⇥` would stop
+    /// indenting.
     private func escapeFormat() -> Bool {
         guard !isSourceMode else { return false }
         let selection = textView.selectedRange()
@@ -956,21 +958,21 @@ final class EditorController: NSObject {
         return true
     }
 
-    /// Supprime la construction entière quand `⌫` tomberait sur un marqueur
-    /// (§2.5). Renvoie `false` pour laisser `NSTextView` faire son travail
-    /// habituel dans tous les autres cas.
+    /// Deletes the entire construct when `⌫` would land on a marker (§2.5).
+    /// Returns `false` to let `NSTextView` do its usual work in every other
+    /// case.
     private func deleteConstruct(at selection: NSRange) -> Bool {
         guard !isSourceMode, selection.location > 0, let storage = textView.textStorage else { return false }
         let target = selection.location - 1
 
-        // La construction visée est celle dont un marqueur contient la position
-        // qui allait être supprimée.
+        // The targeted construct is the one whose marker contains the
+        // position about to be deleted.
         //
-        // Les blocs délimités en sont exclus, et c'est un garde-fou, pas une
-        // simplification : leurs marqueurs sont les deux clôtures d'un bloc
-        // entier. Un `⌫` en fin de ligne ` ```swift ` aurait effacé la clôture
-        // de fermeture dix lignes plus bas, sans que rien ne le laisse voir —
-        // et dans un tableau, il aurait retiré tous les `|` d'un coup.
+        // Delimited blocks are excluded from this, and it is a safeguard, not
+        // a simplification: their markers are the two fences of an entire
+        // block. A `⌫` at the end of a  ```swift  line would have erased the
+        // closing fence ten lines below, without anything showing it — and in
+        // a table, it would have removed every `|` at once.
         guard let index = spans.firstIndex(where: { span in
             span.kind.revealScope != .wholeBlock
                 && span.markers.contains { NSLocationInRange(target, $0) }
@@ -979,32 +981,32 @@ final class EditorController: NSObject {
         let span = spans[index]
         guard span.range.upperBound <= storage.length else { return false }
 
-        // **Une seule édition, et elle passe par `shouldChangeText`.**
+        // **A single edit, and it goes through `shouldChangeText`.**
         //
-        // La version précédente retirait les marqueurs un par un, directement
-        // dans le `NSTextStorage`, entre un `beginUndoGrouping` et un
-        // `endUndoGrouping`. Or ce n'est pas le groupe qui inscrit une
-        // annulation, c'est `shouldChangeText(in:replacementString:)` : le
-        // groupe était donc vide, et `⌘Z` ne rendait pas les `**` effacés. La
-        // pile disait pourtant `canUndo` — l'annulation existait, elle ne
-        // défaisait rien, ce qui est la pire des deux formes.
+        // The previous version removed the markers one by one, directly in
+        // the `NSTextStorage`, between a `beginUndoGrouping` and an
+        // `endUndoGrouping`. But it isn't the group that registers an undo,
+        // it's `shouldChangeText(in:replacementString:)`: the group was
+        // therefore empty, and `⌘Z` did not restore the erased `**`. The
+        // stack still said `canUndo`, though — the undo existed, it just
+        // undid nothing, which is the worst of the two forms.
         //
-        // Remplacer la construction entière par son seul contenu fait le même
-        // travail en une édition, que la vue sait annuler comme une frappe.
+        // Replacing the entire construct with just its content does the same
+        // work in one edit, which the view can undo like a keystroke.
         let kept = withoutMarkers(span, in: storage)
         guard textView.shouldChangeText(in: span.range, replacementString: kept) else { return false }
-        textView.undoManager?.setActionName("Supprimer le format")
+        textView.undoManager?.setActionName("Remove Formatting")
         storage.replaceCharacters(in: span.range, with: kept)
         textView.didChangeText()
 
-        // **Le curseur reste où il était**, moins ce qui vient de disparaître
-        // devant lui.
+        // **The caret stays where it was**, minus what just disappeared in
+        // front of it.
         //
-        // Il allait auparavant au début du contenu. Sur `**mot**`, `⌫` retirait
-        // bien le gras mais renvoyait le curseur trois signes en arrière,
-        // devant le mot : la frappe suivante s'écrivait à gauche de ce qu'on
-        // venait de dé-formater. C'était le défaut le plus fréquent de l'app,
-        // puisqu'il se déclenchait à chaque retrait de format.
+        // It used to go to the start of the content. On `**word**`, `⌫` did
+        // remove the bold, but sent the caret three characters back, in front
+        // of the word: the next keystroke was written to the left of what had
+        // just been unformatted. This was the app's most frequent bug, since
+        // it triggered on every format removal.
         let removed = span.markers.reduce(0) { total, marker in
             total + max(0, min(marker.upperBound, selection.location) - marker.location)
         }
@@ -1015,7 +1017,7 @@ final class EditorController: NSObject {
         return true
     }
 
-    /// Le texte d'une construction, ses marqueurs retirés.
+    /// A construct's text, with its markers removed.
     private func withoutMarkers(_ span: SyntaxSpan, in storage: NSTextStorage) -> String {
         let text = storage.mutableString
         var kept = ""
@@ -1029,20 +1031,19 @@ final class EditorController: NSObject {
                                                    length: span.range.upperBound - cursor))
     }
 
-    // MARK: - Menu slash (§4.5)
+    // MARK: - Slash menu (§4.5)
 
-    /// Ouvre, met à jour ou referme le menu selon ce qui vient d'être tapé.
+    /// Opens, updates or closes the menu depending on what was just typed.
     ///
-    /// Appelé après chaque frappe **et** chaque déplacement du curseur : sortir
-    /// de la ligne doit refermer le menu aussi sûrement qu'effacer le `/`.
+    /// Called after every keystroke **and** every caret move: leaving the line
+    /// must close the menu just as reliably as deleting the `/`.
     ///
-    /// - Parameter mayOpen: vrai seulement quand l'appel suit une **frappe**.
-    ///   Un panneau qui prend les flèches et `⏎` ne doit jamais s'ouvrir tout
-    ///   seul : posé le curseur en fin d'une ligne qui se termine par `/`, on
-    ///   se retrouvait avec un menu ouvert qu'on n'avait pas demandé et un
-    ///   clavier qui ne répondait plus au texte. Un déplacement de curseur peut
-    ///   donc **fermer** le menu ou le suivre s'il est déjà ouvert, jamais
-    ///   l'ouvrir.
+    /// - Parameter mayOpen: true only when the call follows a **keystroke**. A
+    ///   panel that captures arrow keys and `⏎` must never open on its own:
+    ///   placing the caret at the end of a line ending in `/` used to leave an
+    ///   unrequested menu open and a keyboard that no longer responded to the
+    ///   text. A caret move can therefore **close** the menu or follow it when
+    ///   already open, never open it.
     private func refreshSlashMenu(mayOpen: Bool) {
         let selection = textView.selectedRange()
         guard !isSourceMode, selection.length == 0,
@@ -1054,9 +1055,9 @@ final class EditorController: NSObject {
             return
         }
 
-        // `currentLineRange()` coûte la longueur d'une ligne, pas celle du
-        // document : le menu peut donc être réévalué à chaque frappe sans
-        // entamer le budget du §9.
+        // `currentLineRange()` costs the length of one line, not of the
+        // document: the menu can therefore be re-evaluated on every keystroke
+        // without eating into the §9 budget.
         let line = currentLineRange()
         guard let trigger = TypingBehaviour.slashTrigger(
             inLine: storage.mutableString.substring(with: line),
@@ -1073,19 +1074,19 @@ final class EditorController: NSObject {
             return
         }
         slashTrigger = trigger
-        // Le rectangle du curseur est demandé en coordonnées écran, que le
-        // panneau attend telles quelles.
+        // The caret's rectangle is requested in screen coordinates, which the
+        // panel expects as is.
         let caretRect = caretRectOnScreen()
         if !slashMenu.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
             slashTrigger = nil
         }
     }
 
-    /// Aiguille les touches de navigation vers le panneau ouvert.
+    /// Routes navigation keys to the open panel.
     ///
-    /// Un seul l'est à la fois — ils se ferment les uns les autres — donc
-    /// l'ordre n'a pas à trancher de conflit ; il dit simplement lequel
-    /// regarder en premier.
+    /// Only one is open at a time — they close each other — so the order
+    /// doesn't need to resolve a conflict; it simply says which one to check
+    /// first.
     private func handleSlashMenuKey(_ key: EditorTextView.MenuKey) -> Bool {
         if tableSizePicker.isOpen {
             switch key {
@@ -1106,8 +1107,8 @@ final class EditorController: NSObject {
             case .cancel:
                 languageTrigger = nil
                 languagePicker.dismiss()
-            // Les flèches horizontales restent au texte : on est en train
-            // d'écrire un mot, pas de naviguer dans une grille.
+            // Horizontal arrows stay with the text: a word is being typed
+            // here, not navigated in a grid.
             case .left, .right: return false
             }
             return true
@@ -1125,20 +1126,20 @@ final class EditorController: NSObject {
         return true
     }
 
-    // MARK: - Le langage d'un bloc de code
+    // MARK: - A code block's language
 
-    /// Ouvre, met à jour ou referme le sélecteur de langage.
+    /// Opens, updates or closes the language picker.
     ///
-    /// Appelé au même endroit que le menu slash, et pour la même raison : la
-    /// question « le curseur est-il quelque part où l'app peut aider ? » se
-    /// repose à chaque frappe et à chaque déplacement.
+    /// Called at the same point as the slash menu, and for the same reason:
+    /// the question "is the caret somewhere the app can help?" is asked again
+    /// on every keystroke and every move.
     ///
-    /// - Parameter mayOpen: comme pour le menu slash, seule une frappe ouvre.
-    ///   C'était ici le piège le plus violent de l'app : poser le curseur en
-    ///   bout d'une ligne ` ``` ` — au clic, à la flèche, après une recherche —
-    ///   ouvrait la liste des onze langages, qui prenait aussitôt `↑`, `↓` et
-    ///   `⏎`. La flèche du bas ne descendait plus d'une ligne et `⏎` écrivait
-    ///   `swift` au lieu d'un retour, sans que rien n'ait été demandé.
+    /// - Parameter mayOpen: as with the slash menu, only a keystroke opens it.
+    ///   This used to be the app's nastiest pitfall: placing the caret at the
+    ///   end of a  ```  line — by click, by arrow, after a search — opened the
+    ///   list of eleven languages, which immediately captured `↑`, `↓` and
+    ///   `⏎`. The down arrow no longer moved down a line and `⏎` wrote
+    ///   `swift` instead of a newline, without anything having asked for it.
     private func refreshLanguagePicker(mayOpen: Bool) {
         let selection = textView.selectedRange()
         guard !isSourceMode, selection.length == 0, !slashMenu.isOpen,
@@ -1171,15 +1172,15 @@ final class EditorController: NSObject {
         }
     }
 
-    /// Cette ligne est-elle la clôture **ouvrante** d'un bloc de code ?
+    /// Is this line the **opening** fence of a code block?
     ///
-    /// `CodeFence.languageTrigger` ne voit qu'une ligne : elle ne peut pas
-    /// distinguer l'ouverture de la fermeture, et le sélecteur proposait donc
-    /// de nommer un langage sur la clôture **du bas** — où le mot s'écrirait
-    /// après la fermeture, sans aucun sens. La réponse est dans les
-    /// constructions : le bloc qui contient le curseur commence-t-il sur cette
-    /// ligne ? Une clôture qu'aucun bloc ne referme encore est, elle, une
-    /// ouverture qu'on est en train d'écrire.
+    /// `CodeFence.languageTrigger` only sees one line: it cannot distinguish
+    /// the opening from the closing fence, so the picker used to offer to
+    /// name a language on the **bottom** fence — where the word would be
+    /// written after the closing fence, making no sense. The answer lies in
+    /// the constructs: does the block containing the caret start on this
+    /// line? A fence that no block closes yet is, in turn, an opening being
+    /// written right now.
     private func isOpeningFence(line: NSRange) -> Bool {
         for span in spans {
             guard case .codeBlock = span.kind,
@@ -1195,34 +1196,33 @@ final class EditorController: NSObject {
         apply(TypingBehaviour.Edit(range: trigger.range,
                                    replacement: language,
                                    caret: trigger.range.location + language.utf16.count,
-                                   undoName: "Choisir le langage"))
+                                   undoName: "Choose Language"))
     }
 
-    /// Le rectangle du curseur **en coordonnées écran**, pour y ancrer les
-    /// panneaux flottants — ou `.zero` quand il n'y en a pas.
+    /// The caret's rectangle **in screen coordinates**, to anchor the floating
+    /// panels — or `.zero` when there isn't one.
     ///
-    /// `firstRect(forCharacterRange:actualRange:)` appartient à
-    /// `NSTextInputClient` : il répond pour une **session de saisie en cours**,
-    /// et rend un rectangle nul quand il n'y en a pas. C'est le cas dès que la
-    /// commande vient de la barre de menus plutôt que de la frappe — `/tab`
-    /// ouvrait le damier sous le curseur, ⌥⌘T l'ouvrait dans le coin bas-gauche
-    /// de l'écran, à moitié sous le Dock, et rien dans le code ne le laissait
-    /// voir.
+    /// `firstRect(forCharacterRange:actualRange:)` belongs to
+    /// `NSTextInputClient`: it answers for a **session of input in
+    /// progress**, and returns a null rectangle when there isn't one. This is
+    /// the case as soon as the command comes from the menu bar rather than
+    /// from typing — `/tab` opened the grid picker under the caret, ⌥⌘T
+    /// opened it in the bottom-left corner of the screen, half under the
+    /// Dock, with nothing in the code showing it.
     ///
-    /// On ne bricole pas une position de remplacement ici : le `.zero` est
-    /// rendu tel quel, et `FloatingPanel` — seul à connaître sa propre taille —
-    /// décide où se poser faute de curseur.
+    /// No fallback position is improvised here: `.zero` is passed through as
+    /// is, and `FloatingPanel` — the only one that knows its own size —
+    /// decides where to sit when there is no caret.
     private func caretRectOnScreen() -> NSRect {
         textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
     }
 
-    // MARK: - Le damier de tableau
+    // MARK: - The table size grid
 
-    /// Ouvre le damier, en mémorisant ce qu'il devra remplacer.
+    /// Opens the grid, remembering what it will need to replace.
     ///
-    /// Le `/tab` tapé est retiré au moment de l'insertion, pas à l'ouverture :
-    /// refermer le damier sans choisir doit laisser le texte exactement comme
-    /// on l'a tapé.
+    /// The typed `/tab` is removed at insertion time, not at opening: closing
+    /// the grid without choosing must leave the text exactly as it was typed.
     var isTableSizePickerOpen: Bool { tableSizePicker.isOpen }
     var isLanguagePickerOpen: Bool { languagePicker.isOpen }
 
@@ -1230,13 +1230,13 @@ final class EditorController: NSObject {
         pendingTableTrigger = trigger
         slashTrigger = nil
         slashMenu.dismiss()
-        // Un tour de boucle avant de montrer le panneau.
+        // One runloop turn before showing the panel.
         //
-        // Sans ça, l'entrée de menu « Tableau… » n'ouvrait rien : ouvrir un
-        // menu de la barre désactive brièvement l'application, et un panneau
-        // `hidesOnDeactivate` posé pendant ce suivi se refermait aussitôt.
-        // Le chemin du menu slash, lui, marchait — ce qui rendait le défaut
-        // parfaitement invisible aux tests comme à l'essai rapide.
+        // Without it, the "Table…" menu item opened nothing: opening a menu
+        // bar menu briefly deactivates the app, and a `hidesOnDeactivate`
+        // panel shown during that deactivation closed right back. The slash
+        // menu path did work, which made the bug perfectly invisible to both
+        // the tests and a quick try.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let caretRect = caretRectOnScreen()
@@ -1253,15 +1253,15 @@ final class EditorController: NSObject {
             target = textView.selectedRange()
         }
         pendingTableTrigger = nil
-        // Une grille ne peut pas commencer au milieu d'une phrase : si la ligne
-        // porte déjà du texte, le tableau s'écrit en dessous.
+        // A grid cannot start in the middle of a sentence: if the line
+        // already carries text, the table is written below it.
         let line = TypingBehaviour.lineRange(Array(text.utf16), containing: target.location)
         let needsBreak = target.location > line.location
         let prefix = needsBreak ? "\n\n" : ""
         apply(TypingBehaviour.Edit(range: target,
                                    replacement: prefix + markdown,
                                    caret: target.location + prefix.utf16.count + offset,
-                                   undoName: "Insérer un tableau"))
+                                   undoName: "Insert Table"))
     }
 
     private func insertBlock(_ command: SlashCommand) {
@@ -1270,7 +1270,7 @@ final class EditorController: NSObject {
         apply(TypingBehaviour.insertion(of: command, replacing: trigger))
     }
 
-    // MARK: - Réactions
+    // MARK: - Reactions
 
     private func handleTextChange() {
         let edited = lastEditedRange ?? NSRange(location: 0, length: textView.textStorage?.length ?? 0)
@@ -1280,7 +1280,7 @@ final class EditorController: NSObject {
 
         let scope = reparseIncrementally(editedRange: edited, delta: delta)
         render(in: scope)
-        // Maintenant seulement : l'analyse correspond enfin au tampon.
+        // Only now: the parse finally matches the buffer.
         correctCaretInsideTable()
         applyFocus()
         applyTypewriterScrolling()
@@ -1290,24 +1290,26 @@ final class EditorController: NSObject {
     }
 
     @objc private func appearanceChanged() {
-        // Les couleurs déjà posées dans le tampon ont été résolues au moment de
-        // la pose : un changement clair/sombre ne les met pas à jour tout seul.
+        // Colors already applied in the buffer were resolved at the moment
+        // they were applied: a light/dark switch doesn't update them on its
+        // own.
         rerenderEverything()
     }
 
     @objc private func settingsChanged() {
-        // Les fontes sont mises en cache par couple (famille, taille) : changer
-        // de police laisserait l'ancienne dans le cache.
+        // Fonts are cached by (family, size) pair: changing the font would
+        // leave the old one in the cache.
         FontCache.shared.clear()
 
-        // **Ne re-rendre que si le rendu a changé.**
+        // **Only re-render if the rendering actually changed.**
         //
-        // Un seul avis prévient de *tout* changement de réglage, et la réponse
-        // était de réassigner `typography` — dont le `didSet` repasse les
-        // attributs sur le document entier. Basculer le mode focus, qui n'est
-        // qu'un voile posé par-dessus, ou changer l'objectif de mots, qui ne
-        // touche à rien du tout, coûtait donc un rendu complet : plusieurs
-        // centaines de millisecondes sur un long document, pour rien.
+        // A single notification warns of *any* settings change, and the
+        // response used to be reassigning `typography`, whose `didSet`
+        // re-applies attributes across the entire document. Toggling focus
+        // mode, which is only a veil laid over the rendering, or changing the
+        // word-count goal, which touches nothing at all, therefore cost a
+        // full render: several hundred milliseconds on a long document, for
+        // nothing.
         let settings = AppSettings.shared
         if typography != settings.typography || lastColorfulCode != settings.colorfulCodeBlocks {
             lastColorfulCode = settings.colorfulCodeBlocks
@@ -1317,9 +1319,9 @@ final class EditorController: NSObject {
         applyTypewriterScrolling()
     }
 
-    /// La coloration des blocs de code au dernier rendu. Elle ne vit pas dans
-    /// `EditorTypography` — ce n'est pas de la typographie — mais elle change
-    /// le rendu, donc elle décide aussi de le refaire.
+    /// The code block coloring at the last render. It doesn't live in
+    /// `EditorTypography` — it isn't typography — but it changes the
+    /// rendering, so it also decides whether to redo it.
     private var lastColorfulCode = AppSettings.shared.colorfulCodeBlocks
 }
 
@@ -1332,14 +1334,14 @@ extension EditorController: NSTextViewDelegate {
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
-        // Avant tout le reste : le curseur doit être quelque part où l'on peut
-        // écrire, sans quoi le rendu se calculerait pour une position qui
-        // n'existe pas à l'écran.
+        // Before everything else: the caret must be somewhere writable, or
+        // the rendering would be computed for a position that doesn't exist
+        // on screen.
         correctCaretInsideTable()
         updateReveal()
         applyFocus()
         applyTypewriterScrolling()
-        // Un déplacement de curseur ferme ou suit, mais n'ouvre pas : voir
+        // A caret move closes or follows, but never opens: see
         // `refreshSlashMenu(mayOpen:)`.
         refreshSlashMenu(mayOpen: false)
         refreshLanguagePicker(mayOpen: false)
@@ -1352,13 +1354,13 @@ extension EditorController: NSTextViewDelegate {
 
 extension EditorController: NSTextStorageDelegate {
 
-    /// **Enregistre** la plage modifiée, sans rien analyser ici.
+    /// **Records** the modified range, without parsing anything here.
     ///
-    /// C'est le seul endroit qui connaisse précisément ce qui a changé —
-    /// `textDidChange(_:)` ne le dit pas. Mais ré-analyser depuis ce rappel
-    /// reviendrait à rentrer dans une édition en cours de traitement, ce qui
-    /// est le meilleur moyen de corrompre les plages de `NSTextStorage`. On
-    /// note, et on travaille au tour suivant.
+    /// This is the only place that knows precisely what changed —
+    /// `textDidChange(_:)` doesn't say. But re-parsing from this callback
+    /// would mean re-entering an edit that is still being processed, which is
+    /// the surest way to corrupt `NSTextStorage`'s ranges. It is recorded, and
+    /// the work happens on the next turn.
     nonisolated func textStorage(_ textStorage: NSTextStorage,
                                  didProcessEditing editedMask: NSTextStorageEditActions,
                                  range editedRange: NSRange,

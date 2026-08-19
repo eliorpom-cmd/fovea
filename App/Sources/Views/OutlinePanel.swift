@@ -1,40 +1,41 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le plan du document (§4.5).
+/// The document outline (§4.5).
 ///
-/// Un panneau repliable, fermé par défaut. Le §7 demande que l'app disparaisse :
-/// une barre latérale permanente serait exactement ce qu'on cherche à éviter.
-/// Celle-ci s'ouvre sur `⌘⌥0`, sert à naviguer, et se referme.
+/// A collapsible panel, closed by default. §7 asks that the app disappear:
+/// a permanent sidebar would be exactly what that seeks to avoid. This one
+/// opens on `⌘⌥0`, is used to navigate, and closes again.
 @MainActor
 final class OutlinePanel: NSView {
 
-    /// Une entrée du plan.
+    /// An entry in the outline.
     ///
-    /// `Equatable` pour que `update` sache reconnaître un plan qui n'a pas
-    /// bougé : voir le garde qui y évite un `reloadData` par frappe.
+    /// `Equatable` so `update` can recognize an outline that has not moved:
+    /// see the guard below that spares a `reloadData` on every keystroke.
     struct Item: Equatable {
         var title: String
         var level: Int
         var location: Int
     }
 
-    /// Appelé quand l'utilisateur choisit un titre.
+    /// Called when the user picks a heading.
     var onSelect: ((Int) -> Void)?
 
     private let scrollView = NSScrollView()
     private let tableView = NSTableView()
     private var items: [Item] = []
 
-    /// Ce que dit le panneau quand il n'a rien à lister.
+    /// What the panel says when it has nothing to list.
     ///
-    /// Un panneau vide et muet se lit comme une panne : on l'ouvre, il ne
-    /// montre rien, et rien ne dit si le plan est cassé ou si le document n'a
-    /// pas de titre. La phrase répond à la question et donne le geste.
+    /// An empty, silent panel reads as broken: it opens, shows nothing, and
+    /// nothing tells whether the outline is broken or the document simply
+    /// has no headings. The sentence answers the question and gives the
+    /// gesture.
     private let emptyLabel = NSTextField(wrappingLabelWithString:
-        "Aucun titre dans ce document.\n\nLes titres apparaissent ici à mesure "
-        + "que vous les écrivez — « # » en début de ligne, ou ⌘⌃1.")
+        "No headings in this document.\n\nHeadings appear here as you write "
+        + "them — \"#\" at the start of a line, or ⌘⌃1.")
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -51,7 +52,7 @@ final class OutlinePanel: NSView {
         tableView.target = self
         tableView.action = #selector(rowClicked)
 
-        let column = NSTableColumn(identifier: .init("titre"))
+        let column = NSTableColumn(identifier: .init("heading"))
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
 
@@ -59,14 +60,14 @@ final class OutlinePanel: NSView {
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.automaticallyAdjustsContentInsets = false
-        // La barre de titre est transparente et les onglets s'y superposent :
-        // sans ce retrait, les premiers titres passeraient dessous.
+        // The title bar is transparent and the tabs overlap it: without this
+        // inset, the first headings would pass underneath.
         scrollView.contentInsets = NSEdgeInsets(top: Theme.Space.s64, left: 0, bottom: Theme.Space.s12, right: 0)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrollView)
 
-        // Un filet de séparation, pas une bordure : le panneau doit se
-        // distinguer de la colonne de texte sans devenir un objet à part.
+        // A dividing rule, not a border: the panel must stand apart from the
+        // text column without becoming a separate object.
         let separator = NSBox()
         separator.boxType = .custom
         separator.borderWidth = 0
@@ -98,11 +99,11 @@ final class OutlinePanel: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("aucune vue ne vient d'un xib") }
+    required init?(coder: NSCoder) { fatalError("no view comes from a xib") }
 
-    /// Le fond est **résolu à la pose** : un `CGColor` ne suit ni le passage
-    /// clair/sombre, ni — et c'est le cas le plus vicieux — la simple naissance
-    /// d'une vue dans une app dont le thème diffère de celui du système. Voir
+    /// The background is **resolved at layout time**: a `CGColor` follows
+    /// neither a light/dark switch, nor — the trickiest case — the simple
+    /// birth of a view in an app whose theme differs from the system's. See
     /// `applyLayerBackground(_:)`.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -114,8 +115,8 @@ final class OutlinePanel: NSView {
         applyLayerBackground(Theme.NS.window)
     }
 
-    /// Le retrait laissé à la barre de titre, dicté par la fenêtre plutôt que
-    /// deviné : voir `DocumentWindowController.applyTitleBarInset()`.
+    /// The inset left for the title bar, dictated by the window rather than
+    /// guessed: see `DocumentWindowController.applyTitleBarInset()`.
     var topInset: CGFloat = Theme.Space.s64 {
         didSet {
             guard topInset != oldValue else { return }
@@ -127,14 +128,14 @@ final class OutlinePanel: NSView {
 
     private var emptyTop: NSLayoutConstraint!
 
-    // MARK: - Contenu
+    // MARK: - Content
 
-    /// Reconstruit le plan depuis les constructions du document.
+    /// Rebuilds the outline from the document's constructs.
     ///
-    /// Appelée à **chaque frappe** — c'est le prix d'un plan qui suit ce qu'on
-    /// écrit — d'où les deux précautions qui suivent : les marqueurs sont
-    /// calculés une fois pour tous les titres, et la table n'est rechargée que
-    /// si le plan a réellement changé.
+    /// Called on **every keystroke** — the price of an outline that follows
+    /// what is being written — hence the two precautions below: the markers
+    /// are computed once for all headings, and the table only reloads if
+    /// the outline actually changed.
     func update(spans: [SyntaxSpan], text: NSString) {
         let markers = Self.inlineMarkers(of: spans)
         let next = spans
@@ -147,9 +148,9 @@ final class OutlinePanel: NSView {
             }
             .sorted { $0.location < $1.location }
 
-        // Taper dans un paragraphe ne change aucun titre. Recharger quand même
-        // faisait sauter la liste sous les yeux à chaque touche, et défaisait
-        // la ligne mise en évidence pour la reposer aussitôt.
+        // Typing inside a paragraph changes no heading. Reloading anyway
+        // used to make the list jump under the user's eyes on every
+        // keystroke, and undid the highlighted row only to reset it at once.
         guard next != items else { return }
         items = next
         tableView.reloadData()
@@ -157,16 +158,16 @@ final class OutlinePanel: NSView {
         scrollView.isHidden = items.isEmpty
     }
 
-    /// Tous les marqueurs inline du document, triés.
+    /// All the document's inline markers, sorted.
     ///
-    /// # Pourquoi ils sont sortis de `plainText`
+    /// # Why they are pulled out of `plainText`
     ///
-    /// La fonction refiltrait **toute** la liste des constructions pour chaque
-    /// titre : sur deux cents titres dans un document de vingt mille
-    /// constructions, cela faisait quatre millions de tests — à chaque frappe,
-    /// tant que le plan était ouvert. Les marqueurs ne dépendent d'aucun titre
-    /// en particulier : on les calcule une fois, et chaque titre n'y prend plus
-    /// que sa tranche.
+    /// The function used to re-filter the **entire** list of constructs for
+    /// each heading: with two hundred headings in a twenty-thousand-construct
+    /// document, that was four million tests — on every keystroke, for as
+    /// long as the outline stayed open. The markers do not depend on any
+    /// particular heading: they are computed once, and each heading only
+    /// takes its own slice of them.
     static func inlineMarkers(of spans: [SyntaxSpan]) -> [NSRange] {
         spans
             .filter { $0.kind.revealScope == .innermostInline }
@@ -174,23 +175,23 @@ final class OutlinePanel: NSView {
             .sorted { $0.location < $1.location }
     }
 
-    /// Le titre tel qu'on le lit dans le document, marqueurs retirés.
+    /// The heading as it reads in the document, markers removed.
     ///
-    /// Le plan montrait la **source** : `## 2. Les tâches — dans **2 — Notes**`
-    /// s'y lisait avec ses étoiles. C'est la seule liste de l'app qui les
-    /// laissait voir, alors que tout le reste est bâti pour les taire — et dans
-    /// un panneau étroit, les deux étoiles mangent la place du texte qu'on
-    /// cherche.
+    /// The outline used to show the **source**: `## 2. Tasks — in
+    /// **2 — Notes**` would read there with its asterisks. It is the only
+    /// list in the app that let them show, while everything else is built to
+    /// keep them silent — and in a narrow panel, the two asterisks eat into
+    /// the space of the text being searched for.
     static func plainText(of content: NSRange, spans: [SyntaxSpan], text: NSString) -> String {
         plainText(of: content, markers: inlineMarkers(of: spans), text: text)
     }
 
-    /// Version de référence, par balayage.
+    /// Reference version, by scanning.
     ///
-    /// Conservée sur le modèle de `RevealPolicy.revealedIndicesByScan` : elle
-    /// est la définition littérale — « retirer de ce titre les marqueurs qui le
-    /// traversent » — et `OutlinePanelTests` s'en sert pour vérifier que la
-    /// version rapide rend exactement le même texte.
+    /// Kept on the model of `RevealPolicy.revealedIndicesByScan`: it is the
+    /// literal definition — "strip from this heading the markers that run
+    /// through it" — and `OutlinePanelTests` uses it to verify that the fast
+    /// version renders exactly the same text.
     static func plainTextByScan(of content: NSRange, spans: [SyntaxSpan], text: NSString) -> String {
         let cuts = spans
             .filter { $0.kind.revealScope == .innermostInline
@@ -214,9 +215,9 @@ final class OutlinePanel: NSView {
     }
 
     static func plainText(of content: NSRange, markers: [NSRange], text: NSString) -> String {
-        // Le premier marqueur qui peut toucher le contenu, par dichotomie : la
-        // liste est triée, et un titre en bas d'un long document n'a aucune
-        // raison de parcourir tous ceux qui le précèdent.
+        // The first marker that can touch the content, by binary search: the
+        // list is sorted, and a heading near the bottom of a long document
+        // has no reason to scan all the ones before it.
         var low = 0
         var high = markers.count
         while low < high {
@@ -240,15 +241,15 @@ final class OutlinePanel: NSView {
         return result.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Met en évidence le titre dans lequel se trouve le curseur.
+    /// Highlights the heading the caret is currently within.
     func highlight(caret: Int) {
         guard let index = items.lastIndex(where: { $0.location <= caret }) else {
             tableView.deselectAll(nil)
             return
         }
-        // Déjà en place : sans ce garde, chaque déplacement de curseur
-        // redemandait un défilement, et la liste sautillait pendant qu'on
-        // écrivait — y compris quand on ne quittait pas la même section.
+        // Already in place: without this guard, every caret move would
+        // request a scroll again, and the list would jitter while typing —
+        // even while staying within the same section.
         guard tableView.selectedRow != index else { return }
         tableView.selectRowIndexes([index], byExtendingSelection: false)
         tableView.scrollRowToVisible(index)
@@ -269,7 +270,7 @@ extension OutlinePanel: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { items.count }
 
-    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    /// The selection is gray, not blue. See `ListRowView`.
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         ListRowView()
     }
@@ -277,20 +278,19 @@ extension OutlinePanel: NSTableViewDataSource, NSTableViewDelegate {
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let item = items[row]
         let label = NSTextField(labelWithString: item.title)
-        // Le niveau se lit au retrait et à la graisse, pas à la taille : six
-        // tailles dans un panneau de 200 points rendraient les titres profonds
-        // illisibles.
+        // The level reads through indentation and weight, not size: six
+        // sizes in a 200-point panel would make deep headings illegible.
         label.font = .systemFont(ofSize: 12, weight: item.level <= 2 ? .medium : .regular)
         label.textColor = item.level <= 2 ? Theme.NS.label : Theme.NS.labelSecondary
         label.lineBreakMode = .byTruncatingTail
         label.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
-        // §8 : le niveau se lit au retrait et à la graisse, deux choses qu'un
-        // lecteur d'écran ne voit pas. Il faut donc le dire.
+        // §8: the level reads through indentation and weight, two things a
+        // screen reader cannot see. It must therefore be spoken.
         container.setAccessibilityElement(true)
         container.setAccessibilityRole(.staticText)
-        container.setAccessibilityLabel("Titre, niveau \(item.level), \(item.title)")
+        container.setAccessibilityLabel("Heading, level \(item.level), \(item.title)")
         container.addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: container.leadingAnchor,

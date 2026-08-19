@@ -1,21 +1,21 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
-/// Écrire dans un tableau sans jamais voir ses `|` (§2.6).
+/// Writing into a table without ever seeing its `|` (§2.6).
 ///
-/// La grille ne se replie plus sous le curseur. Le prix de ce choix, ce sont
-/// les positions du tampon que plus rien n'affiche : les `|`, les blancs de
-/// remplissage, la ligne `|---|`. Ces tests vérifient qu'aucune d'elles n'est
-/// atteignable — c'est la seule chose qui rende le reste utilisable.
+/// The grid no longer collapses under the caret. The price of that choice is
+/// the buffer positions that nothing displays anymore: the `|`, the padding
+/// spaces, the `|---|` delimiter row. These tests check that none of them is
+/// reachable: that is the only thing that makes the rest usable.
 final class TableEditingTests: XCTestCase {
 
     private let source = """
-    | Colonne A | Colonne B | C |
+    | Column A | Column B | C |
     |---|:---:|---:|
-    | une | deux | trois |
-    | quatre |  | six |
+    | one | two | three |
+    | four |  | six |
     """
 
     private func table(_ text: String? = nil) throws -> MarkdownTable {
@@ -23,12 +23,12 @@ final class TableEditingTests: XCTestCase {
         return try XCTUnwrap(MarkdownTable.scan(utf16: utf16, in: NSRange(location: 0, length: utf16.count)))
     }
 
-    // MARK: - L'invariant
+    // MARK: - The invariant
 
-    /// **Aucune position du tableau ne laisse le curseur hors d'une cellule.**
+    /// **No position in the table leaves the caret outside a cell.**
     ///
-    /// C'est ce qu'une interception commande par commande ne saurait démontrer,
-    /// et c'est pour ça que la correction se fait après coup, en un seul point.
+    /// This is something a command-by-command interception could never prove,
+    /// which is why the correction happens after the fact, at a single point.
     func testEveryPositionEndsUpInACell() throws {
         let grid = try table()
         let length = (source as NSString).length
@@ -37,7 +37,7 @@ final class TableEditingTests: XCTestCase {
             for forward in [true, false] {
                 let corrected = TableEditing.correctedCaret(caret, in: grid, forward: forward) ?? caret
                 XCTAssertTrue(TableEditing.isEditable(corrected, in: grid),
-                              "Position \(caret) (sens \(forward ? "→" : "←")) → \(corrected), hors cellule")
+                              "Position \(caret) (direction \(forward ? "→" : "←")) → \(corrected), outside a cell")
             }
         }
     }
@@ -49,8 +49,8 @@ final class TableEditingTests: XCTestCase {
         XCTAssertNil(TableEditing.correctedCaret(cell.upperBound, in: grid, forward: false))
     }
 
-    /// Une cellule vide est une plage de longueur nulle. Si sa seule position
-    /// n'était pas valide, on ne pourrait jamais remplir un tableau neuf.
+    /// An empty cell is a zero-length range. If its only position
+    /// weren't valid, a new table could never be filled in.
     func testAnEmptyCellIsStillAPlaceToWrite() throws {
         let grid = try table()
         let empty = try XCTUnwrap(TableEditing.cellContents(of: grid).first { $0.length == 0 })
@@ -58,32 +58,32 @@ final class TableEditingTests: XCTestCase {
         XCTAssertNil(TableEditing.correctedCaret(empty.location, in: grid, forward: true))
     }
 
-    // MARK: - Le sens du déplacement
+    // MARK: - Direction of movement
 
     func testMovingForwardLandsOnTheNextCellNotThePrevious() throws {
         let grid = try table()
         let contents = TableEditing.cellContents(of: grid)
-        // Juste après la fin de la première cellule : dans le `|` qui suit.
+        // Right after the end of the first cell: inside the `|` that follows.
         let inSeparator = contents[0].upperBound + 1
         XCTAssertEqual(TableEditing.correctedCaret(inSeparator, in: grid, forward: true), contents[1].location)
         XCTAssertEqual(TableEditing.correctedCaret(inSeparator, in: grid, forward: false), contents[0].upperBound)
     }
 
-    /// La ligne de délimitation est invisible mais reste une ligne : une flèche
-    /// vers le bas depuis l'en-tête y tombe. Elle doit en ressortir **dans la
-    /// même colonne**, sinon la colonne qu'on suivait des yeux est perdue à
-    /// chaque traversée.
+    /// The delimiter row is invisible but is still a row: pressing the down
+    /// arrow from the header row lands on it. It must come back out **in the
+    /// same column**, otherwise the column being tracked visually is lost on
+    /// every crossing.
     func testTheDelimiterLineKeepsTheColumn() throws {
         let grid = try table()
         let secondColumn = try XCTUnwrap(grid.delimiterCells.indices.contains(1) ? grid.delimiterCells[1] : nil)
         let corrected = TableEditing.correctedCaret(secondColumn.location, in: grid, forward: true)
 
         let position = try XCTUnwrap(TableEditing.position(of: try XCTUnwrap(corrected), in: grid))
-        XCTAssertEqual(position.column, 1, "On doit ressortir dans la colonne où l'on est entré")
-        XCTAssertEqual(position.row, 1, "…et dans la ligne d'après, pas dans l'en-tête")
+        XCTAssertEqual(position.column, 1, "Must come back out in the column that was entered")
+        XCTAssertEqual(position.row, 1, "…and in the row after, not in the header row")
     }
 
-    // MARK: - Tabulation et retour
+    // MARK: - Tab and return
 
     func testTabWalksThroughTheCellsInOrder() throws {
         let grid = try table()
@@ -95,7 +95,7 @@ final class TableEditingTests: XCTestCase {
             visited.append(next)
             caret = next.location
         }
-        XCTAssertEqual(visited, Array(contents.dropFirst()), "⇥ doit parcourir toutes les cellules, dans l'ordre")
+        XCTAssertEqual(visited, Array(contents.dropFirst()), "⇥ must walk through every cell, in order")
     }
 
     func testShiftTabWalksBack() throws {
@@ -105,14 +105,14 @@ final class TableEditingTests: XCTestCase {
         XCTAssertEqual(TableEditing.neighbouringCell(from: last.location, in: grid, forward: false),
                        contents[contents.count - 2])
         XCTAssertNil(TableEditing.neighbouringCell(from: contents[0].location, in: grid, forward: false),
-                     "Reculer depuis la première cellule ne mène nulle part")
+                     "Moving backward from the first cell leads nowhere")
     }
 
     func testTabPastTheLastCellHasNowhereToGo() throws {
         let grid = try table()
         let last = try XCTUnwrap(TableEditing.cellContents(of: grid).last)
         XCTAssertNil(TableEditing.neighbouringCell(from: last.location, in: grid, forward: true),
-                     "L'appelant doit alors ajouter une ligne")
+                     "The caller must then add a row")
     }
 
     func testReturnGoesDownInTheSameColumn() throws {
@@ -128,7 +128,7 @@ final class TableEditingTests: XCTestCase {
         XCTAssertNil(TableEditing.cellBelow(last.location, in: grid))
     }
 
-    // MARK: - Ajouter une ligne
+    // MARK: - Adding a row
 
     func testTheAddedRowIsReadBackAsARowOfTheSameTable() throws {
         let grid = try table()
@@ -142,8 +142,8 @@ final class TableEditingTests: XCTestCase {
         XCTAssertEqual(reparsed.columnCount, grid.columnCount)
     }
 
-    /// Le §5 vaut ici aussi : un tableau écrit sans `|` de bord ne doit pas en
-    /// gagner un parce qu'on lui a ajouté une ligne.
+    /// §5 applies here too: a table written without border `|` must not
+    /// gain one just because a row was added to it.
     func testTheAddedRowFollowsTheStyleOfTheTable() throws {
         let borderless = """
         a | b
@@ -152,7 +152,7 @@ final class TableEditingTests: XCTestCase {
         """
         let grid = try table(borderless)
         let row = try XCTUnwrap(TableEditing.newRow(below: grid.rows.count - 1, in: grid))
-        XCTAssertFalse(row.text.contains("|\n"), "Aucun bord gauche ne doit apparaître")
+        XCTAssertFalse(row.text.contains("|\n"), "No left border should appear")
         XCTAssertFalse(row.text.hasPrefix("\n|"))
     }
 
@@ -162,39 +162,39 @@ final class TableEditingTests: XCTestCase {
         let inserted = (row.text as NSString)
         let index = row.caret
         XCTAssertLessThanOrEqual(index, inserted.length)
-        // Le curseur doit être entouré de blancs : c'est une cellule vide.
+        // The caret must be surrounded by spaces: it's an empty cell.
         XCTAssertEqual(inserted.substring(with: NSRange(location: index - 1, length: 1)), " ")
     }
 
-    // MARK: - Ce qui protège la grille
+    // MARK: - What protects the grid
 
     func testBackspaceAtACellStartIsRecognised() throws {
         let grid = try table()
         let cell = try XCTUnwrap(TableEditing.cellContents(of: grid).dropFirst().first)
         XCTAssertTrue(TableEditing.isAtCellStart(cell.location, in: grid))
         XCTAssertFalse(TableEditing.isAtCellStart(cell.upperBound, in: grid),
-                       "En fin de cellule, `⌫` doit effacer normalement")
+                       "At the end of a cell, `⌫` must delete normally")
     }
 }
 
-/// Les mêmes règles, mais **dans l'éditeur réel**.
+/// The same rules, but **in the real editor**.
 ///
-/// Les tests ci-dessus vérifient la décision ; ceux-ci vérifient qu'elle arrive
-/// jusqu'au curseur. C'est une distinction qui compte : la correction est
-/// branchée sur `textViewDidChangeSelection`, donc sur un rappel d'AppKit qu'on
-/// ne peut pas supposer — il faut le déclencher.
+/// The tests above check the decision; these check that it reaches the
+/// caret. This distinction matters: the correction is wired into
+/// `textViewDidChangeSelection`, an AppKit callback that cannot be assumed
+/// to fire on its own: it has to be triggered.
 @MainActor
 final class TableEditingInTheEditorTests: XCTestCase {
 
     private let source = """
-    Avant.
+    Before.
 
-    | Colonne A | Colonne B |
+    | Column A | Column B |
     |---|---|
-    | une | deux |
-    | trois | quatre |
+    | one | two |
+    | three | four |
 
-    Après.
+    After.
     """
 
     private func editor() -> EditorController {
@@ -210,27 +210,27 @@ final class TableEditingInTheEditorTests: XCTestCase {
         for span in controller.spans {
             if case .table(let table?) = span.kind { return table }
         }
-        throw XCTSkip("aucun tableau analysé")
+        throw XCTSkip("no table parsed")
     }
 
-    /// Le curseur posé dans un `|` doit ressortir dans une cellule, tout seul.
+    /// A caret placed inside a `|` must come back out inside a cell, alone.
     func testTheCaretNeverRestsInsideTheHiddenPipes() throws {
         let controller = editor()
         let table = try grid(controller)
         let cells = TableEditing.cellContents(of: table)
 
-        // Entre la fin de la première cellule et le début de la deuxième, il n'y
-        // a que du masqué : `|` et blancs de remplissage.
+        // Between the end of the first cell and the start of the second, there
+        // is only hidden content: `|` and padding spaces.
         for caret in (cells[0].upperBound + 1)..<cells[1].location {
             controller.textView.setSelectedRange(NSRange(location: caret, length: 0))
             let landed = controller.textView.selectedRange().location
             XCTAssertTrue(TableEditing.isEditable(landed, in: table),
-                          "Posé en \(caret), le curseur s'est arrêté en \(landed), hors cellule")
+                          "Placed at \(caret), the caret stopped at \(landed), outside a cell")
         }
     }
 
-    /// Et il ne bouge pas ailleurs : la correction ne doit toucher qu'aux
-    /// tableaux, pas au reste du document.
+    /// And it doesn't move elsewhere: the correction must only affect
+    /// tables, not the rest of the document.
     func testTheCaretIsLeftAloneOutsideTables() {
         let controller = editor()
         for caret in [0, 3, 6] {
@@ -239,8 +239,8 @@ final class TableEditingInTheEditorTests: XCTestCase {
         }
     }
 
-    /// Une sélection est un geste en cours : on ne la déplace pas sous la main
-    /// de l'utilisateur, même si elle traverse des `|`.
+    /// A selection is a gesture in progress: it must not be moved out from
+    /// under the user, even if it crosses `|`.
     func testASelectionAcrossTheGridIsNotCorrected() throws {
         let controller = editor()
         let table = try grid(controller)
@@ -258,9 +258,9 @@ final class TableEditingInTheEditorTests: XCTestCase {
         let cells = TableEditing.cellContents(of: table)
 
         controller.textView.setSelectedRange(NSRange(location: cells[0].location, length: 0))
-        XCTAssertTrue(controller.textView.handlesIndent?(false) ?? false, "⇥ doit être pris en charge")
+        XCTAssertTrue(controller.textView.handlesIndent?(false) ?? false, "⇥ must be handled")
         XCTAssertEqual(controller.textView.selectedRange(), cells[1],
-                       "Le contenu de la cellule d'arrivée est sélectionné : on remplace en tapant")
+                       "The content of the destination cell is selected: typing replaces it")
     }
 
     func testReturnGoesToTheRowBelowWithoutBreakingTheTable() throws {
@@ -270,15 +270,15 @@ final class TableEditingInTheEditorTests: XCTestCase {
 
         controller.textView.setSelectedRange(NSRange(location: header.location, length: 0))
         XCTAssertTrue(controller.textView.handlesNewline?() ?? false)
-        XCTAssertEqual(controller.text, source, "⏎ dans un tableau ne doit rien insérer")
+        XCTAssertEqual(controller.text, source, "⏎ inside a table must not insert anything")
         XCTAssertEqual(controller.textView.selectedRange(), table.rows[1].cells[1].content)
     }
 
-    /// `⏎` sur la dernière ligne **sort du tableau**.
+    /// `⏎` on the last row **leaves the table**.
     ///
-    /// C'est `⇥` qui ajoute une ligne. Si `⏎` le faisait aussi, il n'existerait
-    /// aucun moyen de quitter un tableau par la touche qu'on essaie en premier :
-    /// chaque tentative de sortie en aurait ajouté une.
+    /// It's `⇥` that adds a row. If `⏎` did too, there would be no way to
+    /// leave a table using the key one tries first: every attempt to exit
+    /// would have added another row.
     func testReturnOnTheLastRowLeavesTheTable() throws {
         let controller = editor()
         let table = try grid(controller)
@@ -287,13 +287,13 @@ final class TableEditingInTheEditorTests: XCTestCase {
         controller.textView.setSelectedRange(NSRange(location: last.location, length: 0))
         XCTAssertTrue(controller.textView.handlesNewline?() ?? false)
 
-        XCTAssertEqual(controller.text, source, "Sortir ne doit rien écrire quand il y a déjà une ligne après")
+        XCTAssertEqual(controller.text, source, "Leaving must not write anything when there is already a line after")
         XCTAssertGreaterThan(controller.textView.selectedRange().location, table.rows.last!.line.upperBound - 1)
         XCTAssertNil(TableEditing.position(of: controller.textView.selectedRange().location, in: table),
-                     "Le curseur doit être hors du tableau")
+                     "The caret must be outside the table")
     }
 
-    /// Et quand le tableau finit le document, il faut bien lui écrire une sortie.
+    /// And when the table ends the document, an exit line has to be written for it.
     func testReturnLeavesATableThatEndsTheDocument() throws {
         let controller = editor()
         controller.setText("| a | b |\n|---|---|\n| c | d |")
@@ -302,36 +302,36 @@ final class TableEditingInTheEditorTests: XCTestCase {
 
         controller.textView.setSelectedRange(NSRange(location: last.location, length: 0))
         XCTAssertTrue(controller.textView.handlesNewline?() ?? false)
-        XCTAssertTrue(controller.text.hasSuffix("\n\n"), "Une ligne où écrire doit apparaître")
+        XCTAssertTrue(controller.text.hasSuffix("\n\n"), "A line to write into must appear")
         XCTAssertNil(TableEditing.position(of: controller.textView.selectedRange().location, in: table))
     }
 
-    /// Le mot tapé doit rester **dans sa cellule**.
+    /// The typed word must stay **inside its cell**.
     ///
-    /// La correction du curseur s'exécute au changement de sélection, qui
-    /// précède la ré-analyse : elle rangeait donc le curseur d'après la
-    /// géométrie d'**avant** la frappe. Dans une cellule vide, la première
-    /// lettre posée envoyait le curseur dans la cellule suivante, et le mot se
-    /// répandait sur toute la ligne — « Nom » donnait `|  N| om |  |`.
+    /// The caret correction runs on selection change, which precedes
+    /// re-parsing: it therefore placed the caret according to the geometry
+    /// from **before** the keystroke. In an empty cell, the first letter
+    /// typed sent the caret into the next cell, and the word spread across
+    /// the whole row: typing "Amy" produced `|  A| my |  |`.
     func testAWordTypedInAnEmptyCellStaysInIt() throws {
         let controller = editor()
         controller.setText("|  |  |  |\n|---|---|---|\n|  |  |  |\n")
         let table = try grid(controller)
-        // Là où l'insertion d'un tableau neuf pose le curseur.
+        // Where inserting a new table places the caret.
         let first = TableEditing.cellContents(of: table)[0]
         controller.textView.setSelectedRange(NSRange(location: first.location, length: 0))
 
-        for letter in ["N", "o", "m"] {
+        for letter in ["A", "m", "y"] {
             controller.textView.insertText(letter, replacementRange: controller.textView.selectedRange())
         }
 
         let firstRow = controller.text.components(separatedBy: "\n")[0]
-        XCTAssertEqual(firstRow, "| Nom |  |  |",
-                       "Les trois lettres doivent tenir dans la première cellule")
+        XCTAssertEqual(firstRow, "| Amy |  |  |",
+                       "The three letters must fit in the first cell")
     }
 
-    /// La même chose là où une cellule a déjà du contenu : on écrit à la suite,
-    /// sans sauter de colonne.
+    /// The same thing where a cell already has content: typing continues
+    /// there, without jumping to another column.
     func testTypingContinuesInsideAFilledCell() throws {
         let controller = editor()
         let table = try grid(controller)
@@ -340,11 +340,11 @@ final class TableEditingInTheEditorTests: XCTestCase {
 
         controller.textView.insertText("X", replacementRange: controller.textView.selectedRange())
 
-        XCTAssertTrue(controller.text.contains("| Colonne AX |"), controller.text)
+        XCTAssertTrue(controller.text.contains("| Column AX |"), controller.text)
     }
 
-    /// `⌫` au début d'une cellule mangerait le `|` qui précède, donc fusionnerait
-    /// deux colonnes. Il recule d'une cellule à la place.
+    /// `⌫` at the start of a cell would eat the `|` that precedes it, thus
+    /// merging two columns. It moves back a cell instead.
     func testBackspaceAtACellStartDoesNotBreakTheGrid() throws {
         let controller = editor()
         let table = try grid(controller)
@@ -353,7 +353,7 @@ final class TableEditingInTheEditorTests: XCTestCase {
         controller.textView.setSelectedRange(NSRange(location: second.location, length: 0))
         controller.textView.deleteBackward(nil)
 
-        XCTAssertEqual(controller.text, source, "Rien ne doit être supprimé")
+        XCTAssertEqual(controller.text, source, "Nothing should be deleted")
         XCTAssertEqual(controller.textView.selectedRange().location,
                        TableEditing.cellContents(of: table)[0].upperBound)
     }

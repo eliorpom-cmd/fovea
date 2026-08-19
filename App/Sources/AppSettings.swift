@@ -1,20 +1,20 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 import Observation
 
-/// Les préférences, adossées à `UserDefaults`.
+/// The preferences, backed by `UserDefaults`.
 ///
-/// Le §4.7 les répartit en trois onglets ; elles vivent toutes ici, dans un
-/// seul objet observable, pour qu'un changement se propage à toutes les
-/// fenêtres ouvertes sans qu'aucune n'ait à s'abonner à quoi que ce soit.
+/// §4.7 splits them across three tabs; they all live here, in a single
+/// observable object, so a change propagates to every open window without
+/// any of them having to subscribe to anything.
 @MainActor
 @Observable
 final class AppSettings {
 
     static let shared = AppSettings()
 
-    // MARK: - Apparence
+    // MARK: - Appearance
 
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
@@ -22,9 +22,9 @@ final class AppSettings {
 
         var label: String {
             switch self {
-            case .system: "Système"
-            case .light: "Clair"
-            case .dark: "Sombre"
+            case .system: "System"
+            case .light: "Light"
+            case .dark: "Dark"
             }
         }
 
@@ -44,26 +44,26 @@ final class AppSettings {
         }
     }
 
-    /// `nil` = police système, c'est-à-dire SF Pro (§7).
+    /// `nil` = system font, i.e. SF Pro (§7).
     var bodyFontName: String? { didSet { store(bodyFontName, .bodyFontName); notify() } }
     var monoFontName: String? { didSet { store(monoFontName, .monoFontName); notify() } }
     var bodySize: Double = 16 { didSet { store(bodySize, .bodySize); notify() } }
     var lineHeightMultiple: Double = 1.5 { didSet { store(lineHeightMultiple, .lineHeight); notify() } }
     var columnWidthInCharacters: Int = 68 { didSet { store(columnWidthInCharacters, .columnWidth); notify() } }
 
-    /// §4.3 : le seul endroit de l'app où la couleur est autorisée, et
-    /// seulement sur demande explicite.
+    /// §4.3: the only place in the app where color is allowed, and only on
+    /// explicit request.
     var colorfulCodeBlocks = false { didSet { store(colorfulCodeBlocks, .colorfulCode); notify() } }
 
-    // MARK: - Édition
+    // MARK: - Editing
 
     enum FocusUnit: String, CaseIterable, Identifiable {
         case sentence, paragraph
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .sentence: "La phrase"
-            case .paragraph: "Le paragraphe"
+            case .sentence: "Sentence"
+            case .paragraph: "Paragraph"
             }
         }
     }
@@ -71,27 +71,27 @@ final class AppSettings {
     var focusMode = false { didSet { store(focusMode, .focusMode); notify() } }
     var focusUnit: FocusUnit = .sentence { didSet { store(focusUnit.rawValue, .focusUnit); notify() } }
 
-    /// **Désactivé par défaut** : le défilement normal est le défaut (§4.5).
+    /// **Disabled by default**: normal scrolling is the default (§4.5).
     var typewriterMode = false { didSet { store(typewriterMode, .typewriter); notify() } }
 
     var showStatistics = true { didSet { store(showStatistics, .statistics); notify() } }
     var sessionWordGoal: Int = 0 { didSet { store(sessionWordGoal, .wordGoal); notify() } }
 
-    /// Où la touche `/` ouvre le menu d'insertion de bloc (§4.5).
+    /// Where the `/` key opens the block insertion menu (§4.5).
     ///
-    /// Trois états et pas un interrupteur : « en début de ligne » était le
-    /// comportement d'origine, et c'est celui qui privait du menu les gens à qui
-    /// il sert le plus. « Partout » est donc le défaut, et le réglage reste pour
-    /// qui écrit des chemins de fichiers à longueur de journée.
+    /// Three states rather than a toggle: "at the start of a line" was the
+    /// original behavior, and it's the one that denied the menu to the people
+    /// it serves the most. "Everywhere" is therefore the default, and the
+    /// setting remains for anyone who writes file paths all day long.
     enum SlashMenuScope: String, CaseIterable, Identifiable {
         case off, lineStart, anywhere
         var id: String { rawValue }
 
         var label: String {
             switch self {
-            case .off: "Jamais"
-            case .lineStart: "En début de ligne"
-            case .anywhere: "Partout"
+            case .off: "Never"
+            case .lineStart: "At the Start of a Line"
+            case .anywhere: "Everywhere"
             }
         }
     }
@@ -101,10 +101,10 @@ final class AppSettings {
     var slashMenuScope: SlashMenuScope = .anywhere { didSet { store(slashMenuScope.rawValue, .slashMenuScope) } }
     var assetsFolderName = AppConfig.defaultAssetsFolderName { didSet { store(assetsFolderName, .assetsFolder) } }
 
-    // MARK: - Diffusion aux fenêtres
+    // MARK: - Broadcasting to windows
 
-    /// Émise quand un réglage qui touche au rendu change. Les contrôleurs
-    /// d'édition s'y abonnent, plutôt que d'observer chaque propriété.
+    /// Posted when a setting that affects rendering changes. Editing
+    /// controllers subscribe to it, rather than observing each property.
     static let didChange = Notification.Name("foveaSettingsDidChange")
 
     private func notify() {
@@ -120,7 +120,7 @@ final class AppSettings {
                          columnWidthInCharacters: columnWidthInCharacters)
     }
 
-    // MARK: - Persistance
+    // MARK: - Persistence
 
     private enum Key: String {
         case appearance, bodyFontName, monoFontName, bodySize, lineHeight, columnWidth
@@ -129,8 +129,8 @@ final class AppSettings {
     }
 
     private let defaults = UserDefaults.standard
-    /// Empêche les `didSet` de réécrire — et de diffuser — pendant le
-    /// chargement initial.
+    /// Prevents `didSet` from writing back — and broadcasting — during
+    /// initial loading.
     private var isLoaded = false
 
     private init() {
@@ -153,8 +153,9 @@ final class AppSettings {
         if let raw = read(.slashMenuScope) as? String, let value = SlashMenuScope(rawValue: raw) {
             slashMenuScope = value
         } else if read(.slashMenu) as? Bool == false {
-            // L'ancien interrupteur, respecté : qui avait coupé le menu ne doit
-            // pas le voir revenir parce que le réglage a changé de forme.
+            // The old toggle, honored: whoever had turned the menu off
+            // shouldn't see it come back just because the setting changed
+            // shape.
             slashMenuScope = .off
         }
         assetsFolderName = read(.assetsFolder) as? String ?? AppConfig.defaultAssetsFolderName

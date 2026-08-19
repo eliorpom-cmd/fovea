@@ -1,21 +1,21 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// Les items de liste qui tiennent sur **plusieurs lignes de source**.
+/// List items that span **multiple lines of source**.
 ///
-/// Un `.md` écrit à la main est presque toujours replié autour de 80 signes :
-/// un item de trois phrases occupe donc trois lignes, dont deux ne portent pas
-/// de puce. Ces lignes-là n'avaient aucun style de bloc — la plage du span
-/// s'arrête à la première ligne, pour que la puce ne réapparaisse pas quand le
-/// curseur est trois lignes plus bas — et retombaient au retrait zéro : elles se
-/// dessinaient **à gauche de leur propre puce**, avec leur indentation de source
-/// en blanc devant. Sur le document d'accueil du dossier `essais/`, c'était le
-/// premier défaut qu'on voyait.
+/// A hand-written `.md` file is almost always wrapped around 80 characters:
+/// a three-sentence item therefore spans three lines, two of which carry no
+/// bullet. Those lines had no block style at all — the span's range stops at
+/// the first line, so the bullet doesn't reappear when the caret is three
+/// lines below — and fell back to zero indent: they were drawn **to the
+/// left of their own bullet**, with their source indentation showing as
+/// blank space in front. On the welcome document in the `drafts/` folder,
+/// that was the first bug you'd see.
 ///
-/// Comme pour les tableaux, on ne vérifie pas une intention mais des abscisses.
+/// As with tables, what's checked here is not an intention but x-coordinates.
 @MainActor
 final class ListRenderingTests: XCTestCase {
 
@@ -23,66 +23,67 @@ final class ListRenderingTests: XCTestCase {
 
     func testAContinuationLineSitsUnderTheItemText() throws {
         let source = """
-        - Une première phrase.
-          Sa continuation.
+        - A first sentence.
+          Its continuation.
         """
         let view = try render(source)
-        let first = try caretX(atFirstOccurrenceOf: "Une", in: source, view: view)
-        let next = try caretX(atFirstOccurrenceOf: "Sa", in: source, view: view)
+        let first = try caretX(atFirstOccurrenceOf: "A first", in: source, view: view)
+        let next = try caretX(atFirstOccurrenceOf: "Its", in: source, view: view)
         XCTAssertEqual(next, first, accuracy: tolerance,
-                       "La continuation tombe sous le texte de l'item, pas sous la marge")
+                       "The continuation falls under the item's text, not under the margin")
     }
 
     func testAContinuationLineIsIndentedPastTheBullet() throws {
-        // L'assertion complémentaire : avant le correctif, la continuation était
-        // non seulement désalignée mais **plus à gauche que la puce**.
+        // The complementary assertion: before the fix, the continuation
+        // wasn't just misaligned but **further left than the bullet**.
         let source = """
-        - Une première phrase.
-          Sa continuation.
+        - A first sentence.
+          Its continuation.
         """
         let view = try render(source)
         let bullet = try caretX(at: 0, view: view)
-        let next = try caretX(atFirstOccurrenceOf: "Sa", in: source, view: view)
-        XCTAssertGreaterThan(next, bullet, "La continuation reste à droite de la puce")
+        let next = try caretX(atFirstOccurrenceOf: "Its", in: source, view: view)
+        XCTAssertGreaterThan(next, bullet, "The continuation stays to the right of the bullet")
     }
 
     func testTheSourceIndentOfAContinuationIsMasked() throws {
-        // Les deux blancs sont de la syntaxe : ce sont eux qui gardent la phrase
-        // dans la puce. Visibles, ils s'ajoutaient au retrait et décalaient la
-        // continuation d'un cran de trop.
-        let source = "- Un item.\n  Sa suite.\n"
+        // The two spaces are syntax: they're what keeps the sentence inside
+        // the bullet. Left visible, they added to the indent and pushed the
+        // continuation one notch too far.
+        let source = "- An item.\n  Its sequel.\n"
         let view = try render(source)
         let storage = try XCTUnwrap(view.textStorage)
-        XCTAssertTrue(MarkerMask.isMasked(storage, at: 11), "Le premier blanc de continuation")
-        XCTAssertTrue(MarkerMask.isMasked(storage, at: 12), "Le second blanc de continuation")
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 13), "Le « S » de « Sa » est du contenu")
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: 11), "The first continuation space")
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: 12), "The second continuation space")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 13), "The first character of the continuation is content")
     }
 
     func testABlankLineInsideAnItemKeepsItsHeight() throws {
-        // Un item en deux paragraphes. La ligne vide ne porte que des blancs :
-        // la masquer effondrerait sa hauteur et souderait les deux blocs.
-        let source = "- Premier paragraphe.\n\n  Second paragraphe.\n"
+        // An item spanning two paragraphs. The blank line carries only
+        // whitespace: masking it would collapse its height and weld the two
+        // blocks together.
+        let source = "- First paragraph.\n\n  Second paragraph.\n"
         let view = try render(source)
         let heights = try lineHeights(in: view)
         XCTAssertFalse(heights.contains { $0 < 1 },
-                       "Aucune ligne ne doit tomber à une hauteur nulle : \(heights)")
+                       "No line should collapse to zero height: \(heights)")
     }
 
     func testANestedItemKeepsItsOwnDeeperIndent() throws {
-        // La plage de mise en page du parent couvre l'enfant. Le style de
-        // l'enfant est posé après — sinon un item imbriqué remonterait au
-        // retrait de son parent.
+        // The parent's layout range covers the child. The child's style is
+        // applied afterward — otherwise a nested item would rise back to
+        // its parent's indent.
         let source = """
         - Parent.
-          - Enfant.
+          - Child.
         """
         let view = try render(source)
         let parent = try caretX(atFirstOccurrenceOf: "Parent", in: source, view: view)
-        let child = try caretX(atFirstOccurrenceOf: "Enfant", in: source, view: view)
-        XCTAssertGreaterThan(child, parent, "L'enfant reste plus à droite que son parent")
+        let child = try caretX(atFirstOccurrenceOf: "Child", in: source, view: view)
+        XCTAssertGreaterThan(child, parent, "The child stays to the right of its parent")
     }
 
-    // MARK: - Outils
+    // MARK: - Helpers
 
     private func render(_ source: String) throws -> EditorTextView {
         let view = EditorTextView.make()
@@ -114,13 +115,13 @@ final class ListRenderingTests: XCTestCase {
             x = frame.origin.x
             return false
         }
-        return try XCTUnwrap(x, "Aucun segment à l'offset \(offset)")
+        return try XCTUnwrap(x, "No segment at offset \(offset)")
     }
 
     private func caretX(atFirstOccurrenceOf needle: String, in source: String,
                         view: EditorTextView) throws -> CGFloat {
         let range = (source as NSString).range(of: needle)
-        XCTAssertNotEqual(range.location, NSNotFound, "« \(needle) » introuvable")
+        XCTAssertNotEqual(range.location, NSNotFound, "\"\(needle)\" not found")
         return try caretX(at: range.location, view: view)
     }
 

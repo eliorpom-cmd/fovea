@@ -1,24 +1,24 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// La barre de menus, construite en code plutôt que dans un MainMenu.xib.
+/// The menu bar, built in code rather than in a MainMenu.xib.
 ///
-/// Un xib serait un second endroit où vivent les raccourcis, invisible en
-/// revue de code et impossible à relire dans un diff. Ici tout est lisible, et
-/// les actions non câblées se désactivent d'elles-mêmes : AppKit grise un
-/// élément dont personne dans la chaîne de répondeurs n'implémente le sélecteur.
+/// A xib would be a second place where shortcuts live, invisible in code
+/// review and unreadable in a diff. Here everything is readable, and actions
+/// that aren't wired up disable themselves: AppKit grays out an item whose
+/// selector nobody in the responder chain implements.
 @MainActor
 enum MainMenu {
 
     static func build() -> NSMenu {
         let main = NSMenu()
         main.addItem(submenu(appMenu(), title: AppConfig.name))
-        main.addItem(submenu(fileMenu(), title: "Fichier"))
-        main.addItem(submenu(editMenu(), title: "Édition"))
+        main.addItem(submenu(fileMenu(), title: "File"))
+        main.addItem(submenu(editMenu(), title: "Edit"))
         main.addItem(submenu(formatMenu(), title: "Format"))
-        main.addItem(submenu(viewMenu(), title: "Présentation"))
-        main.addItem(submenu(windowMenu(), title: "Fenêtre"))
+        main.addItem(submenu(viewMenu(), title: "View"))
+        main.addItem(submenu(windowMenu(), title: "Window"))
         return main
     }
 
@@ -26,10 +26,10 @@ enum MainMenu {
 
     private static func appMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(item("À propos de \(AppConfig.name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
+        menu.addItem(item("About \(AppConfig.name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
         menu.addItem(.separator())
-        menu.addItem(item("Réglages…", #selector(AppCommands.showSettings(_:)), ","))
-        menu.addItem(item("Ouvrir les Markdown avec \(AppConfig.name)",
+        menu.addItem(item("Settings…", #selector(AppCommands.showSettings(_:)), ","))
+        menu.addItem(item("Open Markdown Files with \(AppConfig.name)",
                           #selector(AppCommands.makeDefaultMarkdownEditor(_:))))
         menu.addItem(.separator())
 
@@ -40,97 +40,96 @@ enum MainMenu {
         menu.addItem(services)
         menu.addItem(.separator())
 
-        menu.addItem(item("Masquer \(AppConfig.name)", #selector(NSApplication.hide(_:)), "h"))
-        let hideOthers = item("Masquer les autres", #selector(NSApplication.hideOtherApplications(_:)), "h")
+        menu.addItem(item("Hide \(AppConfig.name)", #selector(NSApplication.hide(_:)), "h"))
+        let hideOthers = item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(hideOthers)
-        menu.addItem(item("Tout afficher", #selector(NSApplication.unhideAllApplications(_:))))
+        menu.addItem(item("Show All", #selector(NSApplication.unhideAllApplications(_:))))
         menu.addItem(.separator())
-        menu.addItem(item("Quitter \(AppConfig.name)", #selector(NSApplication.terminate(_:)), "q"))
+        menu.addItem(item("Quit \(AppConfig.name)", #selector(NSApplication.terminate(_:)), "q"))
         return menu
     }
 
-    // MARK: - Fichier
+    // MARK: - File
 
     private static func fileMenu() -> NSMenu {
-        let menu = NSMenu(title: "Fichier")
-        menu.addItem(item("Nouveau", #selector(NSDocumentController.newDocument(_:)), "n"))
-        menu.addItem(item("Ouvrir…", #selector(NSDocumentController.openDocument(_:)), "o"))
+        let menu = NSMenu(title: "File")
+        menu.addItem(item("New", #selector(NSDocumentController.newDocument(_:)), "n"))
+        menu.addItem(item("Open…", #selector(NSDocumentController.openDocument(_:)), "o"))
 
-        // **Pas de sous-menu des documents récents ici.** Le contrat du titre
-        // « NSRecentDocumentsMenu » ne vaut que pour un menu chargé depuis un
-        // nib : construit à la main, le sous-menu restait vide pour toujours.
-        // macOS, lui, injecte tout seul « Ouvrir l'élément récent » dans le menu
-        // Fichier d'une app à documents — comme « Renommer… » et « Revenir à »
-        // juste en dessous. En ajouter un deuxième donnait deux entrées voisines
-        // dont une ne s'ouvrait sur rien.
+        // **No recent documents submenu here.** The `NSRecentDocumentsMenu`
+        // title only works for a menu loaded from a nib: built by hand, the
+        // submenu stayed empty forever. macOS, on its own, injects "Open
+        // Recent" into the File menu of a document-based app — just like
+        // "Rename…" and "Revert To" right below it. Adding a second one
+        // produced two neighboring entries, one of which opened nothing.
 
         menu.addItem(.separator())
-        menu.addItem(item("Fermer", #selector(NSWindow.performClose(_:)), "w"))
-        menu.addItem(item("Enregistrer", #selector(NSDocument.save(_:)), "s"))
+        menu.addItem(item("Close", #selector(NSWindow.performClose(_:)), "w"))
+        menu.addItem(item("Save", #selector(NSDocument.save(_:)), "s"))
 
-        let saveAs = item("Enregistrer sous…", #selector(NSDocument.saveAs(_:)), "s")
+        let saveAs = item("Save As…", #selector(NSDocument.saveAs(_:)), "s")
         saveAs.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(saveAs)
 
-        menu.addItem(item("Rétablir la version enregistrée", #selector(NSDocument.revertToSaved(_:))))
+        menu.addItem(item("Revert to Saved", #selector(NSDocument.revertToSaved(_:))))
         menu.addItem(.separator())
 
-        let export = NSMenuItem(title: "Exporter", action: nil, keyEquivalent: "")
+        let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
         let exportMenu = NSMenu()
         exportMenu.addItem(item("PDF…", #selector(AppCommands.exportPDF(_:))))
-        exportMenu.addItem(item("HTML autonome…", #selector(AppCommands.exportHTML(_:))))
+        exportMenu.addItem(item("Standalone HTML…", #selector(AppCommands.exportHTML(_:))))
         export.submenu = exportMenu
         menu.addItem(export)
 
         menu.addItem(.separator())
-        // Le partage est une affordance système : la feuille qu'il ouvre est
-        // celle de macOS, avec Mail, Messages, AirDrop et tout ce que
-        // l'utilisateur y a installé. L'écrire nous-mêmes serait à la fois plus
-        // long et moins complet.
-        menu.addItem(item("Partager…", #selector(AppCommands.shareDocument(_:))))
+        // Sharing is a system affordance: the sheet it opens is macOS's own,
+        // with Mail, Messages, AirDrop and everything else the user has
+        // installed. Writing it ourselves would be both more work and less
+        // complete.
+        menu.addItem(item("Share…", #selector(AppCommands.shareDocument(_:))))
         menu.addItem(.separator())
-        menu.addItem(item("Imprimer…", #selector(NSDocument.printDocument(_:)), "p"))
+        menu.addItem(item("Print…", #selector(NSDocument.printDocument(_:)), "p"))
         return menu
     }
 
-    // MARK: - Édition
+    // MARK: - Edit
 
     private static func editMenu() -> NSMenu {
-        let menu = NSMenu(title: "Édition")
-        menu.addItem(item("Annuler", Selector(("undo:")), "z"))
-        let redo = item("Rétablir", Selector(("redo:")), "z")
+        let menu = NSMenu(title: "Edit")
+        menu.addItem(item("Undo", Selector(("undo:")), "z"))
+        let redo = item("Redo", Selector(("redo:")), "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(redo)
         menu.addItem(.separator())
 
-        menu.addItem(item("Couper", #selector(NSText.cut(_:)), "x"))
-        menu.addItem(item("Copier", #selector(NSText.copy(_:)), "c"))
+        menu.addItem(item("Cut", #selector(NSText.cut(_:)), "x"))
+        menu.addItem(item("Copy", #selector(NSText.copy(_:)), "c"))
 
-        // §4.6 : en pratique l'export le plus utilisé. Il mérite le raccourci
-        // voisin de ⌘C, pas une entrée perdue dans un sous-menu.
-        let copyRich = item("Copier en texte riche", #selector(AppCommands.copyAsRichText(_:)), "c")
+        // §4.6: in practice the most used export. It deserves the shortcut
+        // next to ⌘C, not an entry lost in a submenu.
+        let copyRich = item("Copy as Rich Text", #selector(AppCommands.copyAsRichText(_:)), "c")
         copyRich.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(copyRich)
 
-        menu.addItem(item("Coller", #selector(NSText.paste(_:)), "v"))
-        let pastePlain = item("Coller sans mise en forme", #selector(AppCommands.pastePlainText(_:)), "v")
+        menu.addItem(item("Paste", #selector(NSText.paste(_:)), "v"))
+        let pastePlain = item("Paste and Match Style", #selector(AppCommands.pastePlainText(_:)), "v")
         pastePlain.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(pastePlain)
 
-        menu.addItem(item("Tout sélectionner", #selector(NSText.selectAll(_:)), "a"))
+        menu.addItem(item("Select All", #selector(NSText.selectAll(_:)), "a"))
         menu.addItem(.separator())
 
-        let find = NSMenuItem(title: "Rechercher", action: nil, keyEquivalent: "")
+        let find = NSMenuItem(title: "Find", action: nil, keyEquivalent: "")
         let findMenu = NSMenu()
-        // Les `tag` sont le contrat de `NSTextFinder` : c'est par eux qu'il
-        // distingue « rechercher » de « suivant » ou « remplacer ».
-        findMenu.addItem(finder("Rechercher…", tag: NSTextFinder.Action.showFindInterface.rawValue, key: "f"))
-        findMenu.addItem(finder("Suivant", tag: NSTextFinder.Action.nextMatch.rawValue, key: "g"))
-        let previous = finder("Précédent", tag: NSTextFinder.Action.previousMatch.rawValue, key: "g")
+        // The `tag` values are `NSTextFinder`'s contract: they're how it
+        // distinguishes "find" from "next" or "replace".
+        findMenu.addItem(finder("Find…", tag: NSTextFinder.Action.showFindInterface.rawValue, key: "f"))
+        findMenu.addItem(finder("Find Next", tag: NSTextFinder.Action.nextMatch.rawValue, key: "g"))
+        let previous = finder("Find Previous", tag: NSTextFinder.Action.previousMatch.rawValue, key: "g")
         previous.keyEquivalentModifierMask = [.command, .shift]
         findMenu.addItem(previous)
-        findMenu.addItem(finder("Remplacer…", tag: NSTextFinder.Action.showReplaceInterface.rawValue, key: "f",
+        findMenu.addItem(finder("Find and Replace…", tag: NSTextFinder.Action.showReplaceInterface.rawValue, key: "f",
                                 modifiers: [.command, .option]))
         find.submenu = findMenu
         menu.addItem(find)
@@ -142,10 +141,10 @@ enum MainMenu {
 
     private static func formatMenu() -> NSMenu {
         let menu = NSMenu(title: "Format")
-        menu.addItem(item("Gras", #selector(AppCommands.toggleBold(_:)), "b"))
-        menu.addItem(item("Italique", #selector(AppCommands.toggleItalic(_:)), "i"))
+        menu.addItem(item("Bold", #selector(AppCommands.toggleBold(_:)), "b"))
+        menu.addItem(item("Italic", #selector(AppCommands.toggleItalic(_:)), "i"))
 
-        let strike = item("Barré", #selector(AppCommands.toggleStrikethrough(_:)), "x")
+        let strike = item("Strikethrough", #selector(AppCommands.toggleStrikethrough(_:)), "x")
         strike.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(strike)
 
@@ -153,45 +152,44 @@ enum MainMenu {
         inlineCode.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(inlineCode)
 
-        // `⌘K` est déjà la palette de commandes (§4.5, décision actée §12). Le
-        // lien prend donc la variante `⌘⌥K` plutôt que de se disputer la touche :
-        // deux entrées sur le même raccourci, c'est la première dans l'ordre des
-        // menus qui gagne, et le perdant devient un raccourci qui ne marche pas
-        // sans que rien ne le dise.
-        let link = item("Lien…", #selector(AppCommands.insertLink(_:)), "k")
+        // `⌘K` is already the command palette (§4.5, decision settled in §12).
+        // The link therefore takes the `⌘⌥K` variant instead of contesting the
+        // key: with two entries on the same shortcut, the first one in menu
+        // order wins, and the loser becomes a shortcut that doesn't work
+        // without anything saying so.
+        let link = item("Link…", #selector(AppCommands.insertLink(_:)), "k")
         link.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(link)
 
-        // Le damier plutôt qu'un 3 × 3 imposé : la forme du tableau est la
-        // première chose qu'on sait, et la dernière qu'on aime corriger.
+        // A grid picker instead of a fixed 3 × 3: the shape of the table is
+        // the first thing one knows, and the last thing one likes to correct.
         //
-        // ⌥⌘T et non ⌘⇧T — celui de MarkText : les fenêtres de Fovea acceptent
-        // les onglets natifs, et macOS y attache déjà « Afficher la barre
-        // d'onglets ». Le doublon aurait donné un raccourci qui ne marche pas
-        // sans que rien ne le dise, exactement comme le ⌘K du menu Lien.
-        // `insertMarkdownTable` et non `insertTable` : **`NSTextView` possède
-        // déjà un `insertTable:`**, son action d'insertion de tableau en texte
-        // riche. La vue de texte est le premier répondeur, elle répondait donc
-        // la première — et comme elle est en `isRichText = false`, elle
-        // refusait l'action. L'entrée « Tableau… » restait grisée et ⌥⌘T ne
-        // faisait rien, sans que rien ne l'explique : le contrôleur de fenêtre,
-        // qui sait pourtant l'ouvrir, n'était jamais atteint. Le damier
-        // n'existait qu'au travers de `/tab`.
-        let table = item("Tableau…", #selector(AppCommands.insertMarkdownTable(_:)), "t")
+        // ⌥⌘T, not ⌘⇧T — the one MarkText uses: Fovea's windows accept native
+        // tabs, and macOS already attaches "Show Tab Bar" to that shortcut.
+        // The duplicate would have produced a shortcut that doesn't work
+        // without anything saying so, exactly like the ⌘K of the Link menu.
+        // `insertMarkdownTable`, not `insertTable`: **`NSTextView` already has
+        // an `insertTable:`**, its rich-text table-insertion action. The text
+        // view is the first responder, so it answered first — and since it's
+        // `isRichText = false`, it refused the action. The "Table…" entry
+        // stayed grayed out and ⌥⌘T did nothing, with nothing explaining why:
+        // the window controller, which does know how to open it, was never
+        // reached. The grid picker only ever existed through `/tab`.
+        let table = item("Table…", #selector(AppCommands.insertMarkdownTable(_:)), "t")
         table.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(table)
 
-        let task = item("Cocher la tâche", #selector(AppCommands.toggleTaskAtCaret(_:)), "\r")
+        let task = item("Toggle Task", #selector(AppCommands.toggleTaskAtCaret(_:)), "\r")
         menu.addItem(task)
         menu.addItem(.separator())
 
-        // ⌘⌃1..6 pour les niveaux de titre, ⌘⌃0 pour revenir au paragraphe.
-        let paragraph = item("Paragraphe", #selector(AppCommands.setHeadingLevel(_:)), "0")
+        // ⌘⌃1..6 for heading levels, ⌘⌃0 to go back to Body.
+        let paragraph = item("Body", #selector(AppCommands.setHeadingLevel(_:)), "0")
         paragraph.keyEquivalentModifierMask = [.command, .control]
         paragraph.tag = 0
         menu.addItem(paragraph)
         for level in 1...6 {
-            let heading = item("Titre \(level)", #selector(AppCommands.setHeadingLevel(_:)), "\(level)")
+            let heading = item("Heading \(level)", #selector(AppCommands.setHeadingLevel(_:)), "\(level)")
             heading.keyEquivalentModifierMask = [.command, .control]
             heading.tag = level
             menu.addItem(heading)
@@ -199,57 +197,58 @@ enum MainMenu {
         return menu
     }
 
-    // MARK: - Présentation
+    // MARK: - View
 
     private static func viewMenu() -> NSMenu {
-        let menu = NSMenu(title: "Présentation")
+        let menu = NSMenu(title: "View")
 
-        // §4.2 : le filet de sécurité. Il mérite un raccourci d'une seule main.
+        // §4.2: the safety net. It deserves a one-handed shortcut.
         //
-        // **⌥⌘S et non ⌘/.** La barre oblique n'est pas au même endroit d'un
-        // clavier à l'autre : en français elle demande une majuscule, si bien
-        // que macOS remappe l'équivalent sur `⇧⌘:` — ce que le menu affichait,
-        // pendant que la palette et le README annonçaient `⌘/`. Et aucune des
-        // deux combinaisons ne déclenchait quoi que ce soit, alors que `⌘K`
-        // passait par le même chemin : un équivalent de touche fondé sur une
-        // ponctuation ne survit pas au changement de disposition.
+        // **⌥⌘S, not ⌘/.** The slash isn't in the same place from one
+        // keyboard layout to another: on a French keyboard it requires a
+        // shift, so macOS remaps the equivalent to `⇧⌘:` — which is what the
+        // menu displayed, while the palette and the README advertised `⌘/`.
+        // And neither combination triggered anything, while `⌘K` went through
+        // the same path: a key equivalent based on punctuation doesn't
+        // survive a layout change.
         //
-        // Une lettre, elle, est à la même place partout. « S » comme source.
-        let source = item("Afficher la source", #selector(AppCommands.toggleSourceMode(_:)), "s")
+        // A letter, by contrast, is in the same place everywhere. "S" as in
+        // source.
+        let source = item("Show Source", #selector(AppCommands.toggleSourceMode(_:)), "s")
         source.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(source)
         menu.addItem(.separator())
 
-        let outline = item("Plan du document", #selector(AppCommands.toggleOutline(_:)), "0")
+        let outline = item("Document Outline", #selector(AppCommands.toggleOutline(_:)), "0")
         outline.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(outline)
 
-        menu.addItem(item("Palette de commandes", #selector(AppCommands.showCommandPalette(_:)), "k"))
+        menu.addItem(item("Command Palette", #selector(AppCommands.showCommandPalette(_:)), "k"))
         menu.addItem(.separator())
 
-        menu.addItem(item("Mode focus", #selector(AppCommands.toggleFocusMode(_:))))
-        menu.addItem(item("Machine à écrire", #selector(AppCommands.toggleTypewriterMode(_:))))
+        menu.addItem(item("Focus Mode", #selector(AppCommands.toggleFocusMode(_:))))
+        menu.addItem(item("Typewriter Mode", #selector(AppCommands.toggleTypewriterMode(_:))))
         menu.addItem(.separator())
 
-        let fullScreen = item("Activer le mode plein écran", #selector(NSWindow.toggleFullScreen(_:)), "f")
+        let fullScreen = item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f")
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         menu.addItem(fullScreen)
         return menu
     }
 
-    // MARK: - Fenêtre
+    // MARK: - Window
 
     private static func windowMenu() -> NSMenu {
-        let menu = NSMenu(title: "Fenêtre")
-        menu.addItem(item("Réduire", #selector(NSWindow.performMiniaturize(_:)), "m"))
+        let menu = NSMenu(title: "Window")
+        menu.addItem(item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"))
         menu.addItem(item("Zoom", #selector(NSWindow.performZoom(_:))))
         menu.addItem(.separator())
-        menu.addItem(item("Tout ramener au premier plan", #selector(NSApplication.arrangeInFront(_:))))
+        menu.addItem(item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))))
         NSApp.windowsMenu = menu
         return menu
     }
 
-    // MARK: - Fabriques
+    // MARK: - Factories
 
     private static func submenu(_ menu: NSMenu, title: String) -> NSMenuItem {
         let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
@@ -262,25 +261,26 @@ enum MainMenu {
         NSMenuItem(title: title, action: action, keyEquivalent: key)
     }
 
-    // MARK: - Le raccourci réel d'une commande
+    // MARK: - A command's real shortcut
 
-    /// Le raccourci d'une commande **tel que la barre de menus le porte**.
+    /// A command's shortcut **exactly as the menu bar carries it**.
     ///
-    /// # Pourquoi ce n'est pas une chaîne écrite à la main
+    /// # Why this isn't a hand-written string
     ///
-    /// La palette affichait ses raccourcis en dur : `"⌘/"`, `"⌘⌥0"`, `"⌘⌃1"`.
-    /// Or macOS remappe les équivalents fondés sur une ponctuation ou un
-    /// chiffre selon la disposition du clavier : sur un clavier français, la
-    /// même commande s'y annonce `⇧⌘:` ou `⌥⌘à`. La palette était donc le seul
-    /// endroit de l'app qui affiche des raccourcis, et le seul qui se trompait.
+    /// The palette used to display its shortcuts hardcoded: `"⌘/"`, `"⌘⌥0"`,
+    /// `"⌘⌃1"`. But macOS remaps key equivalents based on punctuation or a
+    /// digit according to the keyboard layout: on a French keyboard, the same
+    /// command shows up as `⇧⌘:` or `⌥⌘à`. The palette was therefore the only
+    /// place in the app that displays shortcuts, and the only one that got it
+    /// wrong.
     ///
-    /// Un seul endroit décide désormais, et c'est celui qui les déclenche.
+    /// A single place decides now, and it's the one that triggers them.
     static func shortcut(for action: Selector, tag: Int? = nil) -> String {
         guard let item = item(for: action, tag: tag, in: NSApp.mainMenu) else { return "" }
         guard !item.keyEquivalent.isEmpty else { return "" }
 
-        // L'ordre est celui du guide d'interface : contrôle, option, majuscule,
-        // commande. Le lire autrement se remarque tout de suite.
+        // The order follows the interface guidelines: control, option, shift,
+        // command. Reading it any other way stands out immediately.
         var result = ""
         let flags = item.keyEquivalentModifierMask
         if flags.contains(.control) { result += "⌃" }
@@ -318,12 +318,12 @@ enum MainMenu {
     }
 }
 
-/// Les sélecteurs des commandes propres à Fovea.
+/// The selectors for Fovea's own commands.
 ///
-/// Ce protocole n'est jamais adopté : il n'existe que pour donner à `#selector`
-/// un symbole à référencer, sans forcer `MainMenu` à connaître les classes qui
-/// répondront. Les actions remontent la chaîne de répondeurs, et le menu se
-/// grise tout seul là où personne ne répond.
+/// This protocol is never adopted: it exists only to give `#selector` a
+/// symbol to reference, without forcing `MainMenu` to know the classes that
+/// will respond. Actions travel up the responder chain, and the menu grays
+/// itself out wherever nobody responds.
 @MainActor
 @objc protocol AppCommands {
     func showSettings(_ sender: Any?)

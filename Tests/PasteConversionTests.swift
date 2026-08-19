@@ -1,101 +1,101 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// Le collage de texte riche (§2.5).
+/// Rich text paste (§2.5).
 ///
-/// Coller depuis un navigateur est l'un des gestes les plus fréquents dans un
-/// éditeur de notes. Perdre les liens et le gras à cette occasion serait aussi
-/// visible qu'un rendu faux.
+/// Pasting from a browser is one of the most frequent actions in a notes
+/// editor. Losing links and bold text in the process would be just as
+/// visible as broken rendering.
 @MainActor
 final class PasteConversionTests: XCTestCase {
 
-    // MARK: - Reconnaissance du markdown
+    // MARK: - Markdown recognition
 
     func testStructuredMarkdownIsRecognizedAndLeftAlone() {
-        // Le convertir depuis sa version HTML lui ferait faire un aller-retour
-        // qui remplacerait `_` par `*` — ce que le §5 interdit.
-        XCTAssertTrue(PasteConversion.looksLikeMarkdown("# Un titre\n\nDu texte."))
-        XCTAssertTrue(PasteConversion.looksLikeMarkdown("- un item\n- un autre"))
-        XCTAssertTrue(PasteConversion.looksLikeMarkdown("Du **gras** dans une phrase."))
-        XCTAssertTrue(PasteConversion.looksLikeMarkdown("Voir [le site](https://x.fr)."))
+        // Converting it from its HTML version would send it round-trip and
+        // replace `_` with `*`, which §5 forbids.
+        XCTAssertTrue(PasteConversion.looksLikeMarkdown("# A heading\n\nSome text."))
+        XCTAssertTrue(PasteConversion.looksLikeMarkdown("- an item\n- another one"))
+        XCTAssertTrue(PasteConversion.looksLikeMarkdown("Some **bold** in a sentence."))
+        XCTAssertTrue(PasteConversion.looksLikeMarkdown("See [the site](https://example.com)."))
         XCTAssertTrue(PasteConversion.looksLikeMarkdown("```swift\nlet x = 1\n```"))
     }
 
     func testOrdinaryProseIsNotMistakenForMarkdown() {
-        // Le doute profite au texte brut, qui est sans risque.
-        XCTAssertFalse(PasteConversion.looksLikeMarkdown("Une phrase ordinaire, sans rien de particulier."))
+        // The benefit of the doubt goes to plain text, which carries no risk.
+        XCTAssertFalse(PasteConversion.looksLikeMarkdown("An ordinary sentence, with nothing special."))
         XCTAssertFalse(PasteConversion.looksLikeMarkdown("2 * 3 * 4 = 24"))
-        XCTAssertFalse(PasteConversion.looksLikeMarkdown("#sansespace n'est pas un titre"))
+        XCTAssertFalse(PasteConversion.looksLikeMarkdown("#nospace is not a heading"))
     }
 
-    // MARK: - Conversion des attributs
+    // MARK: - Attribute conversion
 
     func testBoldBecomesStars() {
-        let rich = NSMutableAttributedString(string: "un mot ici")
+        let rich = NSMutableAttributedString(string: "an egg here")
         rich.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 13), range: NSRange(location: 3, length: 3))
-        XCTAssertEqual(PasteConversion.convert(rich), "un **mot** ici")
+        XCTAssertEqual(PasteConversion.convert(rich), "an **egg** here")
     }
 
     func testItalicBecomesOneStar() {
-        let rich = NSMutableAttributedString(string: "un mot ici")
+        let rich = NSMutableAttributedString(string: "an egg here")
         let italic = NSFontManager.shared.convert(NSFont.systemFont(ofSize: 13), toHaveTrait: .italicFontMask)
         rich.addAttribute(.font, value: italic, range: NSRange(location: 3, length: 3))
-        XCTAssertEqual(PasteConversion.convert(rich), "un *mot* ici")
+        XCTAssertEqual(PasteConversion.convert(rich), "an *egg* here")
     }
 
     func testLinksKeepTheirDestination() {
-        let rich = NSMutableAttributedString(string: "voir le site ici")
-        rich.addAttribute(.link, value: URL(string: "https://x.fr")!, range: NSRange(location: 5, length: 7))
-        XCTAssertEqual(PasteConversion.convert(rich), "voir [le site](https://x.fr) ici")
+        let rich = NSMutableAttributedString(string: "see the site here")
+        rich.addAttribute(.link, value: URL(string: "https://example.com")!, range: NSRange(location: 4, length: 8))
+        XCTAssertEqual(PasteConversion.convert(rich), "see [the site](https://example.com) here")
     }
 
     func testMonospacedTextBecomesInlineCode() {
-        let rich = NSMutableAttributedString(string: "appeler foo() ici")
+        let rich = NSMutableAttributedString(string: "call foo() here")
         rich.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
-                          range: NSRange(location: 8, length: 5))
-        XCTAssertEqual(PasteConversion.convert(rich), "appeler `foo()` ici")
+                          range: NSRange(location: 5, length: 5))
+        XCTAssertEqual(PasteConversion.convert(rich), "call `foo()` here")
     }
 
     func testWhitespaceStaysOutsideTheMarkers() {
-        // `** gras **` n'est pas du gras pour cmark : le blanc doit rester
-        // dehors, sinon le collage produit des étoiles littérales.
-        let rich = NSMutableAttributedString(string: "un mot ici")
+        // `** bold **` is not bold to cmark: the whitespace must stay
+        // outside, or the paste produces literal stars.
+        let rich = NSMutableAttributedString(string: "an egg here")
         rich.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 13), range: NSRange(location: 2, length: 5))
-        // `un **mot** ici` contient bien la suite « ** » suivie d'un espace :
-        // ce qui compte est qu'aucun blanc ne soit **à l'intérieur** de la
-        // paire, c'est-à-dire juste après l'ouvrante ou juste avant la
-        // fermante.
+        // `an **egg** here` does contain the sequence `**` followed by a
+        // space: what matters is that no whitespace is **inside** the pair,
+        // that is, right after the opening marker or right before the
+        // closing one.
         let result = PasteConversion.convert(rich)
-        XCTAssertEqual(result, "un **mot** ici")
-        XCTAssertFalse(result.contains("** m"), "Blanc après le marqueur ouvrant : \(result)")
-        XCTAssertFalse(result.contains("t **"), "Blanc avant le marqueur fermant : \(result)")
+        XCTAssertEqual(result, "an **egg** here")
+        XCTAssertFalse(result.contains("** e"), "Whitespace after the opening marker: \(result)")
+        XCTAssertFalse(result.contains("g **"), "Whitespace before the closing marker: \(result)")
     }
 
     func testMarkdownCharactersAreEscaped() {
-        // Coller « 2 * 3 * 4 » depuis une page web ne doit pas produire de
-        // l'italique là où il n'y avait qu'une multiplication.
+        // Pasting "2 * 3 * 4" from a web page must not produce italics
+        // where there was only a multiplication.
         let rich = NSAttributedString(string: "2 * 3 * 4")
         XCTAssertEqual(PasteConversion.convert(rich), "2 \\* 3 \\* 4")
     }
 
     func testCodeIsNotEscaped() {
-        // Ce qui est entre backticks est littéral : y ajouter des barres
-        // obliques changerait le code collé.
+        // What is between backticks is literal: adding backslashes to it
+        // would change the pasted code.
         let rich = NSMutableAttributedString(string: "arr[0] * 2")
         rich.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),
                           range: NSRange(location: 0, length: 10))
         XCTAssertEqual(PasteConversion.convert(rich), "`arr[0] * 2`")
     }
 
-    // MARK: - Depuis du vrai HTML
+    // MARK: - From real HTML
 
     func testRealHTMLFromABrowser() throws {
         let html = """
-        <p>Un paragraphe avec du <b>gras</b>, de l'<i>italique</i> \
-        et un <a href="https://exemple.fr">lien</a>.</p>
+        <p>A paragraph with <b>bold</b>, <i>italic</i> \
+        and a <a href="https://example.com">link</a>.</p>
         """
         let rich = try XCTUnwrap(NSAttributedString(
             data: Data(html.utf8),
@@ -104,33 +104,34 @@ final class PasteConversionTests: XCTestCase {
             documentAttributes: nil))
 
         let markdown = PasteConversion.convert(rich)
-        XCTAssertTrue(markdown.contains("**gras**"), markdown)
-        XCTAssertTrue(markdown.contains("*italique*"), markdown)
-        // L'importateur HTML de `NSAttributedString` normalise l'URL et lui
-        // ajoute sa barre finale. C'est son droit, et le lien reste juste.
-        XCTAssertTrue(markdown.contains("](https://exemple.fr"), markdown)
+        XCTAssertTrue(markdown.contains("**bold**"), markdown)
+        XCTAssertTrue(markdown.contains("*italic*"), markdown)
+        // The HTML importer for `NSAttributedString` normalizes the URL and
+        // appends a trailing slash. That is its prerogative, and the link
+        // stays correct.
+        XCTAssertTrue(markdown.contains("](https://example.com"), markdown)
     }
 
     func testTheResultIsValidMarkdownThatParsesBack() throws {
-        // Le vrai critère : ce qui est collé doit se relire. Un collage qui
-        // produit du markdown que le parseur ne reconnaît pas est pire qu'un
-        // collage en texte brut.
-        let rich = NSMutableAttributedString(string: "un mot et un lien")
+        // The real criterion: what is pasted must read back. A paste that
+        // produces markdown the parser does not recognize is worse than a
+        // plain-text paste.
+        let rich = NSMutableAttributedString(string: "an egg and a link")
         rich.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 13), range: NSRange(location: 3, length: 3))
-        rich.addAttribute(.link, value: URL(string: "https://x.fr")!, range: NSRange(location: 14, length: 3))
+        rich.addAttribute(.link, value: URL(string: "https://example.com")!, range: NSRange(location: 13, length: 4))
 
         let markdown = PasteConversion.convert(rich)
         let spans = MarkdownParser.parse(markdown).spans
         XCTAssertTrue(spans.contains { if case .strong = $0.kind { return true } else { return false } },
-                      "Le gras collé doit se relire : \(markdown)")
+                      "Pasted bold text must read back: \(markdown)")
         XCTAssertTrue(spans.contains { if case .link = $0.kind { return true } else { return false } },
-                      "Le lien collé doit se relire : \(markdown)")
+                      "A pasted link must read back: \(markdown)")
     }
 
-    // MARK: - Structure de bloc
+    // MARK: - Block structure
 
-    /// Une chaîne attribuée depuis du vrai HTML, comme le presse-papier en
-    /// livre quand on copie une page web.
+    /// An attributed string from real HTML, as the pasteboard delivers it
+    /// when copying a web page.
     private func fromHTML(_ html: String) throws -> NSAttributedString {
         try XCTUnwrap(NSAttributedString(
             data: Data(html.utf8),
@@ -139,71 +140,71 @@ final class PasteConversionTests: XCTestCase {
             documentAttributes: nil))
     }
 
-    /// **Les titres et les listes survivent au collage.**
+    /// **Headings and lists survive a paste.**
     ///
-    /// L'en-tête de `PasteConversion` promet de ne pas perdre « les titres, les
-    /// listes et les liens ». Les liens passaient ; les deux autres non — seul
-    /// l'inline était traité, et un article collé arrivait en une suite de
-    /// paragraphes plats. C'est justement la perte que la conversion existe
-    /// pour éviter.
+    /// `PasteConversion`'s header promises not to lose "headings, lists and
+    /// links". Links made it through; the other two did not: only the
+    /// inline content was handled, and a pasted article arrived as a series
+    /// of flat paragraphs. That is exactly the loss the conversion exists
+    /// to avoid.
     func testHeadingsAndListsSurviveAPaste() throws {
         let html = """
-        <h1>Le grand titre</h1>
-        <p>Un paragraphe avec du <strong>gras</strong> et un <a href="https://x.fr">lien</a>.</p>
-        <h2>Un sous-titre</h2>
-        <ul><li>Premier item</li><li>Deuxième avec du <em>relief</em></li></ul>
-        <ol><li>Un</li><li>Deux</li></ol>
+        <h1>The big heading</h1>
+        <p>A paragraph with <strong>bold</strong> and a <a href="https://example.com">link</a>.</p>
+        <h2>A subheading</h2>
+        <ul><li>First item</li><li>Second with <em>emphasis</em></li></ul>
+        <ol><li>One</li><li>Two</li></ol>
         """
         let converted = PasteConversion.convert(try fromHTML(html))
 
-        XCTAssertTrue(converted.contains("# Le grand titre"), converted)
-        XCTAssertTrue(converted.contains("## Un sous-titre"), converted)
-        XCTAssertTrue(converted.contains("- Premier item"), converted)
-        XCTAssertTrue(converted.contains("- Deuxième avec du *relief*"), converted)
-        XCTAssertTrue(converted.contains("1. Un"), converted)
-        XCTAssertTrue(converted.contains("**gras**"), converted)
+        XCTAssertTrue(converted.contains("# The big heading"), converted)
+        XCTAssertTrue(converted.contains("## A subheading"), converted)
+        XCTAssertTrue(converted.contains("- First item"), converted)
+        XCTAssertTrue(converted.contains("- Second with *emphasis*"), converted)
+        XCTAssertTrue(converted.contains("1. One"), converted)
+        XCTAssertTrue(converted.contains("**bold**"), converted)
 
-        // Un titre est déjà gras : `# **Le titre**` dirait deux fois la même
-        // chose, et laisserait des étoiles dans le fichier.
+        // A heading is already bold: `# **The heading**` would say the same
+        // thing twice, and leave stars in the file.
         XCTAssertFalse(converted.contains("# **"), converted)
-        // La puce que l'importateur écrit dans le texte ne doit pas doubler
-        // celle de markdown.
+        // The bullet the importer writes into the text must not double up
+        // with markdown's own.
         XCTAssertFalse(converted.contains("- •"), converted)
         XCTAssertFalse(converted.contains("1. 1"), converted)
     }
 
     func testNestedListsKeepTheirDepth() throws {
-        let html = "<ul><li>Un<ul><li>Un-un</li></ul></li><li>Deux</li></ul>"
+        let html = "<ul><li>One<ul><li>One-one</li></ul></li><li>Two</li></ul>"
         let converted = PasteConversion.convert(try fromHTML(html))
-        XCTAssertTrue(converted.contains("\n  - Un-un"), converted)
+        XCTAssertTrue(converted.contains("\n  - One-one"), converted)
     }
 
-    /// Le revers : de la prose reste de la prose. Un paragraphe ordinaire ne
-    /// doit gagner ni dièse ni tiret.
+    /// The flip side: prose stays prose. An ordinary paragraph must gain
+    /// neither a hash nor a dash.
     func testPlainProseGainsNoStructure() throws {
-        let html = "<p>Une phrase ordinaire, sans structure particulière.</p>"
+        let html = "<p>An ordinary sentence, with no particular structure.</p>"
         XCTAssertEqual(PasteConversion.convert(try fromHTML(html)),
-                       "Une phrase ordinaire, sans structure particulière.")
+                       "An ordinary sentence, with no particular structure.")
     }
 
-    // MARK: - Les blocs que le collage perdait
+    // MARK: - The blocks that pasting used to lose
 
-    /// Une citation collée devenait un paragraphe ordinaire : rien ne disait
-    /// plus que c'en était une. L'importateur HTML n'a pas d'attribut pour
-    /// `<blockquote>` — ce qu'il pose est un retrait.
+    /// A pasted blockquote used to become an ordinary paragraph: nothing
+    /// indicated it had been one. The HTML importer has no attribute for
+    /// `<blockquote>`: what it sets is an indent.
     func testABlockquoteKeepsItsMarker() throws {
-        let html = "<p>Avant.</p><blockquote>Une citation.</blockquote><p>Après.</p>"
+        let html = "<p>Before.</p><blockquote>A quote.</blockquote><p>After.</p>"
         let rich = try XCTUnwrap(NSAttributedString(
             data: Data(html.utf8),
             options: [.documentType: NSAttributedString.DocumentType.html,
                       .characterEncoding: String.Encoding.utf8.rawValue],
             documentAttributes: nil))
         let markdown = PasteConversion.convert(rich)
-        XCTAssertTrue(markdown.contains("> Une citation."), markdown)
+        XCTAssertTrue(markdown.contains("> A quote."), markdown)
     }
 
-    /// Un `<pre>` de plusieurs lignes arrivait sur une seule, entouré de
-    /// backticks simples : le bloc perdait ses retours et sa clôture.
+    /// A multi-line `<pre>` used to arrive on a single line, wrapped in
+    /// single backticks: the block lost its line breaks and its fence.
     func testAPreBecomesAFencedBlock() throws {
         let html = "<pre><code>let x = 1\nlet y = 2\nprint(x + y)</code></pre>"
         let rich = try XCTUnwrap(NSAttributedString(
@@ -216,12 +217,12 @@ final class PasteConversionTests: XCTestCase {
         XCTAssertTrue(markdown.hasSuffix("```"), markdown)
         XCTAssertTrue(markdown.contains("let x = 1"), markdown)
         XCTAssertTrue(markdown.contains("print(x + y)"), markdown)
-        // Les lignes du bloc ne doivent pas être entourées une par une.
+        // The lines of the block must not be wrapped one by one.
         XCTAssertFalse(markdown.contains("`let x = 1`"), markdown)
     }
 
-    /// Mais un mot de code au fil d'une phrase arrive lui aussi tout en chasse
-    /// fixe : une seule ligne doit rester du code en ligne, pas un bloc.
+    /// But a code word in the middle of a sentence also arrives in a
+    /// monospaced font: a single line must stay inline code, not a block.
     func testASingleMonospacedLineStaysInline() {
         let rich = NSMutableAttributedString(string: "arr[0] * 2")
         rich.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular),

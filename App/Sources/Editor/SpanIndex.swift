@@ -1,40 +1,40 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Trouve rapidement les constructions proches d'une position.
+/// Quickly finds the constructs near a position.
 ///
-/// # Pourquoi
+/// # Why
 ///
-/// À chaque flèche du clavier, `RevealPolicy` doit savoir quelles constructions
-/// touchent le curseur. En les balayant toutes, l'opération la plus fréquente
-/// de l'app devenait la plus chère : **3,3 ms sur un document de 100 000 mots**,
-/// pour un budget d'une milliseconde (§9). Un document de cette taille compte
-/// des dizaines de milliers de constructions, dont le curseur n'en touche
-/// jamais plus de trois.
+/// On every arrow key press, `RevealPolicy` needs to know which constructs
+/// touch the caret. Scanning all of them turned the app's most frequent
+/// operation into its most expensive: **3.3 ms on a 100,000-word document**,
+/// against a one-millisecond budget (§9). A document of that size holds tens
+/// of thousands of constructs, of which the caret never touches more than
+/// three.
 ///
-/// # Comment
+/// # How
 ///
-/// Les constructions sont séparées en deux familles, parce qu'elles se
-/// cherchent différemment :
+/// Constructs are split into two families, because they're searched for
+/// differently:
 ///
-/// - **Les courtes** — inline et portée ligne. Nombreuses mais brèves : un
-///   `**gras**` fait quinze caractères, un item de liste une ligne. Triées par
-///   position, elles se trouvent par dichotomie, puis par un pas en arrière
-///   borné par la plus longue d'entre elles.
-/// - **Les longues** — blocs de code, tableaux, front matter. Elles peuvent
-///   couvrir la moitié du document, ce qui rendrait la borne inutile ; mais il
-///   y en a une poignée, et les balayer ne coûte rien.
+/// - **The short ones** — inline and line-scoped. Numerous but brief: a
+///   `**bold**` run is fifteen characters, a list item one line. Sorted by
+///   position, they're found by binary search, then by a backward step
+///   bounded by the longest one among them.
+/// - **The long ones** — code blocks, tables, front matter. They can span
+///   half the document, which would make the bound useless; but there are
+///   only a handful of them, and scanning them costs nothing.
 struct SpanIndex {
 
     let spans: [SyntaxSpan]
 
-    /// Indices des constructions courtes, triés par position de début.
+    /// Indices of the short constructs, sorted by start position.
     private let shortOrder: [Int]
-    /// La plus longue des constructions courtes : la distance maximale à
-    /// remonter depuis le curseur.
+    /// The longest of the short constructs: the maximum distance to walk
+    /// back from the caret.
     private let longestShort: Int
-    /// Indices des constructions longues, balayées telles quelles.
+    /// Indices of the long constructs, scanned as-is.
     private let longIndices: [Int]
 
     init(_ spans: [SyntaxSpan]) {
@@ -54,10 +54,11 @@ struct SpanIndex {
                 longest = max(longest, span.range.length)
             }
         }
-        // `sorted` sur une liste déjà triée coûte quand même un tri complet —
-        // à chaque frappe, sur des dizaines de milliers de constructions. Or
-        // `MarkdownParser.splice` maintient l'ordre par position : le cas
-        // courant est donc de n'avoir rien à trier, et il faut le reconnaître.
+        // `sorted` on an already-sorted list still costs a full sort — on
+        // every keystroke, over tens of thousands of constructs. But
+        // `MarkdownParser.splice` maintains the order by position: the
+        // common case is therefore to have nothing to sort, and that has to
+        // be recognized.
         self.shortOrder = SpanIndex.isSorted(short, in: spans)
             ? short
             : short.sorted { spans[$0].range.location < spans[$1].range.location }
@@ -65,17 +66,16 @@ struct SpanIndex {
         self.longIndices = long
     }
 
-    /// Les constructions susceptibles de concerner cette position.
+    /// The constructs that might be relevant to this position.
     ///
-    /// Le filtrage final — bornes inclusives, imbrication — reste à
-    /// `RevealPolicy` : cet index élague, il ne décide pas.
+    /// The final filtering — inclusive bounds, nesting — is left to
+    /// `RevealPolicy`: this index prunes, it doesn't decide.
     func candidates(near location: Int, line: NSRange) -> [Int] {
         var result = longIndices
 
-        // La zone utile va du début de la ligne (pour les constructions à
-        // portée ligne) jusqu'au curseur, élargie en arrière de la plus longue
-        // construction courte — au-delà, aucune ne peut plus atteindre le
-        // curseur.
+        // The useful zone runs from the start of the line (for line-scoped
+        // constructs) to the caret, extended backward by the longest short
+        // construct — beyond that, none can still reach the caret.
         let lowerBound = min(line.location, location) - longestShort
         let upperBound = max(line.upperBound, location)
 
@@ -97,7 +97,7 @@ struct SpanIndex {
         return true
     }
 
-    /// Dichotomie sur `shortOrder`.
+    /// Binary search over `shortOrder`.
     private func firstIndex(withLocationAtLeast target: Int) -> Int {
         var low = 0
         var high = shortOrder.count

@@ -1,72 +1,74 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Écrire **dans** un tableau, sans jamais voir ses `|`.
+/// Write **inside** a table without ever seeing its `|`.
 ///
-/// # Ce que ce fichier remplace
+/// # What this file replaces
 ///
-/// La première version repliait la grille dès que le curseur entrait : on
-/// voyait réapparaître `| une | deux |`, on éditait la source, on ressortait.
-/// C'était le repli armé par le §2.6, et il était honnête — mais il demande de
-/// connaître la syntaxe d'un tableau markdown, c'est-à-dire exactement ce que
-/// l'app promet de ne plus imposer. Personne n'écrit un tableau à la main.
+/// The first version collapsed the grid as soon as the caret entered: `| one |
+/// two |` would reappear, the source got edited, then the caret exited again.
+/// That was the fallback specified by §2.6, and it was honest, but it requires
+/// knowing markdown table syntax, which is exactly what the app promises not to
+/// impose anymore. Nobody writes a table by hand.
 ///
-/// La grille reste donc affichée en permanence, et c'est ici que se règle le
-/// prix à payer : **les positions de curseur qui ne correspondent à rien
-/// d'affiché**.
+/// The grid therefore stays displayed at all times, and this is where the
+/// price gets paid: **caret positions that correspond to nothing on screen**.
 ///
-/// # Le problème, précisément
+/// # The problem, precisely
 ///
-/// Les `|`, les blancs de remplissage et la ligne `|---|` sont masqués. Le §2.3
-/// montre que le curseur ne peut jamais tomber dans un marqueur masqué —
-/// mais cette démonstration repose sur le fait qu'une construction se révèle
-/// quand le curseur la touche. Une grille qui ne se replie **jamais** sort de
-/// ce raisonnement : le tampon contient des caractères que rien ne montrera, et
-/// une flèche droite peut poser le curseur au milieu d'eux.
+/// The `|`, the padding whitespace and the `|---|` row are hidden. §2.3 shows
+/// that the caret can never land inside a hidden marker, but that proof relies
+/// on a construct revealing itself when the caret touches it. A grid that
+/// **never** collapses falls outside that reasoning: the buffer contains
+/// characters that nothing will display, and a right arrow can place the caret
+/// in the middle of them.
 ///
-/// La réponse n'est pas d'intercepter les commandes de déplacement une à une —
-/// il y en a une trentaine avec leurs variantes de sélection, et un jour l'une
-/// manquerait. C'est de **corriger le curseur après coup** : quel que soit le
-/// geste — flèche, clic, `⌘↓`, dictée —, s'il atterrit hors d'une cellule, il
-/// est ramené dans la plus proche, dans le sens où il allait.
+/// The answer is not to intercept movement commands one by one: there are
+/// about thirty of them with their selection variants, and one would
+/// eventually be missed. The answer is to **correct the caret after the
+/// fact**: whatever the gesture (arrow key, click, `⌘↓`, dictation), if it
+/// lands outside a cell, the caret is brought back into the nearest one, in
+/// the direction it was moving.
 ///
-/// Tout est pur et sans AppKit : c'est ce qui permet de vérifier au test que
-/// **aucune position d'un tableau réel ne laisse le curseur en dehors d'une
-/// cellule**, ce qu'aucune interception ne saurait démontrer.
+/// Everything here is pure and AppKit-free: that is what makes it possible to
+/// verify by test that **no position in a real table leaves the caret outside
+/// a cell**, something no interception approach could prove.
 enum TableEditing {
 
-    /// Les plages de contenu des cellules, dans l'ordre du document.
+    /// The content ranges of the cells, in document order.
     ///
-    /// La ligne de délimitation n'en fait pas partie : elle ne se rend pas, on
-    /// n'y écrit donc jamais.
+    /// The delimiter row is not part of it: it never renders, so nothing is
+    /// ever written into it.
     static func cellContents(of table: MarkdownTable) -> [NSRange] {
         table.rows.flatMap { $0.cells.map(\.content) }
     }
 
-    /// Ce point est-il un endroit où l'on peut écrire ?
+    /// Is this point a writable location?
     ///
-    /// Bornes comprises : le début et la fin d'une cellule sont dans la cellule.
-    /// Une cellule vide est une plage de longueur nulle, et sa seule position
-    /// est valide — sans quoi on ne pourrait jamais remplir un tableau neuf.
+    /// Bounds inclusive: the start and end of a cell are inside the cell. An
+    /// empty cell is a zero-length range, and its only position is valid;
+    /// otherwise a fresh table could never be filled in.
     static func isEditable(_ location: Int, in table: MarkdownTable) -> Bool {
         cellContents(of: table).contains { RevealPolicy.contains($0, location) }
     }
 
-    /// Ramène le curseur dans une cellule.
+    /// Brings the caret back into a cell.
     ///
-    /// - Parameter forward: le sens du déplacement qui vient d'avoir lieu. En
-    ///   avançant on prend la première position valide **après**, en reculant la
-    ///   dernière **avant** : c'est ce qui fait qu'une flèche droite continue
-    ///   d'avancer au lieu de rebondir sur la cellule qu'on vient de quitter.
-    /// - Returns: `nil` quand la position est déjà bonne, ou qu'aucune ne l'est.
+    /// - Parameter forward: the direction of the movement that just happened.
+    ///   When moving forward, the first valid position **after** is used;
+    ///   when moving backward, the last one **before** is used. This is what
+    ///   makes a right arrow keep advancing instead of bouncing back to the
+    ///   cell it just left.
+    /// - Returns: `nil` when the position is already valid, or when none is.
     static func correctedCaret(_ location: Int, in table: MarkdownTable, forward: Bool) -> Int? {
         guard !isEditable(location, in: table) else { return nil }
 
-        // Sur la ligne de délimitation, la colonne est connue : on ressort donc
-        // dans la **même colonne**, une ligne plus loin. Sans ça, une flèche
-        // vers le bas depuis l'en-tête renverrait au début du tableau, et la
-        // colonne qu'on suivait des yeux serait perdue à chaque traversée.
+        // On the delimiter row, the column is known: the caret exits into the
+        // **same column**, one row further down. Without this, a down arrow
+        // from the header row would send the caret back to the start of the
+        // table, and the column being followed visually would be lost on
+        // every crossing.
         if RevealPolicy.contains(table.delimiter, location),
            let column = table.delimiterCells.firstIndex(where: { RevealPolicy.contains($0, location) })
                ?? nearestColumn(to: location, among: table.delimiterCells),
@@ -81,19 +83,19 @@ enum TableEditing {
         if !forward, let previous = contents.last(where: { $0.upperBound <= location }) {
             return previous.upperBound
         }
-        // Bord du tableau : on retombe sur l'autre extrémité plutôt que de
-        // laisser le curseur dans les `|`.
+        // Edge of the table: the caret falls back to the other end rather
+        // than being left inside the `|`.
         return forward ? contents.last?.upperBound : contents.first?.location
     }
 
-    /// La cellule voisine, pour `⇥` et `⇧⇥`.
+    /// The neighbouring cell, for `⇥` and `⇧⇥`.
     ///
-    /// Elle est rendue **entière** : la tabulation sélectionne le contenu de la
-    /// cellule d'arrivée, ce qui permet de le remplacer en tapant. C'est le
-    /// geste d'un tableur, et celui d'Apple Notes.
+    /// It is returned **whole**: Tab selects the entire content of the
+    /// destination cell, which lets typing replace it. This is the gesture of
+    /// a spreadsheet, and of Apple Notes.
     ///
-    /// - Returns: `nil` au-delà de la dernière cellule — l'appelant crée alors
-    ///   une ligne.
+    /// - Returns: `nil` past the last cell; the caller then creates a new
+    ///   row.
     static func neighbouringCell(from location: Int, in table: MarkdownTable, forward: Bool) -> NSRange? {
         let contents = cellContents(of: table)
         guard let index = contents.firstIndex(where: { RevealPolicy.contains($0, location) })
@@ -104,13 +106,13 @@ enum TableEditing {
         return contents.indices.contains(target) ? contents[target] : nil
     }
 
-    /// La cellule de même colonne dans la ligne suivante, pour `⏎`.
+    /// The cell in the same column on the next row, for `⏎`.
     static func cellBelow(_ location: Int, in table: MarkdownTable) -> NSRange? {
         guard let position = position(of: location, in: table) else { return nil }
         return cell(row: position.row + 1, column: position.column, in: table)
     }
 
-    /// Où se trouve ce curseur, en (ligne, colonne).
+    /// Where this caret sits, as (row, column).
     static func position(of location: Int, in table: MarkdownTable) -> (row: Int, column: Int)? {
         for (row, line) in table.rows.enumerated() {
             for (column, cell) in line.cells.enumerated()
@@ -121,29 +123,30 @@ enum TableEditing {
         return nil
     }
 
-    /// Le curseur est-il dans la première position d'une cellule ?
+    /// Is the caret at the first position of a cell?
     ///
-    /// Sert à `⌫` : effacer là reviendrait à manger le `|` qui précède, donc à
-    /// fusionner deux colonnes sans que rien ne l'ait demandé.
+    /// Used by `⌫`: deleting there would eat the preceding `|`, silently
+    /// merging two columns.
     static func isAtCellStart(_ location: Int, in table: MarkdownTable) -> Bool {
         cellContents(of: table).contains { $0.location == location }
     }
 
-    // MARK: - Ajouter une ligne
+    // MARK: - Adding a row
 
-    /// La ligne vide à insérer sous `row`, et où poser le curseur dedans.
+    /// The empty row to insert below `row`, and where to place the caret in
+    /// it.
     ///
-    /// Le style suit celui de la ligne au-dessus — bord gauche ou non — parce
-    /// que le §5 vaut ici aussi : un tableau écrit sans `|` de bord ne doit pas
-    /// en gagner un parce qu'on lui a ajouté une ligne.
+    /// The style follows the row above (leading pipe or not), because §5
+    /// applies here too: a table written without a border `|` must not gain
+    /// one just because a row was added to it.
     static func newRow(below row: Int, in table: MarkdownTable) -> (text: String, caret: Int)? {
         guard table.rows.indices.contains(row) else { return nil }
         let model = table.rows[row]
         let columns = max(1, table.columnCount)
 
         var line = model.hasLeadingPipe ? "|" : ""
-        // Une cellule vide et non un blanc : `|  |` se relit comme une cellule
-        // vide, et le curseur s'y pose sans avoir à traverser des espaces.
+        // An empty cell, not a blank: `|  |` reads back as an empty cell, and
+        // the caret lands there without crossing spaces.
         for _ in 0..<columns { line += "  |" }
         if !model.hasLeadingPipe { line.removeLast() }
 
@@ -151,7 +154,7 @@ enum TableEditing {
         return ("\n" + line, caret + 1)
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
     private static func cell(row: Int, column: Int, in table: MarkdownTable) -> NSRange? {
         guard table.rows.indices.contains(row) else { return nil }
@@ -160,8 +163,8 @@ enum TableEditing {
         return cells[min(column, cells.count - 1)].content
     }
 
-    /// La colonne dont la plage est la plus proche — pour une position tombée
-    /// entre deux `---` de la ligne de délimitation.
+    /// The column whose range is closest, for a position that fell between
+    /// two `---` on the delimiter row.
     private static func nearestColumn(to location: Int, among cells: [NSRange]) -> Int? {
         cells.indices.min { left, right in
             distance(from: location, to: cells[left]) < distance(from: location, to: cells[right])

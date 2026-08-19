@@ -1,29 +1,28 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// La ligne d'une liste, sélectionnée **en gris** et non en bleu.
+/// A list row, selected **in gray** rather than in blue.
 ///
-/// # Pourquoi ce fichier existe
+/// # Why this file exists
 ///
-/// `NSTableView` peint sa sélection avec la couleur d'accent du système, c'est-
-/// à-dire du bleu. C'était la seule couleur d'accent restée dans l'app, dans
-/// les trois listes que l'utilisateur voit le plus : le menu slash, la palette
-/// de commandes et le plan du document. Le §7 ne l'autorise que sur le contenu
-/// de l'utilisateur — ses images, ses blocs de code coloriés sur demande — et
-/// `Theme` annonçait déjà neutraliser la sélection système sans qu'aucune liste
-/// ne l'applique.
+/// `NSTableView` paints its selection with the system's accent color, that
+/// is, blue. It was the last accent color left in the app, in the three
+/// lists the user sees the most: the slash menu, the command palette and
+/// the document outline. §7 only allows it on the user's own content — their
+/// images, their code blocks colored on request — and `Theme` already
+/// claimed to neutralize the system selection without any list actually
+/// applying it.
 ///
-/// Il n'y a pas de réglage pour cela : `selectionHighlightStyle` propose
-/// `.regular` — bleu — ou `.none` — rien. Le gris demande donc de dessiner
-/// soi-même, ce qui tient en une méthode.
+/// There is no setting for this: `selectionHighlightStyle` only offers
+/// `.regular` — blue — or `.none` — nothing. Gray therefore has to be drawn
+/// by hand, which fits in one method.
 ///
-/// Le coin arrondi n'est pas décoratif : sans lui, la bande grise touche les
-/// bords du panneau et se lit comme un séparateur plutôt que comme une
-/// sélection.
+/// The rounded corner is not decorative: without it, the gray band touches
+/// the edges of the panel and reads as a divider rather than as a selection.
 final class ListRowView: NSTableRowView {
 
-    /// Marge horizontale laissée de chaque côté de la bande.
+    /// Horizontal margin left on each side of the band.
     private static let inset: CGFloat = 4
     private static let radius: CGFloat = 6
 
@@ -34,15 +33,16 @@ final class ListRowView: NSTableRowView {
         fill(with: Theme.NS.rowSelection)
     }
 
-    /// Le survol, qui manquait partout.
+    /// Hover feedback, which was missing everywhere.
     ///
-    /// Les trois listes de l'app — menu slash, palette, plan — ne réagissaient
-    /// pas au passage du pointeur : on ne savait pas ce qu'on allait cliquer
-    /// avant de l'avoir cliqué. `Theme.rowHover` existait, documenté, et
-    /// n'était utilisé nulle part.
+    /// The app's three lists — slash menu, palette, outline — did not react
+    /// to the pointer passing over them: there was no way to know what would
+    /// be clicked before clicking it. `Theme.rowHover` existed, documented,
+    /// and was used nowhere.
     ///
-    /// Il est peint dans le **fond** et non dans la sélection : une ligne
-    /// sélectionnée qu'on survole ne doit pas empiler deux gris.
+    /// It is painted into the **background**, not into the selection: a
+    /// selected row being hovered must not stack two grays on top of each
+    /// other.
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         guard isHovered, !isSelected else { return }
@@ -55,9 +55,9 @@ final class ListRowView: NSTableRowView {
         NSBezierPath(roundedRect: box, xRadius: Self.radius, yRadius: Self.radius).fill()
     }
 
-    /// `.activeAlways` : les panneaux ancrés au curseur ne deviennent jamais
-    /// fenêtre clé — c'est tout leur principe — et un suivi limité à la fenêtre
-    /// active n'y répondrait donc jamais.
+    /// `.activeAlways`: panels anchored to the caret never become the key
+    /// window — that is their whole point — so tracking limited to the
+    /// active window would never respond there.
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
@@ -76,19 +76,19 @@ final class ListRowView: NSTableRowView {
         needsDisplay = true
     }
 
-    /// Les rangées sont recyclées : sans cette remise à zéro, un survol resté
-    /// collé se rallumerait sur une autre entrée après un défilement.
+    /// Rows are recycled: without this reset, a hover state left stuck would
+    /// light back up on a different entry after scrolling.
     override func prepareForReuse() {
         super.prepareForReuse()
         isHovered = false
     }
 
-    /// La couleur du texte ne change pas quand la ligne est sélectionnée.
+    /// The text color does not change when the row is selected.
     ///
-    /// `NSTableView` bascule ses libellés en blanc sur la sélection bleue, ce
-    /// qui les rendrait illisibles sur un gris clair. On lui dit donc que la
-    /// ligne n'est jamais « en évidence » au sens du système : elle l'est à sa
-    /// façon, par le fond qu'on vient de peindre.
+    /// `NSTableView` switches its labels to white on the blue selection,
+    /// which would make them illegible on a light gray. It is therefore told
+    /// that the row is never "emphasized" in the system's sense: it is, in
+    /// its own way, through the background just painted.
     override var isEmphasized: Bool {
         get { false }
         set { }

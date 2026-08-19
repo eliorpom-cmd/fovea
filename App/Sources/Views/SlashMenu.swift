@@ -1,20 +1,20 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le menu d'insertion de bloc, ouvert par `/` (§4.5).
+/// The block insertion menu, opened by `/` (§4.5).
 ///
-/// Le comportement de panneau — jamais fenêtre clé, ancré au curseur, piloté
-/// par la vue de texte — vit dans `FloatingPanel`. Ne reste ici que la liste
-/// des blocs et son filtrage.
+/// The panel behavior — never a key window, anchored to the caret, driven
+/// by the text view — lives in `FloatingPanel`. Only the list of blocks and
+/// its filtering remain here.
 ///
-/// L'alternative — un panneau qui prend le focus, comme `⌘K` — obligerait à
-/// retirer le `/` du tampon puis à le remettre, et le curseur clignoterait
-/// ailleurs pendant qu'on tape. Ce serait un mode ; ici il n'y en a pas.
+/// The alternative — a panel that takes focus, like `⌘K` — would force
+/// removing the `/` from the buffer and putting it back, and the caret would
+/// blink elsewhere while typing. That would be a mode; there is none here.
 @MainActor
 final class SlashMenu: FloatingPanel {
 
-    /// Appelé quand une entrée est validée.
+    /// Called when an entry is confirmed.
     var onChoose: ((SlashCommand) -> Void)?
 
     private let tableView = NSTableView()
@@ -23,13 +23,13 @@ final class SlashMenu: FloatingPanel {
 
     private static let rowHeight: CGFloat = 28
     private static let width: CGFloat = 260
-    /// Dix — c'est-à-dire **toutes**.
+    /// Ten — that is, **all of them**.
     ///
-    /// Sept étaient montrées, sans ascenseur ni le moindre indice qu'il y en
-    /// avait d'autres : « Bloc de code », « Tableau » et « Filet horizontal »
-    /// étaient invisibles. Dont « Tableau », qui est la raison d'être du menu —
-    /// c'est le bloc qu'on ne sait pas écrire à la main, donc celui pour lequel
-    /// on ouvre le menu.
+    /// Seven used to be shown, with no scroller and no hint that there were
+    /// more: "Code Block", "Table" and "Horizontal Rule" were invisible.
+    /// Including "Table", which is the whole reason the menu exists — it is
+    /// the block nobody knows how to write by hand, hence the one the menu
+    /// gets opened for.
     private static let maximumVisibleRows = SlashCommand.allCases.count
 
     // MARK: - Construction
@@ -47,13 +47,12 @@ final class SlashMenu: FloatingPanel {
         tableView.delegate = self
         tableView.target = self
         tableView.action = #selector(rowClicked)
-        tableView.addTableColumn(NSTableColumn(identifier: .init("bloc")))
+        tableView.addTableColumn(NSTableColumn(identifier: .init("block")))
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
-        // Le panneau peut rétrécir faute de place sous le curseur (voir
-        // `FloatingPanel.present`) : il lui faut alors de quoi dire qu'il
-        // continue.
+        // The panel can shrink for lack of room under the caret (see
+        // `FloatingPanel.present`): it then needs a way to say it continues.
         scrollView.hasVerticalScroller = true
         scrollView.scrollerStyle = .overlay
         scrollView.autohidesScrollers = true
@@ -70,13 +69,13 @@ final class SlashMenu: FloatingPanel {
         ])
     }
 
-    // MARK: - Ouverture et filtrage
+    // MARK: - Opening and filtering
 
-    /// Ouvre — ou met à jour — le menu sous le curseur.
+    /// Opens — or updates — the menu under the caret.
     ///
-    /// - Parameter caretRect: la position du curseur **en coordonnées écran**.
-    /// - Returns: `false` si aucune entrée ne correspond ; le menu est alors
-    ///   fermé, et l'appelant sait que la frappe est du texte ordinaire.
+    /// - Parameter caretRect: the caret's position **in screen coordinates**.
+    /// - Returns: `false` if no entry matches; the menu is then closed, and
+    ///   the caller knows the keystroke is ordinary text.
     @discardableResult
     func present(query: String, caretRect: NSRect, over host: NSWindow?) -> Bool {
         entries = SlashCommand.matching(query)
@@ -94,7 +93,7 @@ final class SlashMenu: FloatingPanel {
         return true
     }
 
-    // MARK: - Navigation, pilotée depuis la vue de texte
+    // MARK: - Navigation, driven from the text view
 
     func moveSelection(by delta: Int) {
         guard !entries.isEmpty else { return }
@@ -123,7 +122,7 @@ extension SlashMenu: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
 
-    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    /// The selection is gray, not blue. See `ListRowView`.
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         ListRowView()
     }
@@ -133,7 +132,7 @@ extension SlashMenu: NSTableViewDataSource, NSTableViewDelegate {
         let title = NSTextField(labelWithString: command.title)
         title.font = .systemFont(ofSize: 13)
 
-        // La syntaxe posée, en chasse fixe : le menu montre ce qu'il écrit.
+        // The syntax it inserts, in monospace: the menu shows what it writes.
         let hint = NSTextField(labelWithString: command.hint)
         hint.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         hint.textColor = Theme.NS.labelTertiary
@@ -144,8 +143,8 @@ extension SlashMenu: NSTableViewDataSource, NSTableViewDelegate {
         stack.orientation = .horizontal
         stack.spacing = Theme.Space.s12
         stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.Space.s12, bottom: 0, right: Theme.Space.s12)
-        // La syntaxe affichée à droite ne s'énonce pas : « dièse dièse » n'aide
-        // personne à l'oral. Seul le nom du bloc est lu.
+        // The syntax shown on the right is not spoken: "hash hash" helps no
+        // one aloud. Only the block's name is read.
         stack.setAccessibilityElement(true)
         stack.setAccessibilityRole(.staticText)
         stack.setAccessibilityLabel(command.title)

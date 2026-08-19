@@ -1,40 +1,39 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le collage (§2.5).
+/// Pasting (§2.5).
 ///
-/// Coller depuis un navigateur, Pages ou Notion apporte du HTML ou du RTF. Le
-/// laisser tomber en texte brut perdrait les titres, les listes et les liens
-/// que l'utilisateur voyait à l'écran une seconde plus tôt — dans un éditeur
-/// markdown, c'est la conversion qui est le comportement attendu, pas le
-/// contraire.
+/// Pasting from a browser, Pages or Notion brings in HTML or RTF. Letting
+/// it fall back to plain text would lose the headings, lists and links the
+/// user was looking at a second earlier — in a markdown editor, conversion
+/// is the expected behavior, not the exception.
 ///
-/// L'ordre d'examen du presse-papier est celui du §2.5 :
+/// The order in which the pasteboard is examined is the one from §2.5:
 ///
-/// 1. du markdown → collé tel quel ;
-/// 2. du HTML ou du RTF → converti ;
-/// 3. une image → écrite à côté du document et référencée ;
-/// 4. du texte brut → inséré tel quel.
+/// 1. markdown → pasted as is;
+/// 2. HTML or RTF → converted;
+/// 3. an image → written next to the document and referenced;
+/// 4. plain text → inserted as is.
 @MainActor
 enum PasteConversion {
 
-    /// Ce qu'il faut réellement insérer pour un presse-papier donné.
+    /// What should actually be inserted for a given pasteboard.
     ///
-    /// - Returns: `nil` quand `NSTextView` doit faire son travail habituel.
+    /// - Returns: `nil` when `NSTextView` should do its usual work.
     static func markdown(from pasteboard: NSPasteboard) -> String? {
-        // 1. Du texte brut qui *est* déjà du markdown structuré. Le convertir
-        //    depuis sa version HTML le ferait passer par un aller-retour
-        //    inutile, et perdrait la forme exacte des marqueurs — `_` deviendrait
-        //    `*`, ce que le §5 interdit.
+        // 1. Plain text that *is* already structured markdown. Converting
+        //    it from its HTML version would send it through a pointless
+        //    round-trip, and would lose the exact shape of the markers —
+        //    `_` would become `*`, which §5 forbids.
         if let plain = pasteboard.string(forType: .string), looksLikeMarkdown(plain) {
             return plain
         }
 
-        // 2. Du texte riche. `NSAttributedString` sait lire HTML comme RTF ;
-        //    la conversion travaille ensuite sur les attributs, sans jamais
-        //    toucher au HTML lui-même — analyser du HTML à la main serait une
-        //    source de bugs sans fin.
+        // 2. Rich text. `NSAttributedString` can read HTML as well as RTF;
+        //    the conversion then works on the attributes, never touching
+        //    the HTML itself — parsing HTML by hand would be an endless
+        //    source of bugs.
         for type in [NSPasteboard.PasteboardType.html, .rtf, .rtfd] {
             guard let data = pasteboard.data(forType: type),
                   let rich = attributedString(from: data, type: type) else { continue }
@@ -43,11 +42,11 @@ enum PasteConversion {
         return nil
     }
 
-    /// Vrai si le texte porte déjà des marques de structure markdown.
+    /// True if the text already carries markdown structure marks.
     ///
-    /// Volontairement prudent : une phrase ordinaire ne doit pas être prise
-    /// pour du markdown, mais un document markdown ne doit jamais subir de
-    /// conversion. Le doute profite au texte brut, qui est sans risque.
+    /// Deliberately cautious: an ordinary sentence must not be mistaken for
+    /// markdown, but a markdown document must never go through conversion.
+    /// The benefit of the doubt goes to plain text, which carries no risk.
     static func looksLikeMarkdown(_ text: String) -> Bool {
         for line in text.split(separator: "\n", omittingEmptySubsequences: true).prefix(40) {
             let trimmed = line.drop { $0 == " " || $0 == "\t" }
@@ -59,27 +58,27 @@ enum PasteConversion {
         return false
     }
 
-    // MARK: - Conversion du texte riche
+    // MARK: - Rich text conversion
 
-    /// Traduit une chaîne attribuée en markdown.
+    /// Translates an attributed string into markdown.
     ///
-    /// La traduction se fait sur les **attributs** — graisse, italique, lien,
-    /// chasse fixe, style de paragraphe — parce que ce sont eux qui portent
-    /// l'intention. Un balayage du HTML raterait tout ce que le site a fait
-    /// avec du CSS, et se noierait dans ce qu'il a fait avec des `<div>`.
+    /// The translation works on the **attributes** — weight, italic, link,
+    /// fixed pitch, paragraph style — because they are what carries the
+    /// intent. Scanning the HTML would miss everything the site did with
+    /// CSS, and would drown in whatever it did with `<div>`s.
     ///
-    /// # Ce que la première version ne faisait pas
+    /// # What the first version did not do
     ///
-    /// Elle promettait les titres et les listes — c'est écrit en tête de ce
-    /// fichier — et ne traitait que l'inline : gras, italique, barré, code,
-    /// lien. Coller un article de blog rendait donc ses titres en paragraphes
-    /// ordinaires et ses listes en lignes nues, ce qui est précisément la perte
-    /// que la conversion existe pour éviter.
+    /// It promised headings and lists — that is written at the top of this
+    /// file — and only handled inline: bold, italic, strikethrough, code,
+    /// link. Pasting a blog post therefore rendered its headings as
+    /// ordinary paragraphs and its lists as bare lines, which is exactly
+    /// the loss conversion exists to avoid.
     ///
-    /// La lecture se fait maintenant **par paragraphe** : chacun demande à son
-    /// style ce qu'il est — une liste le dit par ses `textLists`, un titre par
-    /// sa taille rapportée à celle du corps — puis son contenu passe par la
-    /// conversion inline d'origine, inchangée.
+    /// Reading now happens **paragraph by paragraph**: each one asks its
+    /// style what it is — a list says so through its `textLists`, a
+    /// heading through its size relative to the body's — then its content
+    /// goes through the original inline conversion, unchanged.
     static func convert(_ rich: NSAttributedString) -> String {
         let text = rich.string as NSString
         let body = dominantFontSize(rich)
@@ -90,7 +89,7 @@ enum PasteConversion {
             let paragraph = text.paragraphRange(for: NSRange(location: cursor, length: 0))
             cursor = max(paragraph.upperBound, cursor + 1)
 
-            // Le terminateur ne fait pas partie du contenu.
+            // The terminator is not part of the content.
             var range = paragraph
             while range.length > 0, isNewline(text.character(at: range.upperBound - 1)) {
                 range.length -= 1
@@ -99,7 +98,7 @@ enum PasteConversion {
             let block = describe(rich, paragraph: range, body: body)
             let content = inline(rich, in: block.content,
                                  ignoringBold: block.isHeading, ignoringCode: block.isCode)
-            // Une ligne vide sépare deux blocs ; elle n'en est pas un.
+            // A blank line separates two blocks; it is not one itself.
             guard !content.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
             blocks.append(Block(prefix: block.prefix, content: content,
                                 isListItem: block.isListItem, isCode: block.isCode))
@@ -111,16 +110,16 @@ enum PasteConversion {
             let opensRun = block.isCode && previous?.isCode != true
             let closesRun = block.isCode
                 && (index + 1 >= blocks.count || blocks[index + 1].isCode == false)
-            // **Une seule ligne de chasse fixe reste du code au fil du texte.**
-            // Un mot de code copié au milieu d'une phrase arrive exactement
-            // comme un `<pre>` d'une ligne : rien ne les distingue. Ce qui les
-            // sépare vraiment, c'est qu'un bloc en fait plusieurs.
+            // **A single fixed-pitch line stays inline code.** A code word
+            // copied in the middle of a sentence arrives exactly like a
+            // one-line `<pre>`: nothing distinguishes them. What actually
+            // separates them is that a block spans more than one.
             let isFenced = block.isCode && !(opensRun && closesRun)
 
             if let previous {
-                // Deux items de liste se suivent ligne à ligne, deux lignes de
-                // code aussi ; tout le reste demande la ligne vide qui sépare
-                // deux blocs en markdown.
+                // Two list items follow each other line by line, and so do
+                // two code lines; everything else needs the blank line that
+                // separates two blocks in markdown.
                 let tight = (block.isListItem && previous.isListItem)
                     || (block.isCode && previous.isCode)
                 output += tight ? "\n" : "\n\n"
@@ -140,8 +139,8 @@ enum PasteConversion {
         var isCode: Bool
     }
 
-    /// La conversion des attributs inline d'une portée : celle d'origine, à la
-    /// portée près.
+    /// The inline attribute conversion for a range: the original one,
+    /// scoped down.
     private static func inline(_ rich: NSAttributedString, in whole: NSRange,
                                ignoringBold: Bool = false,
                                ignoringCode: Bool = false) -> String {
@@ -152,8 +151,8 @@ enum PasteConversion {
             var fragment = (rich.string as NSString).substring(with: range)
             guard !fragment.isEmpty else { return }
 
-            // Les blancs de bord ne doivent pas se retrouver **à l'intérieur**
-            // des marqueurs : `** gras **` n'est pas du gras pour cmark.
+            // Edge whitespace must not end up **inside** the markers:
+            // `** bold **` is not bold for cmark.
             let leading = String(fragment.prefix { $0 == " " || $0 == "\n" })
             let trailing = String(fragment.reversed().prefix { $0 == " " || $0 == "\n" }.reversed())
             fragment = String(fragment.dropFirst(leading.count).dropLast(trailing.count))
@@ -168,16 +167,17 @@ enum PasteConversion {
 
             var wrapped = escapeMarkdown(fragment)
             if isMonospaced, ignoringCode {
-                // Déjà dans une clôture : ce qui est dedans est littéral, et des
-                // backticks par-dessus se liraient dans le bloc.
+                // Already inside a fence: what is inside it is literal, and
+                // backticks on top of it would read as part of the block.
                 wrapped = fragment
             } else if isMonospaced {
-                // Le code inline n'admet pas d'autre formatage à l'intérieur, et
-                // ne s'échappe pas : ce qui est entre backticks est littéral.
+                // Inline code does not accept other formatting inside it,
+                // and is not escaped: what is between backticks is literal.
                 wrapped = "`" + fragment + "`"
             } else {
-                // Un titre est déjà gras en markdown : y ajouter des étoiles
-                // donnerait `# **Le titre**`, deux fois la même intention.
+                // A heading is already bold in markdown: adding asterisks
+                // to it would give `# **The heading**`, the same intent
+                // twice.
                 if traits.contains(.boldFontMask), !ignoringBold { wrapped = "**" + wrapped + "**" }
                 if traits.contains(.italicFontMask) { wrapped = "*" + wrapped + "*" }
                 if let style = attributes[.strikethroughStyle] as? Int, style != 0 {
@@ -192,44 +192,44 @@ enum PasteConversion {
         return output
     }
 
-    // MARK: - Ce qu'un paragraphe est
+    // MARK: - What a paragraph is
 
-    /// Le préfixe markdown d'un paragraphe, et la portée de son contenu.
+    /// A paragraph's markdown prefix, and the range of its content.
     private static func describe(_ rich: NSAttributedString, paragraph: NSRange, body: CGFloat)
         -> (prefix: String, content: NSRange, isListItem: Bool, isHeading: Bool, isCode: Bool) {
         guard paragraph.length > 0 else { return ("", paragraph, false, false, false) }
         let style = rich.attribute(.paragraphStyle, at: paragraph.location,
                                    effectiveRange: nil) as? NSParagraphStyle
 
-        // Une liste se déclare : `NSTextList` est ce que l'importateur HTML
-        // pose sur un `<ul>` ou un `<ol>`, et son imbrication se lit au nombre
-        // de listes empilées.
+        // A list declares itself: `NSTextList` is what the HTML importer
+        // sets on a `<ul>` or `<ol>`, and its nesting is read from the
+        // number of stacked lists.
         if let lists = style?.textLists, !lists.isEmpty {
             let indent = String(repeating: "  ", count: max(0, lists.count - 1))
             let marker = lists.last.map { isOrdered($0) ? "1. " : "- " } ?? "- "
             return (indent + marker, withoutListMarker(rich, in: paragraph), true, false, false)
         }
 
-        // **Un `<pre>` est un bloc, pas du code au fil du texte.** Il arrivait
-        // entouré de backticks simples, sur une seule ligne : un bloc de code
-        // collé depuis un site perdait ses retours et sa clôture. Ce qui les
-        // distingue est l'étendue — tout le paragraphe est en chasse fixe,
-        // alors qu'un `<code>` n'en couvre qu'un morceau.
+        // **A `<pre>` is a block, not inline code.** It used to arrive
+        // wrapped in single backticks, on one line: a code block pasted
+        // from a site lost its line breaks and its fence. What
+        // distinguishes them is extent — the whole paragraph is in fixed
+        // pitch, whereas a `<code>` only covers part of it.
         if isEntirely(rich, paragraph: paragraph, monospaced: true) {
             return ("", paragraph, false, false, true)
         }
 
-        // **Une citation se lit à son retrait.** L'importateur HTML n'a pas
-        // d'attribut pour `<blockquote>` : ce qu'il pose est une indentation.
-        // Sans ce cas, une citation collée devenait un paragraphe ordinaire et
-        // rien ne disait plus que c'en était une.
+        // **A blockquote is read from its indent.** The HTML importer has
+        // no attribute for `<blockquote>`: what it sets is an indentation.
+        // Without this case, a pasted blockquote became an ordinary
+        // paragraph and nothing said it had been one anymore.
         if let style, style.headIndent > 0 || style.firstLineHeadIndent > 0 {
             return ("> ", paragraph, false, false, false)
         }
 
-        // Un titre se mesure. La comparaison porte sur la **plus petite**
-        // taille du paragraphe : un seul mot agrandi au milieu d'une phrase ne
-        // doit pas la transformer en titre.
+        // A heading is measured. The comparison uses the **smallest** size
+        // in the paragraph: a single enlarged word in the middle of a
+        // sentence must not turn it into a heading.
         if body > 0, let smallest = smallestFontSize(rich, in: paragraph) {
             let ratio = smallest / body
             let level = ratio >= 1.7 ? 1 : ratio >= 1.4 ? 2 : ratio >= 1.15 ? 3 : 0
@@ -240,13 +240,13 @@ enum PasteConversion {
         return ("", paragraph, false, false, false)
     }
 
-    /// Tout le paragraphe est-il dans cette chasse ?
+    /// Is the whole paragraph set in this pitch?
     private static func isEntirely(_ rich: NSAttributedString,
                                    paragraph: NSRange, monospaced: Bool) -> Bool {
         guard paragraph.length > 0 else { return false }
         var uniform = true
         rich.enumerateAttribute(.font, in: paragraph) { value, range, stop in
-            // Les blancs n'ont pas de chasse qui compte.
+            // Whitespace has no pitch that counts.
             let piece = (rich.string as NSString).substring(with: range)
             guard !piece.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             if ((value as? NSFont)?.isFixedPitch ?? false) != monospaced {
@@ -257,12 +257,12 @@ enum PasteConversion {
         return uniform
     }
 
-    /// La taille de police la plus représentée, prise pour celle du corps.
+    /// The most represented font size, taken as the body's.
     ///
-    /// Elle ne peut pas être devinée : un site en 14 px et un autre en 18 px
-    /// donnent des titres de tailles absolues très différentes. Ce qui est
-    /// stable, c'est le **rapport** entre un titre et le texte courant, et
-    /// c'est donc le texte courant qu'il faut identifier — le plus long, par
+    /// It cannot be guessed: a site set in 14 px and another in 18 px give
+    /// headings with very different absolute sizes. What is stable is the
+    /// **ratio** between a heading and the running text, so it is the
+    /// running text that must be identified — the longest one, by
     /// construction.
     private static func dominantFontSize(_ rich: NSAttributedString) -> CGFloat {
         var weights: [CGFloat: Int] = [:]
@@ -282,7 +282,7 @@ enum PasteConversion {
         return smallest
     }
 
-    /// Une liste numérotée, ou à puces ?
+    /// A numbered list, or a bulleted one?
     private static func isOrdered(_ list: NSTextList) -> Bool {
         switch list.markerFormat {
         case .decimal, .octal,
@@ -295,12 +295,12 @@ enum PasteConversion {
         }
     }
 
-    /// La portée du texte d'un item, **sans la puce que l'importateur y a
-    /// écrite**.
+    /// The range of an item's text, **without the bullet the importer
+    /// wrote into it**.
     ///
-    /// `NSAttributedString` ne se contente pas de poser un `NSTextList` : il
-    /// écrit aussi la marque dans le texte, tabulée. La laisser donnerait
-    /// `- •\tUn item` — la puce de markdown suivie de celle du HTML.
+    /// `NSAttributedString` does not just set an `NSTextList`: it also
+    /// writes the mark into the text, tab-separated. Leaving it would give
+    /// `- •\tAn item` — the markdown bullet followed by the HTML one.
     private static func withoutListMarker(_ rich: NSAttributedString, in paragraph: NSRange) -> NSRange {
         let text = rich.string as NSString
         var start = paragraph.location
@@ -312,7 +312,7 @@ enum PasteConversion {
         skipBlanks()
 
         let marked = start
-        // Une puce, ou un nombre suivi de son délimiteur.
+        // A bullet, or a number followed by its delimiter.
         if start < end, "•◦▪·-*\u{2022}".utf16.contains(text.character(at: start)) {
             start += 1
         } else {
@@ -321,14 +321,15 @@ enum PasteConversion {
             guard digits > start, digits < end else {
                 return NSRange(location: marked, length: end - marked)
             }
-            // `NSAttributedString` écrit « 1\t », sans délimiteur. Le point ou
-            // la parenthèse restent acceptés — d'autres sources en posent.
+            // `NSAttributedString` writes "1\t", without a delimiter. The
+            // period or the parenthesis are still accepted — other sources
+            // set them.
             let delimiter = text.character(at: digits)
             let numbered = delimiter == 46 || delimiter == 41
             let candidate = numbered ? digits + 1 : digits
-            // **La tabulation est le discriminant.** Un nombre suivi d'une
-            // simple espace peut être le début du texte — « 2026 fut une
-            // année » — et le manger serait pire que garder une puce.
+            // **The tab is the discriminant.** A number followed by a
+            // simple space can be the start of the text — "2026 was a
+            // year" — and eating it would be worse than keeping a bullet.
             let isMarker = candidate < end
                 && (text.character(at: candidate) == 9 || (numbered && isBlank(text.character(at: candidate))))
             guard isMarker else { return NSRange(location: marked, length: end - marked) }
@@ -349,7 +350,7 @@ enum PasteConversion {
         unit == 10 || unit == 13 || unit == 0x2028 || unit == 0x2029
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
     private static func attributedString(from data: Data,
                                          type: NSPasteboard.PasteboardType) -> NSAttributedString? {
@@ -372,10 +373,10 @@ enum PasteConversion {
         }
     }
 
-    /// Protège les caractères qui auraient un sens en markdown.
+    /// Escapes the characters that would have meaning in markdown.
     ///
-    /// Sans cela, coller un texte contenant « 2 * 3 * 4 » depuis une page web
-    /// produirait de l'italique là où il n'y avait qu'une multiplication.
+    /// Without this, pasting text containing "2 * 3 * 4" from a web page
+    /// would produce italics where there was only a multiplication.
     private static func escapeMarkdown(_ text: String) -> String {
         var result = ""
         result.reserveCapacity(text.count)
@@ -386,8 +387,8 @@ enum PasteConversion {
         return result
     }
 
-    /// Trois sauts de ligne ou plus n'ont pas de sens en markdown : deux
-    /// séparent déjà deux blocs. Le HTML des sites en produit beaucoup.
+    /// Three or more line breaks have no meaning in markdown: two already
+    /// separate two blocks. Sites' HTML produces plenty of them.
     private static func normaliseBlankLines(_ text: String) -> String {
         var result = text
         while result.contains("\n\n\n") {

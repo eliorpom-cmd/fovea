@@ -1,17 +1,17 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le damier de création d'un tableau.
+/// The checkerboard grid for creating a table.
 ///
-/// Insérer un tableau demandait jusqu'ici d'accepter un 3 × 3 puis de le
-/// corriger. Le damier pose la question au moment où l'on sait y répondre, et
-/// il la pose **sans mots** : on survole, on voit la grille se remplir, on
-/// clique. C'est trois fois rien à écrire et ça évite de compter des colonnes.
+/// Inserting a table used to mean accepting a 3 × 3 and then fixing it. The
+/// grid asks the question at the moment the answer is known, and it asks
+/// **without words**: the user hovers, watches the grid fill in, and
+/// clicks. It is next to nothing to write, and it avoids counting columns.
 @MainActor
 final class TableSizePicker: FloatingPanel {
 
-    /// Appelé avec le nombre de colonnes et de lignes de corps choisi.
+    /// Called with the chosen number of columns and body rows.
     var onChoose: ((_ columns: Int, _ rows: Int) -> Void)?
 
     private let grid = GridView()
@@ -66,8 +66,8 @@ final class TableSizePicker: FloatingPanel {
                 caretRect: caretRect, over: host)
     }
 
-    /// Les flèches déplacent le coin choisi. Le damier se pilote donc
-    /// entièrement au clavier, comme tout le reste.
+    /// The arrow keys move the chosen corner. The grid is therefore fully
+    /// keyboard-driven, like everything else.
     func move(columns: Int, rows: Int) {
         let next = (min(max(1, grid.selection.columns + columns), Self.maximumColumns),
                     min(max(1, grid.selection.rows + rows), Self.maximumRows))
@@ -86,12 +86,12 @@ final class TableSizePicker: FloatingPanel {
 
     private func refreshCaption(_ columns: Int, _ rows: Int) {
         grid.selection = (columns, rows)
-        // « 3 colonnes × 2 lignes » se lit ; « 3 × 2 » se devine mal quand on ne
-        // sait pas lequel vient en premier.
-        label.stringValue = "\(columns) colonne\(columns > 1 ? "s" : "") × \(rows) ligne\(rows > 1 ? "s" : "")"
+        // "3 columns × 2 rows" reads clearly; "3 × 2" is hard to guess when
+        // it is unclear which one comes first.
+        label.stringValue = "\(columns) column\(columns > 1 ? "s" : "") × \(rows) row\(rows > 1 ? "s" : "")"
     }
 
-    // MARK: - La grille elle-même
+    // MARK: - The grid itself
 
     private final class GridView: NSView {
         var selection: (columns: Int, rows: Int) = (3, 2) { didSet { needsDisplay = true } }
@@ -109,8 +109,8 @@ final class TableSizePicker: FloatingPanel {
         private func cellAt(_ point: NSPoint) -> (Int, Int)? {
             let step = TableSizePicker.cell + TableSizePicker.gap
             let column = Int(point.x / step) + 1
-            // L'origine d'une vue AppKit est en bas : la première ligne du
-            // tableau est donc la **dernière** rangée dessinée.
+            // An AppKit view's origin is at the bottom: the table's first
+            // row is therefore the **last** row drawn.
             let row = TableSizePicker.maximumRows - Int(point.y / step)
             guard (1...TableSizePicker.maximumColumns).contains(column),
                   (1...TableSizePicker.maximumRows).contains(row) else { return nil }
@@ -139,8 +139,8 @@ final class TableSizePicker: FloatingPanel {
                     let path = NSBezierPath(roundedRect: frame, xRadius: 3, yRadius: 3)
                     (chosen ? Theme.NS.label : Theme.NS.fillTertiary).setFill()
                     path.fill()
-                    // La première rangée est l'en-tête : un liseré la distingue,
-                    // pour qu'on sache ce qu'on crée avant de l'avoir créé.
+                    // The first row is the header: an outline sets it apart,
+                    // so the user knows what is being created before it exists.
                     if row == 1 {
                         Theme.NS.labelSecondary.setStroke()
                         path.lineWidth = 1

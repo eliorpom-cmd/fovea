@@ -1,70 +1,70 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
-/// Le parseur ne produit que des positions. Ces tests vérifient qu'elles
-/// désignent **exactement** les caractères de syntaxe, et rien d'autre : un
-/// marqueur trop large mangerait une lettre du texte de l'auteur, un marqueur
-/// trop court laisserait une étoile orpheline à l'écran.
+/// The parser only produces positions. These tests verify that they
+/// designate **exactly** the syntax characters, and nothing else: a marker
+/// too wide would eat a letter of the author's text, a marker too narrow
+/// would leave an orphaned star on screen.
 final class MarkdownParserTests: XCTestCase {
 
     // MARK: - Inline
 
     func testStrongMarkersAreTheStarsAndOnlyTheStars() throws {
-        let span = try firstSpan(in: "Un mot **important** ici") { if case .strong = $0.kind { return true } else { return false } }
+        let span = try firstSpan(in: "A word **important** here") { if case .strong = $0.kind { return true } else { return false } }
         XCTAssertEqual(span.range, NSRange(location: 7, length: 13))
         XCTAssertEqual(span.markers, [NSRange(location: 7, length: 2), NSRange(location: 18, length: 2)])
         XCTAssertEqual(span.content, NSRange(location: 9, length: 9))
     }
 
     func testEmphasisKeepsTheAuthorsMarkerCharacter() throws {
-        // `_texte_` et `*texte*` veulent dire la même chose. Le rendu est
-        // identique, mais le marqueur révélé doit être celui qui est écrit
-        // dans le fichier — sinon la révélation mentirait sur le contenu.
-        let underscore = try firstSpan(in: "un _mot_ ici") { if case .emphasis = $0.kind { return true } else { return false } }
+        // `_text_` and `*text*` mean the same thing. The rendering is
+        // identical, but the revealed marker must be the one written
+        // in the file: otherwise the reveal would misrepresent the content.
+        let underscore = try firstSpan(in: "an _egg_ here") { if case .emphasis = $0.kind { return true } else { return false } }
         XCTAssertEqual(underscore.markers, [NSRange(location: 3, length: 1), NSRange(location: 7, length: 1)])
     }
 
     func testInlineCodeCountsItsBackticks() throws {
-        // Un code inline peut être délimité par plusieurs backticks quand il en
-        // contient lui-même : ``a `b` c``.
-        let single = try firstSpan(in: "un `code` ici") { if case .inlineCode = $0.kind { return true } else { return false } }
+        // Inline code can be delimited by several backticks when it contains
+        // backticks itself: ``a `b` c``.
+        let single = try firstSpan(in: "an `code` here") { if case .inlineCode = $0.kind { return true } else { return false } }
         XCTAssertEqual(single.content, NSRange(location: 4, length: 4))
 
-        let double = try firstSpan(in: "un ``a `b` c`` ici") { if case .inlineCode = $0.kind { return true } else { return false } }
+        let double = try firstSpan(in: "an ``a `b` c`` here") { if case .inlineCode = $0.kind { return true } else { return false } }
         XCTAssertEqual(double.markers.first, NSRange(location: 3, length: 2))
         XCTAssertEqual(double.content, NSRange(location: 5, length: 7))
     }
 
     func testLinkSplitsBracketsFromDestination() throws {
-        let span = try firstSpan(in: "voir [le site](https://x.fr) ici") { if case .link = $0.kind { return true } else { return false } }
-        XCTAssertEqual(span.content, NSRange(location: 6, length: 7), "Seul « le site » est du contenu")
-        XCTAssertEqual(span.markers, [NSRange(location: 5, length: 1), NSRange(location: 13, length: 15)])
+        let span = try firstSpan(in: "see [the site](https://example.com) here") { if case .link = $0.kind { return true } else { return false } }
+        XCTAssertEqual(span.content, NSRange(location: 5, length: 8), "Only \"the site\" is content")
+        XCTAssertEqual(span.markers, [NSRange(location: 4, length: 1), NSRange(location: 13, length: 22)])
     }
 
-    // MARK: - Blocs
+    // MARK: - Blocks
 
     func testHeadingMarkerIncludesTheTrailingSpace() throws {
-        // `## ` et non `##` : laisser l'espace visible décalerait le titre d'un
-        // caractère par rapport au reste du texte.
-        let span = try firstSpan(in: "## Titre à accents") { if case .heading = $0.kind { return true } else { return false } }
+        // `## ` and not `##`: leaving the space visible would shift the heading
+        // by one character relative to the rest of the text.
+        let span = try firstSpan(in: "## Heading text") { if case .heading = $0.kind { return true } else { return false } }
         XCTAssertEqual(span.markers, [NSRange(location: 0, length: 3)])
-        XCTAssertEqual(span.content, NSRange(location: 3, length: 15))
+        XCTAssertEqual(span.content, NSRange(location: 3, length: 12))
     }
 
     func testListItemProducesAMarkerAndABullet() throws {
-        let spans = MarkdownParser.parse("- un\n- deux\n").spans
+        let spans = MarkdownParser.parse("- one\n- two\n").spans
         let items = spans.filter { if case .listItem = $0.kind { return true } else { return false } }
-        XCTAssertEqual(items.count, 2, "Chaque item porte son propre marqueur")
+        XCTAssertEqual(items.count, 2, "Each item carries its own marker")
         XCTAssertEqual(items[0].markers, [NSRange(location: 0, length: 2)])
-        XCTAssertEqual(items[1].markers, [NSRange(location: 5, length: 2)])
+        XCTAssertEqual(items[1].markers, [NSRange(location: 6, length: 2)])
     }
 
     func testOrderedListKeepsTheAuthorsNumbering() throws {
-        // Un document où l'auteur a écrit « 1. » sur chaque ligne doit se lire
-        // tel qu'il l'a écrit : l'éditeur ne renumérote pas à l'affichage.
-        let spans = MarkdownParser.parse("1. un\n1. deux\n").spans
+        // A document where the author wrote `1.` on every line must read
+        // exactly as written: the editor does not renumber items for display.
+        let spans = MarkdownParser.parse("1. one\n1. two\n").spans
         let items = spans.compactMap { span -> SyntaxSpan.ListMarker? in
             if case .listItem(let marker) = span.kind { return marker } else { return nil }
         }
@@ -74,19 +74,19 @@ final class MarkdownParserTests: XCTestCase {
     }
 
     func testTaskItemMarkerCoversTheWholeCheckbox() throws {
-        let span = try firstSpan(in: "- [x] fait") { if case .taskItem = $0.kind { return true } else { return false } }
-        XCTAssertEqual(span.markers, [NSRange(location: 0, length: 6)], "« - [x] » d'un seul tenant")
+        let span = try firstSpan(in: "- [x] done") { if case .taskItem = $0.kind { return true } else { return false } }
+        XCTAssertEqual(span.markers, [NSRange(location: 0, length: 6)], "`- [x]` as a single unit")
         if case .taskItem(_, let checked) = span.kind {
             XCTAssertTrue(checked)
         } else {
-            XCTFail("Attendu une tâche")
+            XCTFail("Expected a task")
         }
     }
 
     func testBlockQuoteMarksEveryLine() throws {
-        // Le `>` se répète : un seul marqueur en tête de bloc laisserait les
-        // chevrons des lignes suivantes visibles.
-        let span = try firstSpan(in: "> une\n> deux\n") { if case .blockQuote = $0.kind { return true } else { return false } }
+        // The `>` repeats: a single marker at the top of the block would leave
+        // the chevrons of the following lines visible.
+        let span = try firstSpan(in: "> one\n> two\n") { if case .blockQuote = $0.kind { return true } else { return false } }
         XCTAssertEqual(span.markers.count, 2)
         XCTAssertEqual(span.markers[0], NSRange(location: 0, length: 2))
         XCTAssertEqual(span.markers[1], NSRange(location: 6, length: 2))
@@ -94,7 +94,7 @@ final class MarkdownParserTests: XCTestCase {
 
     func testFencedCodeBlockMarksBothFences() throws {
         let span = try firstSpan(in: "```swift\nlet x = 1\n```\n") { if case .codeBlock = $0.kind { return true } else { return false } }
-        XCTAssertEqual(span.markers.count, 2, "L'ouverture avec son langage, et la fermeture")
+        XCTAssertEqual(span.markers.count, 2, "The opening fence with its language, and the closing fence")
         XCTAssertEqual(span.markers[0], NSRange(location: 0, length: 8))
         if case .codeBlock(let language) = span.kind {
             XCTAssertEqual(language, "swift")
@@ -102,120 +102,120 @@ final class MarkdownParserTests: XCTestCase {
     }
 
     func testThematicBreakIsEntirelyAMarker() throws {
-        let span = try firstSpan(in: "avant\n\n---\n\naprès") { if case .thematicBreak = $0.kind { return true } else { return false } }
-        XCTAssertEqual(span.markers, [span.range], "Rien de la ligne n'est du contenu")
+        let span = try firstSpan(in: "before\n\n---\n\nafter") { if case .thematicBreak = $0.kind { return true } else { return false } }
+        XCTAssertEqual(span.markers, [span.range], "None of the line is content")
         XCTAssertEqual(span.content.length, 0)
     }
 
     // MARK: - Front matter
 
     func testFrontMatterIsRecognizedAndSwallowsTheDelimiters() throws {
-        let source = "---\ntitle: Démo\n---\n\n# Titre\n"
+        let source = "---\ntitle: Demo\n---\n\n# Title\n"
         let span = try firstSpan(in: source) { if case .frontMatter = $0.kind { return true } else { return false } }
         XCTAssertEqual(span.range.location, 0)
         XCTAssertEqual(span.markers.count, 2)
     }
 
-    /// Le défaut trouvé à l'écran : `cmark` ignore le front matter et lit son
-    /// `---` de fermeture comme le soulignement d'un titre `setext`. Sans
-    /// filtre, « title: Démo » s'affichait en gros titre au-dessus du document.
+    /// The bug found on screen: `cmark` ignores the front matter and reads its
+    /// closing `---` as the underline of a `setext` heading. Without a filter,
+    /// `title: Demo` would display as a large heading above the document.
     func testFrontMatterIsNotParsedAsASetextHeading() throws {
-        let spans = MarkdownParser.parse("---\ntitle: Démo\ndate: 2026-08-07\n---\n\n# Vrai titre\n").spans
+        let spans = MarkdownParser.parse("---\ntitle: Demo\ndate: 2026-08-07\n---\n\n# Real heading\n").spans
         let headings = spans.filter { if case .heading = $0.kind { return true } else { return false } }
-        XCTAssertEqual(headings.count, 1, "Un seul titre : celui du corps")
+        XCTAssertEqual(headings.count, 1, "Only one heading: the one in the body")
         XCTAssertGreaterThan(headings[0].range.location, 36)
     }
 
     func testAThematicBreakLowerInTheDocumentIsNotFrontMatter() throws {
-        // Le bloc doit commencer à la toute première ligne. Un `---` plus bas
-        // est un filet, et le confondre couperait le rendu en deux.
-        let spans = MarkdownParser.parse("Du texte\n\n---\n\nDe la suite\n").spans
+        // The block must start on the very first line. A `---` further down
+        // is a horizontal rule, and confusing the two would split the rendering in two.
+        let spans = MarkdownParser.parse("Some text\n\n---\n\nMore content\n").spans
         XCTAssertFalse(spans.contains { if case .frontMatter = $0.kind { return true } else { return false } })
         XCTAssertTrue(spans.contains { if case .thematicBreak = $0.kind { return true } else { return false } })
     }
 
-    // MARK: - Notes de bas de page
+    // MARK: - Footnotes
 
     func testFootnoteReferencesAreFoundByTheHomeMadePass() throws {
-        // `swift-markdown` ne les parse pas : `[^1]` en ressort comme du texte
-        // brut. C'est le repli annoncé au §4.1 qui les repère.
-        let span = try firstSpan(in: "Un renvoi[^1] ici") {
+        // `swift-markdown` does not parse them: `[^1]` comes out as plain
+        // text. The fallback described in §4.1 is what finds them.
+        let span = try firstSpan(in: "A reference[^1] here") {
             if case .footnoteReference = $0.kind { return true } else { return false }
         }
-        XCTAssertEqual(span.range, NSRange(location: 9, length: 4))
-        // Les crochets sont la syntaxe, l'identifiant est le contenu : masquer
-        // tout ferait disparaître le renvoi de l'écran.
-        XCTAssertEqual(span.markers, [NSRange(location: 9, length: 2), NSRange(location: 12, length: 1)])
-        XCTAssertEqual(span.content, NSRange(location: 11, length: 1))
+        XCTAssertEqual(span.range, NSRange(location: 11, length: 4))
+        // The brackets are the syntax, the identifier is the content: hiding
+        // everything would make the reference disappear from the screen.
+        XCTAssertEqual(span.markers, [NSRange(location: 11, length: 2), NSRange(location: 14, length: 1)])
+        XCTAssertEqual(span.content, NSRange(location: 13, length: 1))
         if case .footnoteReference(let identifier) = span.kind {
             XCTAssertEqual(identifier, "1")
         }
     }
 
     func testFootnoteDefinitionIsItsOwnConstruct() throws {
-        // `[^1]: la note` en début de ligne est la **définition**, pas un
-        // renvoi. Lui appliquer le rendu d'un renvoi masquerait les crochets et
-        // ne laisserait qu'un « : la note » incompréhensible — c'est ce qui
-        // s'affichait au premier essai.
-        let spans = MarkdownParser.parse("Un renvoi[^1]\n\n[^1]: la note\n").spans
+        // `[^1]: the note` at the start of a line is the **definition**, not a
+        // reference. Applying reference rendering to it would hide the brackets
+        // and leave only an incomprehensible `: the note`; that is what
+        // displayed on the first attempt.
+        let spans = MarkdownParser.parse("A reference[^1]\n\n[^1]: the note\n").spans
         let references = spans.filter { if case .footnoteReference = $0.kind { return true } else { return false } }
-        XCTAssertEqual(references.count, 1, "Un seul renvoi")
-        XCTAssertEqual(references[0].range.location, 9)
+        XCTAssertEqual(references.count, 1, "Only one reference")
+        XCTAssertEqual(references[0].range.location, 11)
 
         let definition = try XCTUnwrap(spans.first {
             if case .footnoteDefinition = $0.kind { return true } else { return false }
         })
-        // Le marqueur couvre `[^` puis `]:` : ce qui reste visible est
-        // l'identifiant, en exposant, et le texte de la note.
-        XCTAssertEqual(definition.markers, [NSRange(location: 15, length: 2),
-                                            NSRange(location: 18, length: 2)])
-        // L'espace après le `:` reste visible : c'est lui qui écarte l'exposant
-        // du premier mot de la note.
-        XCTAssertEqual(definition.content, NSRange(location: 20, length: 8))
-        // Révélée à la ligne, comme un titre : poser le curseur dessus rend la
-        // syntaxe visible, donc modifiable.
+        // The marker covers `[^` then `]:`: what remains visible is the
+        // identifier, as a superscript, and the text of the note.
+        XCTAssertEqual(definition.markers, [NSRange(location: 17, length: 2),
+                                            NSRange(location: 20, length: 2)])
+        // The space after the `:` remains visible: it is what separates the
+        // superscript from the first word of the note.
+        XCTAssertEqual(definition.content, NSRange(location: 22, length: 9))
+        // Revealed at the line level, like a heading: placing the caret on it
+        // makes the syntax visible, and therefore editable.
         XCTAssertEqual(definition.kind.revealScope, .wholeLine)
     }
 
     func testAFootnoteDefinitionStopsAtItsLine() throws {
-        // Sans cette borne, la définition avalerait le paragraphe qui la suit.
-        let spans = MarkdownParser.parse("[^a]: la note\nUne autre ligne\n").spans
+        // Without this boundary, the definition would swallow the following paragraph.
+        let spans = MarkdownParser.parse("[^a]: the note\nAnother line\n").spans
         let definition = try XCTUnwrap(spans.first {
             if case .footnoteDefinition = $0.kind { return true } else { return false }
         })
-        XCTAssertEqual(definition.range, NSRange(location: 0, length: 13))
+        XCTAssertEqual(definition.range, NSRange(location: 0, length: 14))
     }
 
     func testFootnotePatternIsIgnoredInsideCode() throws {
-        // Sans cette garde, un `[^1]` dans un bloc de code deviendrait un
-        // renvoi — et disparaîtrait de l'écran, puisque tout y est marqueur.
+        // Without this guard, a `[^1]` inside a code block would become a
+        // reference, and disappear from the screen since everything in it is a marker.
         let spans = MarkdownParser.parse("```\nregex = \"[^1]\"\n```\n").spans
         XCTAssertFalse(spans.contains { if case .footnoteReference = $0.kind { return true } else { return false } })
     }
 
-    // MARK: - Ce qui ne doit jamais être avalé
+    // MARK: - What must never be swallowed
 
     func testRawHTMLIsNeverTurnedIntoAMarker() throws {
-        // §6 : un élément non compris n'est jamais masqué. Masquer du texte
-        // qu'on n'a pas su lire, c'est le faire disparaître.
-        let spans = MarkdownParser.parse("un <b>gras</b> html\n").spans
+        // §6: an element that isn't understood is never hidden. Hiding text
+        // that could not be parsed would make it disappear.
+        let spans = MarkdownParser.parse("an <b>bold</b> html\n").spans
         for span in spans {
             for marker in span.markers {
-                XCTAssertFalse(NSLocationInRange(3, marker), "Le « < » de <b> ne doit jamais être masqué")
+                XCTAssertFalse(NSLocationInRange(3, marker), "The `<` of `<b>` must never be hidden")
             }
         }
     }
 
     func testAccentsDoNotShiftMarkerPositions() throws {
-        // Le croisement des deux pièges du §3.3 et du §2 : si la conversion de
-        // plages était fausse, ce sont des lettres accentuées qui deviendraient
-        // invisibles.
-        let span = try firstSpan(in: "Été **crucial** ici") { if case .strong = $0.kind { return true } else { return false } }
+        // The intersection of the two pitfalls from §3.3 and §2: if the range
+        // conversion were wrong, accented letters would become invisible.
+        // Accented text: exercises the UTF-8 → UTF-16 offset conversion.
+        let span = try firstSpan(in: "Zoë **crucial** here") { if case .strong = $0.kind { return true } else { return false } }
         XCTAssertEqual(span.markers, [NSRange(location: 4, length: 2), NSRange(location: 13, length: 2)])
         XCTAssertEqual(span.content, NSRange(location: 6, length: 7))
     }
 
-    // MARK: - Outils
+    // MARK: - Utilities
 
     private func firstSpan(in source: String,
                            where predicate: (SyntaxSpan) -> Bool,
@@ -223,7 +223,7 @@ final class MarkdownParserTests: XCTestCase {
                            line: UInt = #line) throws -> SyntaxSpan {
         let spans = MarkdownParser.parse(source).spans
         return try XCTUnwrap(spans.first(where: predicate),
-                             "Aucune construction correspondante dans \(source.debugDescription)",
+                             "No matching construct in \(source.debugDescription)",
                              file: file, line: line)
     }
 }

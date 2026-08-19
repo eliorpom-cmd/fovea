@@ -1,51 +1,51 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Pose les attributs de rendu sur le tampon.
+/// Applies rendering attributes to the buffer.
 ///
-/// Ce fichier ne modifie **jamais les caractères** : il ne fait qu'habiller
-/// ceux qui sont déjà là. C'est la mise en œuvre concrète du §3.1 — le rendu
-/// n'est qu'une couche d'attributs sur le texte source.
+/// This file **never modifies characters**: it only dresses up the ones
+/// already there. This is the concrete implementation of §3.1: rendering
+/// is just a layer of attributes over the source text.
 @MainActor
 struct MarkdownRenderer {
 
     var typography: EditorTypography
 
-    /// §4.3 : monochrome par défaut, vraies couleurs sur demande explicite.
+    /// §4.3: monochrome by default, real colors only on explicit request.
     var colorfulCode = false
 
-    /// L'emplacement du document, pour résoudre les images en chemin relatif.
+    /// The document's location, to resolve images with relative paths.
     var documentURL: URL?
 
-    /// La largeur **réellement disponible** pour une grille de tableau.
+    /// The width **actually available** for a table grid.
     ///
-    /// # Ce que la largeur souhaitée ne dit pas
+    /// # What the desired width doesn't reflect
     ///
-    /// La mesure se faisait contre `typography.columnWidth`, c'est-à-dire la
-    /// largeur *demandée dans les réglages* — 68 signes, environ 612 points.
-    /// Or `EditorController.applyColumnLayout` borne la colonne réelle à la
-    /// place disponible : dans une fenêtre de 430 points avec le plan ouvert,
-    /// elle tombe à 162.
+    /// The measurement used to be taken against `typography.columnWidth`, i.e. the
+    /// width *requested in settings* — that is, 68 characters, about 612 points.
+    /// But `EditorController.applyColumnLayout` clamps the actual column to the
+    /// space available: in a 430-point window with the outline open,
+    /// it drops to 162.
     ///
-    /// La grille continuait donc d'être posée sur 612 points. Elle débordait du
-    /// conteneur, la vue n'étant pas redimensionnable horizontalement elle
-    /// était **coupée net par le bord de la fenêtre**, et la dernière colonne
-    /// disparaissait — sans défilement, et sans le repli en source que le §6
-    /// prévoit précisément pour ce cas, puisque ce repli se décidait lui aussi
-    /// sur la largeur souhaitée.
+    /// The grid therefore kept being laid out at 612 points. It overflowed the
+    /// container: since the view isn't horizontally resizable, it was
+    /// **cut off cleanly by the window edge**, and the last column
+    /// disappeared — with no scrolling, and without the fallback to source that §6
+    /// provides precisely for this case, since that fallback was also decided
+    /// based on the desired width.
     ///
-    /// `nil` veut dire « prends celle des réglages » : c'est le cas de l'export
-    /// et de l'impression, qui n'ont pas de conteneur à consulter.
+    /// `nil` means "use the one from settings": this is the case for export
+    /// and printing, which have no container to consult.
     var availableWidth: CGFloat?
 
     var gridWidth: CGFloat { availableWidth ?? typography.columnWidth }
 
-    /// Applique le rendu complet à un tampon.
+    /// Applies full rendering to a buffer.
     ///
     /// - Parameters:
-    ///   - revealed: les indices, dans `spans`, dont les marqueurs doivent
-    ///     rester visibles — calculés par `RevealPolicy`.
+    ///   - revealed: the indices, in `spans`, whose markers must
+    ///     remain visible — computed by `RevealPolicy`.
     func render(_ storage: NSTextStorage,
                 spans: [SyntaxSpan],
                 revealed: Set<Int>,
@@ -55,31 +55,31 @@ struct MarkdownRenderer {
 
         applyBaseStyle(storage, range: range)
 
-        // Les blocs d'abord, l'inline ensuite : un titre pose sa fonte sur
-        // toute la ligne, et le gras qu'il contient doit pouvoir la reprendre
-        // en la modifiant plutôt que se la faire écraser.
+        // Blocks first, inline second: a heading sets its font on
+        // the whole line, and the bold text it contains must be able to build on
+        // it by modifying it rather than being overwritten by it.
         let ordered = spans.indices.sorted { blockFirst(spans[$0], spans[$1]) }
 
         for index in ordered {
             let span = spans[index]
-            // Bornes comprises : voir `EditorController.touches` — une portée
-            // d'édition vide n'intersecte rien, et le repli qui corrigeait ce
-            // cas repassait le document entier.
+            // Bounds inclusive: see `EditorController.touches`. An empty edit
+            // scope intersects nothing, and the fallback that used to fix this
+            // case reprocessed the entire document.
             guard EditorController.touches(span.range, range) else { continue }
             applyContentStyle(storage, span: span)
         }
 
-        // Le masquage vient en dernier, sur les marqueurs seulement : il doit
-        // gagner contre tout attribut de fonte posé plus haut par le bloc
-        // porteur, sinon un `#` de titre resterait grand et visible.
+        // Masking comes last, on markers only: it must
+        // win over any font attribute set earlier by the carrying
+        // block, otherwise a heading's `#` would stay large and visible.
         for index in ordered where !isTable(spans[index]) {
             applyMarkers(storage, span: spans[index], revealed: revealed.contains(index))
         }
 
-        // Les tableaux tout à la fin, et pour une raison précise : la grille
-        // place ses colonnes sur la largeur **réellement rendue** de chaque
-        // cellule. Une cellule contenant du gras a déjà perdu ses `**` à
-        // l'étape précédente ; la mesurer avant les aurait comptés.
+        // Tables come last of all, for a specific reason: the grid
+        // places its columns based on the **actually rendered** width of each
+        // cell. A cell containing bold text has already lost its `**` at
+        // the previous step; measuring it before that step would have counted them.
         for index in ordered where isTable(spans[index]) {
             applyTable(storage, span: spans[index], revealed: revealed.contains(index))
         }
@@ -90,22 +90,22 @@ struct MarkdownRenderer {
         return false
     }
 
-    /// Cette image occupe-t-elle sa ligne à elle seule ?
+    /// Does this image occupy its line on its own?
     ///
-    /// C'est la condition pour la rendre **comme un bloc** : hauteur réservée sur
-    /// le paragraphe, source masquée sans réduire cette hauteur, dessin dans la
-    /// place ainsi laissée.
+    /// This is the condition for rendering it **as a block**: height reserved on
+    /// the paragraph, source masked without reducing that height, drawing done in the
+    /// space left this way.
     ///
-    /// Le cas contraire est fréquent et n'avait pas été prévu — `du texte
-    /// ![une image](a.png) et la suite`. La hauteur réservée écartait alors la
-    /// ligne entière, et l'image, dessinée sur toute la largeur qu'on lui
-    /// accordait, passait **par-dessus les mots voisins**. Une image au fil du
-    /// texte est donc laissée telle quelle : ses crochets disparaissent, son
-    /// texte alternatif reste, et rien ne bouge autour.
+    /// The opposite case is common and wasn't accounted for at first — `some text
+    /// ![an image](a.png) followed by more text`. The reserved height then pushed the
+    /// entire line apart, and the image, drawn across the whole width it was
+    /// given, drew **over the neighboring words**. An inline image is
+    /// therefore left as is: its brackets disappear, its
+    /// alt text stays, and nothing around it moves.
     ///
-    /// La mesure se fait sur la source et non sur le rendu : elle est appelée
-    /// pendant la pose des attributs, avant que TextKit n'ait mis quoi que ce
-    /// soit en page.
+    /// The measurement is done on the source, not on the render: it's called
+    /// during attribute application, before TextKit has laid anything
+    /// out at all.
     static func isBlockImage(_ span: SyntaxSpan, in text: NSString) -> Bool {
         guard case .image = span.kind,
               span.range.length > 0, span.range.upperBound <= text.length else { return false }
@@ -119,12 +119,12 @@ struct MarkdownRenderer {
         return isBlank(text, before) && isBlank(text, after)
     }
 
-    /// L'adresse d'un lien, quand elle mène quelque part qu'on peut ouvrir.
+    /// A link's address, when it leads somewhere that can be opened.
     ///
-    /// Volontairement restreint aux schémas qui ont un sens hors du document.
-    /// Une ancre `#section` ou un chemin relatif ne sont pas des adresses à
-    /// confier au Finder ou au navigateur : le premier ne dirait rien, le second
-    /// ouvrirait un fichier au hasard de l'endroit d'où l'app a été lancée.
+    /// Deliberately restricted to schemes that make sense outside the document.
+    /// A `#section` anchor or a relative path aren't addresses to
+    /// hand off to Finder or a browser: the former would say nothing, the latter
+    /// would open a file at random, depending on where the app was launched from.
     static func openableURL(_ destination: String) -> URL? {
         let trimmed = destination.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
@@ -140,28 +140,28 @@ struct MarkdownRenderer {
         return text.rangeOfCharacter(from: blanks.inverted, options: [], range: range).location == NSNotFound
     }
 
-    /// Bascule les marqueurs d'une seule construction, **sans toucher au reste
-    /// de son rendu**.
+    /// Toggles the markers of a single construct, **without touching the rest
+    /// of its rendering**.
     ///
-    /// C'est le chemin emprunté à chaque déplacement du curseur, et il doit
-    /// rester séparé de `render(_:)` : celui-ci commence par réinitialiser les
-    /// attributs de la plage, ce qui effacerait le gras du mot au moment précis
-    /// où l'on fait réapparaître ses étoiles.
+    /// This is the path taken on every caret move, and it must
+    /// stay separate from `render(_:)`: that one starts by resetting the
+    /// attributes of the range, which would erase the word's bold styling at the exact moment
+    /// its asterisks reappear.
     func applyMarkers(_ storage: NSTextStorage, span: SyntaxSpan, revealed: Bool) {
-        // Un tableau a sa propre géométrie : ses `|` ne sont pas masqués à
-        // largeur nulle mais à une largeur calculée. Voir `applyTable`.
+        // A table has its own geometry: its `|` characters aren't masked to
+        // zero width but to a computed width. See `applyTable`.
         if case .table = span.kind {
             applyTable(storage, span: span, revealed: revealed)
             return
         }
-        // Une image au fil d'une phrase n'est pas un bloc : voir `isBlockImage`.
-        // Elle garde son texte alternatif — rien ne viendra le remplacer — et
-        // ses marqueurs se masquent à largeur nulle comme n'importe quels autres.
+        // An inline image is not a block: see `isBlockImage`.
+        // It keeps its alt text — nothing will replace it — and
+        // its markers are masked to zero width like any others.
         let blockImage = Self.isBlockImage(span, in: storage.mutableString)
 
-        // Le texte alternatif d'une image en bloc, lui, fait partie de ce qui
-        // disparaît : l'image le remplace à l'écran, et le laisser visible
-        // superposerait deux fois la même information.
+        // The alt text of a block image, on the other hand, is part of what
+        // disappears: the image replaces it on screen, and leaving it visible
+        // would overlay the same information twice.
         if blockImage, !revealed, span.content.length > 0,
            span.content.upperBound <= storage.length {
             MarkerMask.hideKeepingMetrics(in: storage, range: span.content, font: typography.body)
@@ -171,14 +171,14 @@ struct MarkdownRenderer {
             if revealed {
                 MarkerMask.reveal(in: storage, range: marker, font: markerFont(for: span))
             } else if blockImage {
-                // La source est masquée **sans réduire la hauteur** : la ligne
-                // doit garder la place réservée à l'image, sinon le dessin
-                // n'aurait nulle part où aller.
+                // The source is masked **without reducing the height**: the line
+                // must keep the space reserved for the image, otherwise the drawing
+                // would have nowhere to go.
                 MarkerMask.hideKeepingMetrics(in: storage, range: marker, font: typography.body)
             } else if case .thematicBreak = span.kind {
-                // Toute la ligne est un marqueur : la masquer à largeur nulle
-                // ferait disparaître la ligne elle-même, et le filet n'aurait
-                // plus de place où se dessiner.
+                // The whole line is a marker: masking it to zero width
+                // would make the line itself disappear, and the rule would have
+                // nowhere left to draw itself.
                 MarkerMask.hideKeepingMetrics(in: storage, range: marker, font: typography.body)
             } else {
                 MarkerMask.hide(in: storage, range: marker)
@@ -186,73 +186,73 @@ struct MarkdownRenderer {
         }
     }
 
-    // MARK: - Tableaux (§2.6)
+    // MARK: - Tables (§2.6)
 
-    /// Hauteur réservée à la ligne de délimitation, en fraction du corps.
-    /// Elle ne montre rien, mais elle porte le filet d'en-tête.
-    /// La hauteur de la ligne `|---|`, qui ne montre rien.
+    /// Height reserved for the delimiter row, as a fraction of the body size.
+    /// It shows nothing, but it carries the header rule.
+    /// The height of the `|---|` line, which shows nothing.
     ///
-    /// Elle valait 0,7 corps — 12,6 points qui se déversaient de part et
-    /// d'autre du filet d'en-tête, moitié sous l'en-tête, moitié sur la
-    /// première rangée. Résultat mesuré : quatre rangées de trois hauteurs
-    /// différentes (53, 51, 42, 42 pixels), dont aucune centrée pareil. Une
-    /// ligne invisible ne doit rien peser : il ne lui reste que la place du
-    /// filet qu'elle porte.
+    /// It used to be 0.7 body size — 12.6 points that spilled on either
+    /// side of the header rule, half under the header, half onto the
+    /// first row. Measured result: four rows at three different heights
+    /// (53, 51, 42, 42 pixels), none centered the same way. An
+    /// invisible line must carry no weight: all it has left is the space of the
+    /// rule it carries.
     static let tableRuleHeight: CGFloat = 0.12
 
-    /// La grille tient-elle dans la colonne de texte ?
+    /// Does the grid fit in the text column?
     ///
-    /// La mesure se fait sur le **rendu**, par `TableLayout`. La version
-    /// précédente comptait les signes de la source en chasse fixe : une
-    /// estimation qui n'était juste que tant que le tableau *était* rendu en
-    /// chasse fixe, ce qui est justement ce qui lui donnait l'air d'un bloc de
-    /// code.
+    /// The measurement is done on the **render**, by `TableLayout`. The
+    /// previous version counted source characters in monospaced pitch: an
+    /// estimate that was only accurate as long as the table *was* rendered in
+    /// monospaced pitch, which is precisely what made it look like a
+    /// code block.
     func gridLayout(for table: MarkdownTable, in storage: NSTextStorage) -> TableLayout? {
         TableLayout.measure(table, in: storage, typography: typography,
                             available: gridWidth)
     }
 
-    /// Pose — ou retire — la grille d'un tableau.
+    /// Applies — or removes — a table's grid.
     ///
-    /// # Le repli du §2.6, et pourquoi c'est le bon
+    /// # The §2.6 fallback, and why it's the right one
     ///
-    /// Le cahier des charges visait une grille réellement éditable, avec un
-    /// `firstResponder` imbriqué par cellule, et armait d'avance un repli :
-    /// *grille en lecture, source à l'édition*. C'est ce repli qui est en
-    /// place, et pas par manque de temps — la couche de décoration, écrite
-    /// pour les images, l'a rendu **meilleur** que la cible d'origine.
+    /// The spec aimed for a truly editable grid, with a
+    /// `firstResponder` nested per cell, and set up a fallback in advance:
+    /// *grid while reading, source while editing*. That fallback is what's
+    /// in place, and not for lack of time: the decoration layer, written
+    /// for images, made it **better** than the original target.
     ///
-    /// Un éditeur dans l'éditeur aurait signifié deux piles d'annulation à
-    /// tenir synchrones, une sélection qui ne traverse plus le tableau, et un
-    /// `⌘F` qui s'arrête à ses bords. Ici il n'y a toujours qu'un seul tampon :
-    /// la sélection traverse la grille, la recherche y trouve, l'annulation est
-    /// celle de la frappe.
+    /// An editor inside the editor would have meant two undo stacks to
+    /// keep in sync, a selection that no longer crosses the table, and a
+    /// `⌘F` that stops at its edges. Here there is still only a single buffer:
+    /// the selection crosses the grid, search finds matches in it, and undo is
+    /// the same undo as for typing.
     ///
-    /// # Comment la grille tient sans un caractère ajouté
+    /// # How the grid holds together without a single character added
     ///
-    /// Chaque `|` est masqué, mais reçoit **une avance calculée** : celle qu'il
-    /// faut pour que la cellule suivante tombe sur sa colonne. Les blancs de
-    /// remplissage de la source passent à zéro — c'est la grille qui espace,
-    /// plus l'auteur. La ligne `|---|` est masquée entière et sa hauteur
-    /// réduite à la place d'un filet.
+    /// Each `|` is masked, but receives **a computed advance**: the one
+    /// needed for the next cell to land on its column. The source's padding
+    /// whitespace is set to zero: the grid does the spacing
+    /// now, not the author. The `|---|` line is masked entirely and its height
+    /// reduced to the space of a rule.
     ///
-    /// Les colonnes sont mesurées, pas comptées : `**Titre**` rend six signes
-    /// de moins que sa source, et une colonne calculée sur les signes serait
-    /// large de six de trop.
+    /// Columns are measured, not counted: `**Title**` renders six characters
+    /// shorter than its source, and a column computed from character count would be
+    /// six too wide.
     func applyTable(_ storage: NSTextStorage, span: SyntaxSpan, revealed: Bool) {
         guard case .table(let table) = span.kind, let table,
               span.range.upperBound <= storage.length else { return }
 
-        // **La grille ne se replie plus sous le curseur.** Elle le faisait —
-        // c'était le repli du §2.6 — et cela revenait à demander de connaître la
-        // syntaxe d'un tableau markdown pour modifier une cellule, c'est-à-dire
-        // précisément ce que l'app promet d'éviter. On écrit maintenant dans la
-        // grille ; `TableEditing` s'occupe des positions de curseur que plus
-        // rien n'affiche.
+        // **The grid no longer falls back to source under the caret.** It used to —
+        // that was the §2.6 fallback — and that amounted to requiring knowledge of the
+        // markdown table syntax to edit a cell, that is,
+        // exactly what the app promises to avoid. Editing now happens directly in the
+        // grid; `TableEditing` handles the caret positions that
+        // nothing displays anymore.
         //
-        // Le repli reste pour ce qu'on ne sait pas dessiner : un tableau
-        // malformé, et un tableau plus large que la colonne — qui se replierait
-        // ligne à ligne, et une grille repliée ne se lit plus du tout.
+        // The fallback remains for what can't be drawn: a
+        // malformed table, and a table wider than the column — which would wrap
+        // line by line, and a wrapped grid can't be read at all anymore.
         guard let layout = TableLayout.measure(table, in: storage, typography: typography,
                                                available: gridWidth) else {
             showTableSource(storage, table: table, font: typography.body)
@@ -261,34 +261,34 @@ struct MarkdownRenderer {
         layOutTable(storage, table: table, layout: layout)
     }
 
-    /// Le tableau tel qu'il est écrit : `|` et blancs visibles, ligne de
-    /// délimitation à sa hauteur normale. C'est l'état sous le curseur, et
-    /// celui d'un tableau trop large pour la colonne.
+    /// The table as written: `|` characters and whitespace visible, delimiter
+    /// row at its normal height. This is the state under the caret, and
+    /// the state of a table too wide for the column.
     private func showTableSource(_ storage: NSTextStorage, table: MarkdownTable, font: NSFont) {
         for marker in table.markerRanges where marker.upperBound <= storage.length {
             MarkerMask.reveal(in: storage, range: marker, font: font)
         }
-        // Le repli à la ligne est **rétabli** : la source à pipes est plus large
-        // que la grille qu'elle remplace, et la tronquer cacherait à l'auteur
-        // la moitié de ce qu'il est en train d'éditer.
+        // Line wrapping is **restored**: the pipe-delimited source is wider
+        // than the grid it replaces, and clipping it would hide from the author
+        // half of what they're editing.
         applyRowStyles(storage, table: table, clipping: false, reducedRuleLine: false)
     }
 
     private func layOutTable(_ storage: NSTextStorage, table: MarkdownTable, layout: TableLayout) {
-        // 1. Tout ce qui est syntaxe disparaît d'abord, à largeur nulle. Les
-        //    avances utiles seront réécrites juste après ; celles qui ne le
-        //    sont pas — un `|` de bord droit — doivent rester à zéro.
+        // 1. Everything that's syntax disappears first, at zero width. The
+        //    useful advances will be rewritten right after; the ones that
+        //    aren't — a right-edge `|` — must stay at zero.
         for marker in table.markerRanges where marker.upperBound <= storage.length {
             MarkerMask.hide(in: storage, range: marker)
         }
 
-        // 2. Hauteurs de ligne, dont celle — réduite — de la délimitation.
+        // 2. Row heights, including the — reduced — delimiter row height.
         applyRowStyles(storage, table: table, clipping: true, reducedRuleLine: true)
 
-        // 3. Chaque `|` reçoit l'avance qui mène au début de sa cellule. La
-        //    géométrie vient de `TableLayout`, que la couche de décoration lit
-        //    aussi : les filets doivent tomber exactement entre les colonnes que
-        //    le crénage vient de poser.
+        // 3. Each `|` receives the advance that leads to the start of its cell. The
+        //    geometry comes from `TableLayout`, which the decoration layer also
+        //    reads: the rules must land exactly between the columns that
+        //    the kerning has just set.
         let origins = layout.columnOrigins
         for row in table.rows {
             var pen: CGFloat = 0
@@ -296,15 +296,15 @@ struct MarkdownRenderer {
                 let own = measure(storage, cell.content)
                 let origin = column < origins.count ? origins[column] : pen
 
-                // **Toutes les cellules au fer à gauche**, quelle que soit la
-                // ligne `|:---:|---:|`. L'alignement markdown reste dans le
-                // fichier — il n'est simplement plus rendu : une grille où
-                // chaque colonne part d'un bord différent se lit moins bien
-                // qu'une grille où toutes les entrées commencent au même point.
+                // **All cells left-aligned**, regardless of the
+                // `|:---:|---:|` line. Markdown alignment stays in the
+                // file — it just isn't rendered anymore: a grid where
+                // each column starts from a different edge reads worse
+                // than a grid where every entry starts at the same point.
                 let offset: CGFloat = 0
 
-                // Le séparateur qui précède la cellule : le `|` de bord gauche
-                // pour la première, celui qui la sépare de la précédente sinon.
+                // The separator preceding the cell: the left-edge `|`
+                // for the first one, the one separating it from the previous cell otherwise.
                 let pipeIndex = row.hasLeadingPipe ? column : column - 1
                 if pipeIndex >= 0, pipeIndex < row.pipes.count,
                    row.pipes[pipeIndex].upperBound <= storage.length {
@@ -314,18 +314,18 @@ struct MarkdownRenderer {
                 }
                 pen += own
             }
-            // 4. Après le crénage, jamais avant : c'est lui qui vient de
-            //    réécrire la fonte de chaque `|`.
+            // 4. After the kerning, never before: it's the kerning that just
+            //    rewrote the font of each `|`.
             keepRowMetrics(storage, row: row)
         }
     }
 
-    /// Les styles de paragraphe des lignes du tableau.
+    /// The paragraph styles of the table's rows.
     ///
-    /// L'espace au-dessus du bloc ne va que sur la **première** ligne. Posé sur
-    /// toute la plage, comme il l'était d'abord, il s'appliquait à chaque ligne
-    /// source — c'est-à-dire à chaque rangée — et le tableau se lisait aussi
-    /// aéré qu'une suite de paragraphes.
+    /// The space above the block goes only on the **first** line. Applied over
+    /// the entire range, as it originally was, it applied to every source
+    /// line — that is, every row — and the table read as
+    /// airy as a sequence of paragraphs.
     private func applyRowStyles(_ storage: NSTextStorage, table: MarkdownTable,
                                 clipping: Bool, reducedRuleLine: Bool) {
         for (index, row) in table.rows.enumerated() {
@@ -337,52 +337,52 @@ struct MarkdownRenderer {
 
         let ruleStyle = tableParagraphStyle(clipping: clipping)
         if reducedRuleLine {
-            // La ligne ne montre rien : sa hauteur est celle du filet qu'elle
-            // porte, pas celle d'une rangée vide.
+            // The line shows nothing: its height is that of the rule it
+            // carries, not that of an empty row.
             ruleStyle.minimumLineHeight = (typography.bodySize * Self.tableRuleHeight).rounded()
             ruleStyle.maximumLineHeight = ruleStyle.minimumLineHeight
             ruleStyle.lineHeightMultiple = 1
-            // Sa hauteur est dite en toutes lettres : l'air des rangées n'a rien
-            // à y ajouter.
+            // Its height is stated explicitly: row padding has nothing
+            // to add to it.
             ruleStyle.lineSpacing = 0
         }
         storage.addAttribute(.paragraphStyle, value: ruleStyle,
                              range: paragraph(of: table.delimiter, in: storage))
     }
 
-    /// Rend à une rangée sans contenu la hauteur d'une rangée ordinaire.
+    /// Gives a row with no content the height of an ordinary row.
     ///
-    /// Un `|` masqué porte une fonte d'un centième de point : c'est ce qui lui
-    /// donne une largeur nulle, et c'est ce qui fait qu'une rangée **dont toutes
-    /// les cellules sont vides** n'a plus aucune métrique. Sa hauteur naturelle
-    /// tombait à un centième de point, l'interlignage multipliait ce néant, et
-    /// le tableau à remplir de « 6 — Tableaux » se réduisait à trois filets
-    /// empilés — sans une rangée où poser le curseur.
+    /// A masked `|` carries a font a hundredth of a point in size: that's what
+    /// gives it zero width, and that's what makes a row **whose
+    /// cells are all empty** end up with no metrics at all. Its natural height
+    /// would drop to a hundredth of a point, line spacing would multiply that near-nothing, and
+    /// the fill-in table from "6 — Tables" would collapse to three stacked
+    /// rules — with no row left to place the caret in.
     ///
-    /// Un seul `|` remis à la fonte du corps suffit à rendre la ligne à sa
-    /// hauteur. Il reste transparent, et son avance de glyphe ne décale rien
-    /// puisque la rangée n'a par définition rien à décaler.
+    /// A single `|` reset to the body font is enough to bring the line back to its
+    /// height. It stays invisible, and its glyph advance doesn't shift anything
+    /// since the row, by definition, has nothing to shift.
     private func keepRowMetrics(_ storage: NSTextStorage, row: MarkdownTable.Row) {
         guard row.cells.allSatisfy({ $0.content.length == 0 }),
               let pipe = row.pipes.first, pipe.upperBound <= storage.length else { return }
         storage.addAttribute(.font, value: typography.body, range: pipe)
     }
 
-    // L'alignement de colonne n'est plus lu au rendu : toutes les cellules
-    // partent du même bord. `MarkdownTable.alignments` sert encore à compter les
-    // colonnes, à poser les filets, et à l'export HTML, qui lui reste fidèle à
-    // ce que le fichier déclare.
+    // Column alignment is no longer read at render time: every cell
+    // starts from the same edge. `MarkdownTable.alignments` is still used to count
+    // columns, to place the rules, and for HTML export, which stays faithful to
+    // what the file declares.
 
-    /// Largeur réellement rendue d'une plage, attributs compris.
+    /// Actual rendered width of a range, attributes included.
     private func measure(_ storage: NSTextStorage, _ range: NSRange) -> CGFloat {
         guard range.length > 0, range.upperBound <= storage.length else { return 0 }
         return storage.attributedSubstring(from: range).size().width
     }
 
-    /// La plage du paragraphe qui porte une ligne, terminateur compris.
+    /// The range of the paragraph carrying a line, terminator included.
     ///
-    /// Un style de paragraphe posé sur la ligne sans son `\n` laisse TextKit
-    /// lire celui du caractère suivant : la hauteur réduite ne prendrait pas.
+    /// A paragraph style applied to the line without its `\n` leaves TextKit
+    /// reading the style of the next character instead: the reduced height wouldn't take effect.
     private func paragraph(of line: NSRange, in storage: NSTextStorage) -> NSRange {
         var range = line
         if range.upperBound < storage.length,
@@ -392,29 +392,29 @@ struct MarkdownRenderer {
         return NSRange(location: range.location, length: min(range.length, storage.length - range.location))
     }
 
-    /// Interlignage resserré : un tableau est une grille, pas de la prose.
+    /// Tightened line spacing: a table is a grid, not prose.
     ///
-    /// - Parameter clipping: vrai quand la grille est posée. Une rangée ne doit
-    ///   alors jamais passer à la ligne — le calcul de largeur garantit qu'elle
-    ///   tient, et un repli décalerait toutes les rangées en dessous. En source,
-    ///   au contraire, le repli est ce qui rend le bloc lisible.
+    /// - Parameter clipping: true when the grid is applied. A row must
+    ///   then never wrap — the width calculation guarantees that it
+    ///   fits, and wrapping would shift every row below it. In source,
+    ///   on the contrary, wrapping is what makes the block readable.
     private func tableParagraphStyle(clipping: Bool) -> NSMutableParagraphStyle {
         let style = typography.paragraphStyle()
-        // Resserré par rapport à la prose, mais pas au point que le texte touche
-        // les filets : une cellule a besoin d'air au-dessus et en dessous, sinon
-        // la grille se lit comme un tableau de chiffres.
+        // Tighter than prose, but not so tight that the text touches
+        // the rules: a cell needs air above and below it, otherwise
+        // the grid reads like a table of figures.
         //
-        // **Le supplément va entièrement au-dessus, et c'est irrémédiable.**
-        // Un multiplicateur d'interlignage l'empile là et pose la base tout en
-        // bas. `.baselineOffset` ne le rattrape pas — TextKit relève la base
-        // *et* le cadre avec. `lineSpacing` non plus : il ne se glisse
-        // qu'*entre* les lignes d'un même paragraphe, or une rangée est un
-        // paragraphe d'une seule ligne. `paragraphSpacing` non plus : il ne
-        // compte pas dans le rectangle de la ligne, TextKit le reporte sur
-        // l'origine du paragraphe suivant, donc il creuse un vide qui
-        // n'appartient à aucune rangée.
+        // **The extra space goes entirely above the line, and there's no fixing that.**
+        // A line-height multiplier stacks it there and places the baseline at the very
+        // bottom. `.baselineOffset` doesn't compensate for it: TextKit raises the baseline
+        // *and* the frame along with it. `lineSpacing` doesn't either: it only
+        // slots in *between* lines of the same paragraph, but a row is a
+        // single-line paragraph. `paragraphSpacing` doesn't either: it doesn't
+        // count within the line's rectangle, TextKit carries it over to
+        // the origin of the next paragraph, so it opens a gap that
+        // belongs to no row.
         //
-        // Le centrage se règle donc là où il est réglable : au tracé. Voir
+        // Centering is therefore adjusted where it can actually be adjusted: at draw time. See
         // `rowRuleOffset(_:)`.
         if clipping {
             style.lineHeightMultiple = 1 + (Self.rowLeading - 1) / 2
@@ -425,49 +425,50 @@ struct MarkdownRenderer {
         return style
     }
 
-    /// L'interlignage d'une rangée, rapporté à la hauteur naturelle du corps.
+    /// A row's line spacing, relative to the body's natural height.
     static let rowLeading: CGFloat = 1.45
 
-    /// L'air sous le texte d'une rangée — la moitié de son supplément.
+    /// The air under a row's text — half of its extra spacing.
     static func rowPadding(_ typography: EditorTypography) -> CGFloat {
         (naturalHeight(typography.body) * (rowLeading - 1) / 2).rounded()
     }
 
-    /// De combien descendre les filets pour que le texte tombe **au milieu** de
-    /// sa rangée.
+    /// How far to drop the rules so the text falls **in the middle** of
+    /// its row.
     ///
-    /// Le supplément d'interlignage se pose tout entier au-dessus de la ligne
-    /// (voir `tableParagraphStyle`), si bien que le texte se retrouve plaqué
-    /// contre le filet du bas — mesuré au pixel : 23 points d'air dessus, 3
-    /// dessous. Puisque le cadre de la ligne n'est pas déplaçable, ce sont les
-    /// filets qu'on descend de la moitié de l'écart, ce qui revient au même :
-    /// la bande visible d'une rangée est ce qui sépare deux filets, pas ce que
-    /// TextKit appelle sa ligne.
+    /// The extra line spacing is placed entirely above the line
+    /// (see `tableParagraphStyle`), so the text ends up pressed
+    /// against the bottom rule — measured to the pixel: 23 points of air above, 3
+    /// below. Since the line's frame can't be moved, it's the
+    /// rules that get dropped by half the gap, which amounts to the same thing:
+    /// the visible band of a row is what separates two rules, not what
+    /// TextKit calls its line.
     static func rowRuleOffset(_ typography: EditorTypography) -> CGFloat {
         let font = typography.body
         let natural = naturalHeight(font)
         let box = natural * (1 + (rowLeading - 1) / 2)
-        let above = box - natural                       // le supplément, tout en haut
+        let above = box - natural                       // the extra space, right at the top
         let below = box - above - (font.ascender - font.descender)
-        // Centrer le cadre typographique laisse le texte visiblement haut : la
-        // hampe monte plus haut que les capitales, et presque aucun mot ne
-        // descend jusqu'au jambage. On corrige vers le milieu **optique**.
+        // Centering the typographic frame leaves the text visibly high: the
+        // ascender rises higher than capital letters, and almost no word
+        // descends all the way to the descender. This corrects toward the **optical**
+        // middle.
         //
-        // Le facteur est réglé à la mesure, pas déduit : centrer exactement sur
-        // la hauteur de capitale renversait le biais de l'autre côté (7 pixels
-        // dessus, 11 dessous, là où on avait 11 et 7). La moitié tombe juste,
-        // vérifié au pixel sur « 6 — Tableaux ».
+        // The factor is tuned by measurement, not derived: centering exactly on
+        // cap height flipped the bias to the other side (7 pixels
+        // above, 11 below, where it used to be 11 and 7). Half lands right,
+        // verified to the pixel on "6 — Tables".
         let optical = (font.ascender - font.capHeight) / 4
         return max(0, (above - below) / 2 + optical).rounded()
     }
 
-    /// Ce que TextKit donnerait de lui-même à une ligne dans cette fonte.
+    /// What TextKit would give a line in this font on its own.
     private static func naturalHeight(_ font: NSFont) -> CGFloat {
         font.ascender - font.descender + font.leading
     }
 
 
-    // MARK: - Style de base
+    // MARK: - Base style
 
     private func applyBaseStyle(_ storage: NSTextStorage, range: NSRange) {
         let target = range.length > 0 ? range : NSRange(location: 0, length: storage.length)
@@ -479,7 +480,7 @@ struct MarkdownRenderer {
         ], range: target)
     }
 
-    // MARK: - Style du contenu
+    // MARK: - Content style
 
     private func applyContentStyle(_ storage: NSTextStorage, span: SyntaxSpan) {
         let content = clamp(span.content, to: storage.length)
@@ -501,41 +502,41 @@ struct MarkdownRenderer {
                                    .backgroundColor: Theme.NS.fillQuaternary], range: content)
 
         case .link(let destination):
-            // Souligné et non coloré : le seul objet coloré autorisé est le
-            // contenu de l'utilisateur (§7).
+            // Underlined and not colored: the only colored object allowed is
+            // the user's content (§7).
             var attributes: [NSAttributedString.Key: Any] = [
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
                 .underlineColor: Theme.NS.labelTertiary,
                 .cursor: NSCursor.pointingHand,
             ]
-            // **L'adresse est cachée : il faut donc pouvoir la lire.** Le
-            // `(url)` est un marqueur, donc masqué ; sans infobulle, le seul
-            // moyen de savoir où mène un lien serait d'aller poser le curseur
-            // dessus pour faire réapparaître sa syntaxe.
+            // **The address is hidden, so it must remain readable.** The
+            // `(url)` is a marker, so it's masked; without a tooltip, the only
+            // way to know where a link leads would be to place the caret
+            // on it to make its syntax reappear.
             if !destination.isEmpty {
-                attributes[.toolTip] = "\(destination)\n⌘-clic pour ouvrir"
+                attributes[.toolTip] = "\(destination)\n⌘-click to open"
             }
-            // Et sans cet attribut, `⌘`-clic ne trouvait **rien** : la vue
-            // cherche un `.link` que personne ne posait, et l'ouverture promise
-            // au §2.4 ne s'est jamais produite.
+            // And without this attribute, `⌘`-click found **nothing**: the view
+            // looks for a `.link` that nobody was setting, and the opening promised
+            // in §2.4 never happened.
             if let url = Self.openableURL(destination) {
                 attributes[.link] = url
             }
             storage.addAttributes(attributes, range: content)
 
         case .image(let source, _):
-            // **Réserver la place, sans insérer un seul caractère.**
+            // **Reserve the space, without inserting a single character.**
             //
-            // Une image ne peut pas être un `NSTextAttachment` : un attachement
-            // remplace un caractère, et le §3.1 interdit d'en ajouter un. La
-            // hauteur est donc réservée par `minimumLineHeight` sur le
-            // paragraphe, la source est masquée à largeur nulle comme n'importe
-            // quel marqueur, et `DecorationPainter` peint dans la place ainsi
-            // laissée.
+            // An image can't be an `NSTextAttachment`: an attachment
+            // replaces a character, and §3.1 forbids adding one. The
+            // height is therefore reserved via `minimumLineHeight` on the
+            // paragraph, the source is masked to zero width like any
+            // other marker, and `DecorationPainter` paints into the space
+            // left this way.
             //
-            // Rien de tout cela pour une image au fil du texte : réserver la
-            // hauteur écarterait la ligne où elle se trouve, et le dessin se
-            // poserait par-dessus les mots qui l'entourent.
+            // None of this applies to an inline image: reserving the
+            // height would push apart the line it's in, and the drawing would
+            // land on top of the surrounding words.
             guard Self.isBlockImage(span, in: storage.mutableString) else {
                 markMissingInline(storage, span: span, source: source)
                 break
@@ -547,18 +548,18 @@ struct MarkdownRenderer {
             storage.addAttributes([.paragraphStyle: style], range: whole)
 
         case .footnoteReference:
-            // L'exposant porte sur le seul identifiant : les crochets sont des
-            // marqueurs et seront masqués, mais le numéro doit rester à
-            // l'écran, sinon l'auteur perd le repère vers sa note.
+            // The superscript applies only to the identifier: the brackets are
+            // markers and will be masked, but the number must stay
+            // on screen, otherwise the author loses the reference to their note.
             storage.addAttributes([.font: typography.font(size: typography.bodySize * 0.7),
                                    .baselineOffset: typography.bodySize * 0.32,
                                    .foregroundColor: Theme.NS.labelSecondary], range: content)
 
         case .footnoteDefinition(let identifier):
-            // La note se lit comme une note : un cran plus petite, en teinte
-            // secondaire, avec un retrait qui aligne son texte sous lui-même
-            // quand elle passe à la ligne. C'est la mise en page qu'un livre
-            // lui donne depuis cinq siècles.
+            // The note reads like a note: one notch smaller, in a
+            // secondary tint, with an indent that aligns its text under itself
+            // when it wraps to a new line. This is the layout a book has
+            // given it for five centuries.
             let style = typography.paragraphStyle()
             let hanging = typography.bodySize * 1.4
             style.firstLineHeadIndent = 0
@@ -566,8 +567,8 @@ struct MarkdownRenderer {
             storage.addAttributes([.font: typography.font(size: typography.bodySize * 0.9),
                                    .foregroundColor: Theme.NS.labelSecondary,
                                    .paragraphStyle: style], range: whole)
-            // L'identifiant reste en exposant, comme son renvoi : c'est ce qui
-            // fait qu'on reconnaît la paire d'un coup d'œil.
+            // The identifier stays superscript, like its reference: this is what
+            // makes the pair recognizable at a glance.
             let label = NSRange(location: span.range.location + 2,
                                 length: max(0, identifier.utf16.count))
             if label.upperBound <= storage.length {
@@ -590,11 +591,11 @@ struct MarkdownRenderer {
                                    .paragraphStyle: style], range: whole)
 
         case .taskItem(_, let checked) where checked:
-            // Une tâche faite s'atténue. C'est la seule information qu'une liste
-            // de tâches doit donner au premier coup d'œil — ce qu'il reste — et
-            // la case cochée seule ne la donne pas : elle se lit item par item.
-            // L'atténuation, pas la rature : le barré a déjà un sens en markdown,
-            // et l'utiliser ici rendrait `~~texte~~` illisible dans une tâche.
+            // A done task is dimmed. That's the only information a task
+            // list needs to give at a glance — what's left — and
+            // the checked box alone doesn't give it: it reads item by item.
+            // Dimming, not strikethrough: strikethrough already has a meaning in markdown,
+            // and using it here would make `~~text~~` unreadable inside a task.
             let style = typography.paragraphStyle()
             let indent = typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))
             style.firstLineHeadIndent = indent
@@ -605,10 +606,10 @@ struct MarkdownRenderer {
             hideContinuationIndents(storage, item: span)
 
         case .listItem, .taskItem:
-            // `firstLineHeadIndent` **et** `headIndent`. Le second seul ne
-            // décale que les lignes de continuation : la première resterait
-            // collée à la marge, et la puce, dessinée à sa gauche, tomberait à
-            // une abscisse négative — donc hors de la vue.
+            // `firstLineHeadIndent` **and** `headIndent`. The second alone
+            // only shifts continuation lines: the first would stay
+            // stuck to the margin, and the bullet, drawn to its left, would land at
+            // a negative x-coordinate — outside the view, in other words.
             let style = typography.paragraphStyle()
             let indent = typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))
             style.firstLineHeadIndent = indent
@@ -618,16 +619,16 @@ struct MarkdownRenderer {
             hideContinuationIndents(storage, item: span)
 
         case .thematicBreak:
-            // Rendu comme un filet plutôt qu'un texte : la ligne entière est un
-            // marqueur, elle sera donc masquée, et c'est la bordure du
-            // paragraphe qui dessine le trait.
+            // Rendered as a rule rather than text: the whole line is a
+            // marker, so it will be masked, and it's the paragraph's
+            // border that draws the line.
             break
 
         case .codeBlock(let language):
-            // Pas de `.backgroundColor` : posé caractère par caractère, il
-            // produit un liseré dentelé qui s'arrête au dernier signe de chaque
-            // ligne. Le fond est dessiné par `DecorationPainter`, en un seul
-            // rectangle arrondi qui couvre toute la colonne.
+            // No `.backgroundColor`: applied character by character, it
+            // produces a jagged fringe that stops at the last character of each
+            // line. The background is drawn by `DecorationPainter`, as a single
+            // rounded rectangle that covers the whole column.
             let style = typography.paragraphStyle()
             style.lineHeightMultiple = 1.25
             style.firstLineHeadIndent = typography.codeBlockIndent
@@ -641,18 +642,18 @@ struct MarkdownRenderer {
                                    .foregroundColor: Theme.NS.labelSecondary], range: whole)
 
         case .table(let table):
-            // **La police du corps, plus la chasse fixe.** Elle garantissait
-            // l'alignement gratuitement — chaque signe fait la même largeur —
-            // mais donnait à tous les tableaux l'air d'un bloc de code. Les
-            // colonnes sont désormais mesurées puis posées au crénage
-            // (`TableLayout`), ce qui n'a plus besoin d'une police à pas fixe.
+            // **The body font, no more monospaced pitch.** Monospacing guaranteed
+            // alignment for free — every character has the same width —
+            // but made every table look like a code block. The
+            // columns are now measured and then placed via kerning
+            // (`TableLayout`), which no longer needs a fixed-pitch font.
             storage.addAttributes([.font: typography.body,
                                    .paragraphStyle: tableParagraphStyle(clipping: false)],
                                   range: whole)
 
-            // L'en-tête en gras. Il l'est aussi sous le curseur : c'est la
-            // seule information de structure que la source à pipes ne donne
-            // pas d'elle-même.
+            // The header in bold. It stays bold under the caret too: it's the
+            // only structural information that the pipe-delimited source doesn't
+            // give on its own.
             if let header = table?.rows.first {
                 let bold = typography.bodyEmphasized
                 for cell in header.cells {
@@ -664,7 +665,7 @@ struct MarkdownRenderer {
         }
     }
 
-    /// Hauteur à réserver pour une image, cadre d'absence compris.
+    /// Height to reserve for an image, including the missing-image frame.
     private func reservedHeight(for source: String) -> CGFloat {
         switch ImageStore.shared.entry(for: source, relativeTo: documentURL) {
         case .loaded(let image, _):
@@ -677,10 +678,10 @@ struct MarkdownRenderer {
         }
     }
 
-    /// Colorie le contenu d'un bloc de code.
+    /// Colors the content of a code block.
     ///
-    /// Un langage absent ou inconnu ne produit aucune catégorie : le bloc reste
-    /// en chasse fixe, non coloré. Jamais d'erreur, jamais de bloc vide (§4.3).
+    /// A missing or unknown language produces no category: the block stays
+    /// monospaced, uncolored. Never an error, never an empty block (§4.3).
     private func highlightCode(_ storage: NSTextStorage, content: NSRange, language: String?) {
         guard content.length > 0, content.upperBound <= storage.length else { return }
         let code = storage.attributedSubstring(from: content).string
@@ -694,9 +695,9 @@ struct MarkdownRenderer {
         }
     }
 
-    /// Ajoute une graisse ou une italique **sans perdre celle déjà posée** :
-    /// c'est ce qui permet à `***texte***` de ressortir gras *et* italique,
-    /// alors que deux poses successives de `.font` se seraient écrasées.
+    /// Adds a weight or an italic style **without losing what's already applied**:
+    /// this is what lets `***text***` come out bold *and* italic,
+    /// whereas two successive `.font` applications would have overwritten each other.
     private func addTrait(_ storage: NSTextStorage, range: NSRange, bold: Bool = false, italic: Bool = false) {
         guard range.length > 0 else { return }
         storage.enumerateAttribute(.font, in: range) { value, subrange, _ in
@@ -712,9 +713,9 @@ struct MarkdownRenderer {
         }
     }
 
-    /// La fonte d'un marqueur révélé : celle de son bloc porteur, pour que le
-    /// `##` d'un titre ne soit pas rendu à la taille du corps de texte au
-    /// milieu d'une ligne de titre.
+    /// The font of a revealed marker: that of its carrying block, so the
+    /// `##` of a heading isn't rendered at body text size in the
+    /// middle of a heading line.
     private func markerFont(for span: SyntaxSpan) -> NSFont {
         switch span.kind {
         case .heading(let level): typography.heading(level: level)
@@ -729,23 +730,23 @@ struct MarkdownRenderer {
         return NSRange(location: location, length: max(0, min(range.length, length - location)))
     }
 
-    /// Ordre de pose : les blocs avant l'inline, et les plus englobants avant
-    /// les plus intérieurs.
-    /// Signale une image au fil du texte qui ne mène à rien.
+    /// Application order: blocks before inline, outermost before
+    /// innermost.
+    /// Flags an inline image that leads nowhere.
     ///
-    /// Une image en bloc absente reçoit son cadre « Image introuvable » (§6) :
-    /// on ne laisse jamais un vide qui ferait croire à un bug de l'éditeur. Au
-    /// fil d'une phrase, il n'y a pas de place pour un cadre — mais il n'y avait
-    /// alors **aucun signe du tout** : `![au fil du texte](photos/absente.png)`
-    /// se lisait « au fil du texte », un texte alternatif indiscernable de la
-    /// prose autour. Le lien pouvait être mort depuis des mois sans que rien ne
-    /// le dise.
+    /// A missing block image gets its "Image not found" frame (§6):
+    /// the editor never leaves an empty gap that would look like a bug. In the
+    /// middle of a sentence, there's no room for a frame — but until now there
+    /// was **no sign of it at all**: `![inline](photos/missing.png)`
+    /// would read as "inline", alt text indistinguishable from the
+    /// surrounding prose. The link could have been dead for months without anything
+    /// saying so.
     ///
-    /// Le texte alternatif passe donc en teinte tertiaire, souligné de points.
-    /// Un attribut de texte et non une marque dessinée : il suit le repli sur
-    /// plusieurs lignes, là où un cadre tracé autour de la plage entière
-    /// engloberait les deux lignes d'un seul rectangle. Rien ne change de
-    /// hauteur, et poser le curseur sur la ligne ramène le chemin en clair.
+    /// The alt text therefore switches to a tertiary tint, underlined with dots.
+    /// A text attribute rather than a drawn mark: it follows the wrap across
+    /// multiple lines, whereas a frame drawn around the whole range
+    /// would enclose both lines in a single rectangle. Nothing changes
+    /// height, and placing the caret on the line brings the path back in clear text.
     private func markMissingInline(_ storage: NSTextStorage, span: SyntaxSpan, source: String) {
         let content = clamp(span.content, to: storage.length)
         guard content.length > 0,
@@ -757,23 +758,23 @@ struct MarkdownRenderer {
         ], range: content)
     }
 
-    /// Efface l'indentation de source des lignes de continuation d'un item.
+    /// Erases the source indentation of an item's continuation lines.
     ///
-    /// Les deux blancs de `  lignes.` sont de la syntaxe : c'est eux qui gardent
-    /// la phrase **dans** la puce. Rendus tels quels, ils s'ajoutaient au retrait
-    /// que `headIndent` vient de poser, et la continuation tombait un cran plus
-    /// à droite que la première ligne au lieu de dessous. Masqués, les deux
-    /// s'alignent au point près.
+    /// The two spaces in `  lines.` are syntax: they're what keeps
+    /// the sentence **inside** the bullet. Rendered as is, they added to the indent
+    /// that `headIndent` just applied, and the continuation landed one notch further
+    /// right than the first line instead of directly below it. Masked, the two
+    /// align down to the point.
     ///
-    /// La première ligne est laissée intacte : son indentation à elle appartient
-    /// au marqueur, que la règle de révélation doit pouvoir ramener (§2.2).
+    /// The first line is left intact: its own indentation belongs
+    /// to the marker, which the reveal rule must be able to bring back (§2.2).
     private func hideContinuationIndents(_ storage: NSTextStorage, item: SyntaxSpan) {
         guard let block = item.blockRange else { return }
         let text = storage.mutableString
         let end = min(block.upperBound, storage.length)
         var cursor = min(item.range.upperBound, end)
-        // Franchir le `\n` qui clôt la première ligne, sans quoi la boucle
-        // commencerait par masquer le marqueur lui-même.
+        // Cross the `\n` that closes the first line, otherwise the loop
+        // would start by masking the marker itself.
         if cursor < end, text.character(at: cursor) == 10 { cursor += 1 }
 
         while cursor < end {
@@ -785,8 +786,8 @@ struct MarkdownRenderer {
                   text.character(at: line.location + width) == 32
                     || text.character(at: line.location + width) == 9 { width += 1 }
 
-            // Une ligne entièrement blanche sépare deux paragraphes d'un item :
-            // la masquer effondrerait sa hauteur et souderait les deux blocs.
+            // A fully blank line separates two paragraphs of an item:
+            // masking it would collapse its height and merge the two blocks together.
             guard width > 0, line.location + width < storage.length,
                   text.character(at: line.location + width) != 10 else { continue }
             MarkerMask.hide(in: storage, range: NSRange(location: line.location, length: width))
@@ -808,7 +809,7 @@ struct MarkdownRenderer {
 
 @MainActor
 private extension EditorTypography {
-    /// Fonte du corps à une taille arbitraire — pour l'exposant des notes.
+    /// Body font at an arbitrary size — for footnote superscripts.
     func font(size: CGFloat) -> NSFont {
         FontCache.shared.font(name: bodyFontName, size: size, weight: .regular)
     }

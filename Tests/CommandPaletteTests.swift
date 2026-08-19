@@ -1,49 +1,49 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
-/// Le filtrage de la palette (§4.5).
+/// The palette's filtering (§4.5).
 ///
-/// C'est une recherche approchée : on tape quelques lettres dans l'ordre, pas
-/// le titre exact. Ce qui compte est qu'elle trouve ce qu'on vise sans exiger
-/// qu'on l'écrive juste.
+/// It's an approximate search: a few letters typed in order, not the exact
+/// title. What matters is that it finds what's being aimed at without
+/// requiring it to be spelled correctly.
 final class CommandPaletteTests: XCTestCase {
 
-    /// **Les accents ne doivent pas être une condition d'entrée.**
+    /// **Accents must not be a barrier to entry.**
     ///
-    /// La comparaison se faisait sur un `lowercased()` seul : dans une app
-    /// française, dont les titres sont accentués une fois sur deux, il fallait
-    /// taper l'accent juste — donc connaître déjà ce qu'on cherche.
+    /// The comparison used to run on a plain `lowercased()`: in an app
+    /// whose titles are accented as often as not, it required typing the
+    /// exact accent — that is, already knowing what was being searched for.
     func testAccentsAreNotRequiredToFindATitle() {
-        XCTAssertNotNil(CommandPalette.score("2. Les tâches — dans 2 — Notes de réunion", query: "taches"))
-        XCTAssertNotNil(CommandPalette.score("2. Les tâches — dans 2 — Notes de réunion", query: "reunion"))
-        XCTAssertNotNil(CommandPalette.score("Écrire les mentions légales", query: "legales"))
-        XCTAssertNotNil(CommandPalette.score("Décisions", query: "decisions"))
+        XCTAssertNotNil(CommandPalette.score("Order a café", query: "cafe"))
+        XCTAssertNotNil(CommandPalette.score("Write my résumé", query: "resume"))
+        XCTAssertNotNil(CommandPalette.score("Stay naïve", query: "naive"))
+        XCTAssertNotNil(CommandPalette.score("Meet Zoë", query: "zoe"))
     }
 
-    /// Et l'inverse : taper l'accent doit continuer de marcher.
+    /// And the reverse: typing the accent must still work.
     func testTypingTheAccentStillWorks() {
-        XCTAssertNotNil(CommandPalette.score("2. Les tâches", query: "tâches"))
-        XCTAssertNotNil(CommandPalette.score("Décisions", query: "Décisions"))
+        XCTAssertNotNil(CommandPalette.score("Order a café", query: "café"))
+        XCTAssertNotNil(CommandPalette.score("Meet Zoë", query: "Zoë"))
     }
 
     func testTheCaseIsStillIgnored() {
-        XCTAssertNotNil(CommandPalette.score("Plan du document", query: "PLAN"))
-        XCTAssertNotNil(CommandPalette.score("Plan du document", query: "plan"))
+        XCTAssertNotNil(CommandPalette.score("Focus Mode", query: "FOCUS"))
+        XCTAssertNotNil(CommandPalette.score("Focus Mode", query: "focus"))
     }
 
-    /// Ce qui ne correspond pas ne doit pas se mettre à correspondre : replier
-    /// les accents ne doit pas tout rendre équivalent.
+    /// What doesn't match must not start matching: folding accents must not
+    /// make everything equivalent.
     func testWhatDoesNotMatchStillDoesNot() {
-        XCTAssertNil(CommandPalette.score("Plan du document", query: "zzz"))
-        XCTAssertNil(CommandPalette.score("Décisions", query: "tableau"))
+        XCTAssertNil(CommandPalette.score("Focus Mode", query: "zzz"))
+        XCTAssertNil(CommandPalette.score("Résumé", query: "table"))
     }
 
-    /// Un début de mot vaut mieux qu'une lettre au milieu : c'est ce qui met
-    /// « Plan du document » devant quand on tape « pd ».
+    /// A word start is worth more than a letter in the middle: it's what
+    /// puts "Print Document" ahead when typing "pd".
     func testAWordStartScoresHigherThanAMiddleLetter() throws {
-        let atStart = try XCTUnwrap(CommandPalette.score("Plan du document", query: "pd"))
+        let atStart = try XCTUnwrap(CommandPalette.score("Print Document", query: "pd"))
         let inMiddle = try XCTUnwrap(CommandPalette.score("Ападpd", query: "pd"))
         XCTAssertGreaterThan(atStart, inMiddle)
     }

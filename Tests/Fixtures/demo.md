@@ -1,43 +1,43 @@
 ---
-title: Démonstration
+title: Demo
 date: 2026-08-07
 ---
 
 # Fovea
 
-Un éditeur markdown **WYSIWYG** natif pour macOS. Le formatage se voit
-*immédiatement*, sans vue de code ni panneau d'aperçu.
+A native **WYSIWYG** markdown editor for macOS. Formatting is visible
+*immediately*, with no source view and no preview pane.
 
-## Ce que ça change
+## What that changes
 
-Quand le curseur n'est pas dans une construction, ses marqueurs disparaissent.
-Dès qu'il la touche, ils réapparaissent en gris pâle — et le mot reste gras
-pendant qu'ils reviennent. C'est ~~toute~~ la fonction clé de l'app.
+When the caret isn't inside a construct, its markers disappear.
+As soon as it touches one, they reappear in pale gray, and the word stays bold
+while they come back. That's ~~the whole~~ a key feature of the app.
 
-> La fidélité au fichier est la seconde promesse : ce qui n'a pas été touché
-> ressort octet pour octet.
+> Fidelity to the file is the second promise: whatever wasn't touched
+> comes back out byte for byte.
 
-### Une liste
+### A list
 
-- Le texte markdown est la seule source de vérité
-- Le rendu n'est qu'une couche d'attributs
-- Les diffs `git` restent propres
+- The markdown text is the only source of truth
+- The rendering is just a layer of attributes
+- `git` diffs stay clean
 
-1. Analyse par `swift-markdown`
-2. Conversion des plages UTF-8 vers UTF-16
-3. Pose des attributs
+1. Parsing by `swift-markdown`
+2. Converting ranges from UTF-8 to UTF-16
+3. Applying attributes
 
-- [ ] Tableaux éditables
-- [x] Masquage des marqueurs
+- [ ] Editable tables
+- [x] Marker masking
 
-Du code inline comme `NSTextLayoutManager`, et un bloc :
+Inline code like `NSTextLayoutManager`, and a block:
 
 ```swift
 static let hiddenFontSize: CGFloat = 0.01
 ```
 
-Un lien vers [le dépôt](https://github.com/byelior/fovea) et un renvoi[^1].
+A link to [the repository](https://github.com/byelior/fovea) and a footnote reference[^1].
 
 ---
 
-[^1]: Les notes de bas de page ne sont pas parsées par swift-markdown.
+[^1]: Footnotes aren't parsed by swift-markdown.

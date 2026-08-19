@@ -1,29 +1,30 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 import Markdown
 
-/// Traduit le texte source en `SyntaxSpan`, sans jamais le réécrire.
+/// Translates the source text into `SyntaxSpan`, never rewriting it.
 ///
-/// Le parseur ne sert qu'à savoir **où** poser les attributs. L'AST est
-/// consommé puis jeté ; il n'est jamais re-sérialisé, ce qui est exactement ce
-/// qui garantit la fidélité au fichier promise au §5.
+/// The parser only serves to know **where** to place attributes. The AST is
+/// consumed then discarded; it is never re-serialized, which is exactly what
+/// guarantees the fidelity to the file promised in §5.
 ///
-/// # Ce que `swift-markdown` donne, et ce qu'il faut déduire
+/// # What `swift-markdown` gives, and what has to be deduced
 ///
-/// La bibliothèque donne la plage complète d'un nœud et celle de son contenu.
-/// **Les marqueurs sont le complément de l'un dans l'autre** — c'est le seul
-/// calcul que fait ce fichier, et il vaut pour le gras comme pour les liens.
+/// The library gives the full range of a node and the range of its content.
+/// **The markers are the complement of one in the other**: it is the only
+/// calculation this file performs, and it holds for bold as much as for
+/// links.
 ///
-/// Quelques nœuds n'ont pas d'enfant qui délimite leur contenu (`InlineCode`,
-/// `CodeBlock`, les préfixes de citation) : leurs marqueurs sont alors lus
-/// directement dans le texte, ligne par ligne.
+/// A few nodes have no child that delimits their content (`InlineCode`,
+/// `CodeBlock`, blockquote prefixes): their markers are then read directly
+/// from the text, line by line.
 struct MarkdownParser {
 
-    /// Le résultat d'une analyse : les constructions, et la table de conversion
-    /// qui a servi à les situer. La table est conservée parce que l'éditeur en
-    /// a besoin à chaque déplacement du curseur, pour connaître la ligne
-    /// courante sans re-parcourir le texte.
+    /// The result of a parse: the constructs, and the conversion table used
+    /// to locate them. The table is kept because the editor needs it on
+    /// every caret movement, to know the current line without re-scanning
+    /// the text.
     struct Result {
         var spans: [SyntaxSpan]
         var positions: SourcePositionMap
@@ -33,8 +34,9 @@ struct MarkdownParser {
         let positions = SourcePositionMap(text: text)
         let utf16 = Array(text.utf16)
 
-        // Le front matter YAML est retiré avant cmark, qui ne le connaît pas et
-        // prendrait le `---` d'ouverture pour un filet horizontal (§4.1).
+        // The YAML front matter is stripped before cmark, which does not
+        // know about it and would take the opening `---` for a horizontal
+        // rule (§4.1).
         var spans: [SyntaxSpan] = []
         let bodyStart = frontMatter(in: text, positions: positions, into: &spans)
 
@@ -42,15 +44,16 @@ struct MarkdownParser {
         var builder = Builder(positions: positions, utf16: utf16, bodyStart: bodyStart)
         builder.visit(document, depth: 0)
 
-        // cmark ignore le front matter et lit son `---` de fermeture comme le
-        // soulignement d'un titre `setext` : sans ce filtre, « title: … » et
-        // « date: … » s'affichent en gros titres au-dessus du document. Tout ce
-        // que l'AST place avant le début du corps est donc écarté.
+        // cmark ignores the front matter and reads its closing `---` as the
+        // underline of a `setext` heading: without this filter, "title: …"
+        // and "date: …" would display as large headings above the document.
+        // Anything the AST places before the start of the body is therefore
+        // discarded.
         spans.append(contentsOf: builder.spans.filter { $0.range.location >= bodyStart })
 
-        // Les notes de bas de page ne sont pas parsées par `swift-markdown` —
-        // vérifié, `[^1]` en ressort comme du texte brut. Elles sont donc
-        // repérées par une passe maison, le motif étant sans ambiguïté (§4.1).
+        // Footnotes are not parsed by `swift-markdown`: verified, `[^1]`
+        // comes out as plain text. They are therefore detected by a custom
+        // pass, the pattern being unambiguous (§4.1).
         spans.append(contentsOf: Footnotes.scan(utf16: utf16, skippingCodeIn: builder.verbatimRanges))
 
         return Result(spans: spans, positions: positions)
@@ -58,11 +61,12 @@ struct MarkdownParser {
 
     // MARK: - Front matter
 
-    /// Détecte l'en-tête YAML et renvoie l'offset UTF-16 où commence le corps.
+    /// Detects the YAML header and returns the UTF-16 offset where the body
+    /// starts.
     ///
-    /// Le bloc doit commencer à la toute première ligne : un `---` plus bas
-    /// dans le document est un filet horizontal, et le confondre couperait le
-    /// rendu en deux.
+    /// The block must start on the very first line: a `---` further down in
+    /// the document is a horizontal rule, and confusing the two would cut
+    /// the rendering in half.
     private static func frontMatter(in text: String,
                                     positions: SourcePositionMap,
                                     into spans: inout [SyntaxSpan]) -> Int {
@@ -85,18 +89,18 @@ struct MarkdownParser {
         return 0
     }
 
-    // MARK: - Parcours de l'AST
+    // MARK: - AST traversal
 
     private struct Builder {
         let positions: SourcePositionMap
         let utf16: [UInt16]
-        /// Fin du front matter : tout ce qui précède est déjà traité.
+        /// End of the front matter: everything before it is already handled.
         let bodyStart: Int
 
         var spans: [SyntaxSpan] = []
-        /// Plages où le texte est littéral — code et HTML brut. Les passes
-        /// maison qui suivent doivent les ignorer, sans quoi un `[^1]` dans un
-        /// bloc de code deviendrait une note de bas de page (§6).
+        /// Ranges where the text is literal: code and raw HTML. The custom
+        /// passes that follow must ignore these, otherwise a `[^1]` inside a
+        /// code block would become a footnote (§6).
         var verbatimRanges: [NSRange] = []
 
         mutating func visit(_ markup: Markup, depth: Int) {
@@ -118,19 +122,19 @@ struct MarkdownParser {
             default:                           break
             }
 
-            // Les cellules d'un tableau sont visitées pour leur contenu inline,
-            // mais la grille elle-même est un attachement : on ne descend pas
-            // dans un bloc de code, il n'y a rien de markdown dedans.
+            // A table's cells are visited for their inline content, but the
+            // grid itself is an attachment: traversal does not descend into
+            // a code block, there is nothing markdown about what's inside.
             guard !(markup is CodeBlock) else { return }
             for child in markup.children {
                 visit(child, depth: depth + 1)
             }
         }
 
-        // MARK: Nœuds à contenu délimité par un enfant
+        // MARK: Nodes whose content is delimited by a child
 
-        /// Le cas général : les marqueurs sont ce qui reste de la plage du nœud
-        /// quand on lui retire la plage de son contenu.
+        /// The general case: the markers are what remains of the node's
+        /// range once its content range has been removed from it.
         private mutating func emitWrapping(_ node: Markup, kind: SyntaxSpan.Kind, depth: Int) {
             guard let full = range(of: node), let inner = contentRange(of: node) else { return }
             spans.append(SyntaxSpan(kind: kind,
@@ -142,9 +146,9 @@ struct MarkdownParser {
 
         private mutating func emitHeading(_ node: Heading, depth: Int) {
             guard let full = range(of: node) else { return }
-            // Un titre `setext` (souligné par `===`) n'a pas de préfixe : son
-            // contenu commence à la colonne 1. Le complément est alors vide en
-            // tête et couvre la ligne de soulignement, ce qui est correct.
+            // A `setext` heading (underlined with `===`) has no prefix: its
+            // content starts at column 1. The complement is then empty at
+            // the start and covers the underline row, which is correct.
             let inner = contentRange(of: node) ?? full
             spans.append(SyntaxSpan(kind: .heading(level: node.level),
                                     range: full,
@@ -173,10 +177,10 @@ struct MarkdownParser {
                                     depth: depth))
         }
 
-        // MARK: Nœuds dont le contenu doit être lu dans le texte
+        // MARK: Nodes whose content must be read from the text
 
-        /// `InlineCode` n'a pas d'enfant. Le nombre de backticks est variable —
-        /// ``` ``x`` ``` est légal — donc on les compte des deux côtés.
+        /// `InlineCode` has no child. The number of backticks is variable
+        /// (``` ``x`` ``` is legal), so they are counted on both sides.
         private mutating func emitInlineCode(_ node: InlineCode, depth: Int) {
             guard let full = range(of: node) else { return }
             let ticks = countLeading(UInt16(UnicodeScalar("`").value), from: full.location, limit: full.length)
@@ -190,9 +194,9 @@ struct MarkdownParser {
             verbatimRanges.append(full)
         }
 
-        /// Un bloc clôturé a deux lignes de délimiteur ; un bloc indenté n'en a
-        /// aucune. Le langage fait partie de la ligne d'ouverture, donc du
-        /// marqueur — il se révèle avec elle.
+        /// A fenced block has two delimiter lines; an indented block has
+        /// none. The language is part of the opening line, so of the
+        /// marker: it reveals along with it.
         private mutating func emitCodeBlock(_ node: CodeBlock, depth: Int) {
             guard let full = range(of: node) else { return }
             verbatimRanges.append(full)
@@ -204,8 +208,8 @@ struct MarkdownParser {
                                   countLeading(tilde, from: opening.location, limit: opening.length))
 
             guard fenceLength >= 3 else {
-                // Bloc indenté par quatre espaces : pas de clôture à masquer,
-                // l'indentation *est* le contenu tel que l'utilisateur l'a écrit.
+                // Block indented by four spaces: no fence to hide, the
+                // indentation *is* the content as the user wrote it.
                 spans.append(SyntaxSpan(kind: .codeBlock(language: nil),
                                         range: full, markers: [], content: full, depth: depth))
                 return
@@ -223,8 +227,8 @@ struct MarkdownParser {
                                     depth: depth))
         }
 
-        /// Le `>` se répète sur chaque ligne : il faut donc un marqueur par
-        /// ligne, et non un seul en tête de bloc.
+        /// The `>` repeats on every line: a marker is therefore needed per
+        /// line, not a single one at the start of the block.
         private mutating func emitBlockQuote(_ node: BlockQuote, depth: Int) {
             guard let full = range(of: node) else { return }
             var markers: [NSRange] = []
@@ -244,9 +248,9 @@ struct MarkdownParser {
                                     depth: depth))
         }
 
-        /// Le marqueur d'un item est tout ce qui précède son premier contenu :
-        /// l'indentation, la puce ou le numéro, et pour une tâche la case à
-        /// cocher — `- [x] ` d'un seul tenant.
+        /// The marker of an item is everything that precedes its first
+        /// content: the indentation, the bullet or the number, and for a
+        /// task the checkbox — `- [x] ` as a single unit.
         private mutating func emitListItem(_ node: ListItem, depth: Int) {
             guard let full = range(of: node), let inner = contentRange(of: node) else { return }
             let markerRange = NSRange(location: full.location, length: max(0, inner.location - full.location))
@@ -258,15 +262,15 @@ struct MarkdownParser {
             case nil:        .listItem(marker: marker)
             }
 
-            // La plage retenue s'arrête à la fin de la **première** ligne : un
-            // item multi-lignes ne doit pas révéler son marqueur quand le
-            // curseur est trois lignes plus bas (§2.2, portée ligne).
+            // The retained range stops at the end of the **first** line: a
+            // multi-line item must not reveal its marker when the caret is
+            // three lines further down (§2.2, line-scoped).
             //
-            // La mise en page, elle, a besoin de l'item entier — voir
-            // `SyntaxSpan.blockRange`. Sans elle, les lignes de continuation
-            // retombaient au style de base : elles se dessinaient **à gauche de
-            // leur propre puce**, et leur indentation de source se voyait en
-            // blanc devant le texte.
+            // The layout, on the other hand, needs the whole item: see
+            // `SyntaxSpan.blockRange`. Without it, continuation lines fell
+            // back to the base style: they were drawn **to the left of their
+            // own bullet**, and their source indentation showed up as blank
+            // space in front of the text.
             let firstLine = lineRange(at: full.location)
             spans.append(SyntaxSpan(kind: kind,
                                     range: firstLine,
@@ -287,9 +291,10 @@ struct MarkdownParser {
                                     depth: depth))
         }
 
-        /// La grille est relevée dans la source plutôt que dans l'arbre : cmark
-        /// ne rend ni les `|` ni la ligne de délimitation, et ce sont
-        /// précisément les caractères à masquer. Voir `MarkdownTable`.
+        /// The grid is read from the source rather than from the tree: cmark
+        /// exposes neither the `|` nor the delimiter row, and those are
+        /// precisely the characters that need to be hidden. See
+        /// `MarkdownTable`.
         private mutating func emitTable(_ node: Table, depth: Int) {
             guard let full = range(of: node) else { return }
             let table = MarkdownTable.scan(utf16: utf16, in: full)
@@ -304,7 +309,7 @@ struct MarkdownParser {
             if let range = range(of: node) { verbatimRanges.append(range) }
         }
 
-        // MARK: Outils
+        // MARK: Tools
 
         private func range(of markup: Markup) -> NSRange? {
             guard let source = markup.range else { return nil }
@@ -315,7 +320,7 @@ struct MarkdownParser {
             return converted.length > 0 ? converted : nil
         }
 
-        /// La plage qui couvre tous les enfants du nœud, donc son contenu.
+        /// The range that covers all of the node's children, so its content.
         private func contentRange(of markup: Markup) -> NSRange? {
             var lower: Int?
             var upper: Int?
@@ -328,7 +333,7 @@ struct MarkdownParser {
             return NSRange(location: lower, length: upper - lower)
         }
 
-        /// Ce qui reste de `full` quand on lui retire `inner` : les marqueurs.
+        /// What remains of `full` once `inner` has been removed from it: the markers.
         private func complement(of inner: NSRange, in full: NSRange) -> [NSRange] {
             var result: [NSRange] = []
             let leading = inner.location - full.location
@@ -351,13 +356,13 @@ struct MarkdownParser {
             return count
         }
 
-        /// La plage de la ligne contenant `location`, terminateur exclu.
+        /// The range of the line containing `location`, terminator excluded.
         private func lineRange(at location: Int) -> NSRange {
             positions.lineRange(containing: location)
         }
 
-        /// La dernière ligne du bloc, si elle est bien une clôture. Un bloc non
-        /// fermé n'en a pas — le cas le plus fréquent pendant la frappe (§6).
+        /// The last line of the block, if it is indeed a closing fence. An
+        /// unclosed block has none: the most frequent case while typing (§6).
         private func closingFenceRange(in full: NSRange, openingLine: NSRange) -> NSRange? {
             let end = full.location + full.length
             guard end > openingLine.location + openingLine.length else { return nil }
@@ -370,7 +375,7 @@ struct MarkdownParser {
             return fence >= 3 ? last : nil
         }
 
-        /// `> ` en tête de ligne, espace optionnel compris.
+        /// `> ` at the start of a line, optional space included.
         private func quotePrefix(in line: NSRange) -> NSRange? {
             let space = UInt16(UnicodeScalar(" ").value)
             let angle = UInt16(UnicodeScalar(">").value)
@@ -382,7 +387,7 @@ struct MarkdownParser {
             return NSRange(location: line.location, length: offset)
         }
 
-        /// Identifie la puce ou le numéro dans le préfixe d'un item.
+        /// Identifies the bullet or the number in an item's prefix.
         private func listMarker(in prefix: NSRange) -> SyntaxSpan.ListMarker? {
             let zero = UInt16(UnicodeScalar("0").value)
             let nine = UInt16(UnicodeScalar("9").value)

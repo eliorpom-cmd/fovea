@@ -1,84 +1,84 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Décide quels marqueurs sont visibles, en fonction d'où se trouve le curseur.
+/// Decides which markers are visible, based on where the caret is.
 ///
-/// C'est la fonction clé de l'app réduite à sa plus simple expression : une
-/// fonction pure, sans AppKit, entièrement testable.
+/// This is the app's key function reduced to its simplest form: a pure
+/// function, without AppKit, fully testable.
 ///
-/// # La règle et sa conséquence inattendue
+/// # The rule and its unexpected consequence
 ///
-/// Une construction se révèle quand le curseur touche `[début, fin]`, **bornes
-/// comprises**. Le choix des bornes n'est pas cosmétique, il rend la navigation
-/// réversible :
+/// A construct reveals when the caret touches `[start, end]`, **bounds
+/// included**. The choice of bounds is not cosmetic: it makes navigation
+/// reversible:
 ///
 /// ```
-/// Un mot **important** ici
+/// A word **important** here
 /// 0123456789...
-///        ^7        ^18,19   la construction occupe [7, 20]
+///        ^7        ^18,19   the construct occupies [7, 20]
 /// ```
 ///
-/// En avançant, le curseur arrive en 7 : `7 ∈ [7, 20]`, les `**` apparaissent.
-/// En 20 ils sont encore là, en 21 ils retombent. En reculant depuis 21, on
-/// repasse en 20 et ils réapparaissent au même endroit. **Une flèche droite
-/// suivie d'une flèche gauche ramène toujours à l'état de départ** — ce qui
-/// serait faux avec un intervalle ouvert, où l'entrée et la sortie ne se
-/// feraient pas à la même position.
+/// Moving forward, the caret reaches 7: `7 ∈ [7, 20]`, and the `**` appear.
+/// At 20 they are still there; at 21 they disappear. Moving backward from
+/// 21, the caret passes through 20 again and they reappear at the same
+/// spot. **A right arrow followed by a left arrow always returns to the
+/// starting state** — which would be false with an open interval, where
+/// entry and exit would not happen at the same position.
 ///
-/// La conséquence est plus importante encore, et elle a corrigé le §2.3 du
-/// cahier des charges : **toute position située dans un marqueur appartient à
-/// l'intervalle de sa propre construction**, donc cette construction est
-/// révélée, donc ses marqueurs sont visibles. Autrement dit, le curseur ne
-/// peut jamais se trouver dans un marqueur masqué. Les « positions invisibles »
-/// que le cahier des charges promettait de contourner en interceptant toutes
-/// les commandes de déplacement de `NSTextView` **n'existent pas**.
+/// The consequence matters even more, and it corrected §2.3 of the spec:
+/// **any position inside a marker belongs to the interval of its own
+/// construct**, so that construct is revealed, so its markers are visible.
+/// In other words, the caret can never sit inside a hidden marker. The
+/// "invisible positions" the spec promised to work around by intercepting
+/// every `NSTextView` movement command **do not exist**.
 ///
-/// # Ce que l'usage a corrigé : la portée ligne bougeait trop
+/// # What real-world use corrected: line-scoped constructs moved too much
 ///
-/// La première version révélait une construction à portée ligne — `#`, `>`,
-/// `-` — dès que le curseur était **n'importe où sur sa ligne**. La règle est
-/// facile à énoncer, et c'est ce qui rendait l'app pénible à utiliser :
-/// descendre dans un document faisait sauter vers la droite, puis revenir,
-/// *chaque* ligne de titre, de liste et de citation qu'on traversait. Le `## `
-/// d'un titre fait une quarantaine de points à la taille d'un titre 2 : le
-/// texte se déplaçait de trois signes à chaque flèche vers le bas.
+/// The first version revealed a line-scoped construct — `#`, `>`, `-` — as
+/// soon as the caret was **anywhere on its line**. The rule is easy to
+/// state, and it is what made the app unpleasant to use: moving down
+/// through a document made the text jump right, then back, on *every*
+/// heading, list and blockquote line crossed. The `## ` of a heading spans
+/// about forty points at heading-2 size: the text shifted by three
+/// characters on every down arrow.
 ///
-/// La règle est maintenant **la même que pour l'inline, appliquée aux
-/// marqueurs** : une construction à portée ligne se révèle quand le curseur
-/// touche l'un de ses marqueurs, bornes comprises. Deux propriétés en
-/// découlent :
+/// The rule is now **the same as for inline, applied to markers**: a
+/// line-scoped construct reveals when the caret touches one of its markers,
+/// bounds included. Two properties follow:
 ///
-/// - L'invariant du §2.3 tient toujours, et pour la même raison qu'avant :
-///   toute position *dans* un marqueur touche ce marqueur.
-/// - Naviguer verticalement au milieu des lignes ne révèle plus rien, donc ne
-///   déplace plus rien. On ne voit le `##` que lorsqu'on va le chercher, au
-///   début de la ligne — là où on va de toute façon pour le modifier.
+/// - The invariant from §2.3 still holds, and for the same reason as
+///   before: any position *inside* a marker touches that marker.
+/// - Navigating vertically through the middle of lines no longer reveals
+///   anything, so nothing moves. The `##` only shows up when going to fetch
+///   it, at the start of the line — which is where editing it takes place
+///   anyway.
 ///
-/// # Le loquet : ne pas se refermer sous les doigts
+/// # The latch: not closing back up under the fingers
 ///
-/// La règle ci-dessus, seule, rouvrait un défaut symétrique : après un `⏎` qui
-/// continue une liste, le curseur est juste derrière le `- ` fraîchement
-/// inséré, donc le marqueur est révélé — et il se serait masqué **à la première
-/// lettre tapée**, décalant la ligne au pire moment.
+/// The rule above, on its own, reopened a symmetrical bug: after a `⏎` that
+/// continues a list, the caret sits right after the freshly inserted `- `,
+/// so the marker is revealed — and it would hide again **at the first
+/// letter typed**, shifting the line at the worst possible moment.
 ///
-/// D'où `linePrefixesLatched` : une fois les préfixes d'une ligne révélés, ils
-/// le restent tant que le curseur ne quitte pas cette ligne. L'état n'est donc
-/// plus une pure fonction de la position, il dépend du chemin — mais dans le
-/// seul sens qui compte, celui qui **enlève** du mouvement : le loquet ne
-/// révèle jamais rien qui ne le serait pas déjà.
+/// Hence `linePrefixesLatched`: once a line's prefixes are revealed, they
+/// stay revealed as long as the caret does not leave that line. The state
+/// is therefore no longer a pure function of position; it depends on the
+/// path taken — but only in the one sense that matters, the one that
+/// **removes** movement: the latch never reveals anything that would not
+/// already be revealed.
 enum RevealPolicy {
 
-    /// Les indices, dans `spans`, des constructions dont les marqueurs doivent
-    /// être visibles.
+    /// The indices, in `spans`, of the constructs whose markers must be
+    /// visible.
     ///
     /// - Parameters:
-    ///   - spans: toutes les constructions du document, dans n'importe quel ordre.
-    ///   - selection: la sélection courante ; une longueur nulle est un curseur.
-    ///   - lineRange: la plage de la ligne où se trouve le curseur, terminateur
-    ///     exclu. Sert au loquet des constructions à portée ligne.
-    ///   - linePrefixesLatched: vrai quand les préfixes de `lineRange` sont
-    ///     déjà révélés et que le curseur n'a pas quitté cette ligne depuis.
+    ///   - spans: every construct in the document, in any order.
+    ///   - selection: the current selection; a zero length is a caret.
+    ///   - lineRange: the range of the line the caret is on, terminator
+    ///     excluded. Used for the latch on line-scoped constructs.
+    ///   - linePrefixesLatched: true when `lineRange`'s prefixes are
+    ///     already revealed and the caret has not left that line since.
     static func revealedIndices(spans: [SyntaxSpan],
                                 selection: NSRange,
                                 lineRange: NSRange,
@@ -87,11 +87,11 @@ enum RevealPolicy {
                         linePrefixesLatched: linePrefixesLatched)
     }
 
-    /// La même décision, mais en consultant un index au lieu de balayer.
+    /// The same decision, but by consulting an index instead of scanning.
     ///
-    /// C'est le chemin emprunté à chaque flèche du clavier. Le balayage
-    /// linéaire coûtait 3,3 ms sur un document de 100 000 mots — pour un budget
-    /// d'une milliseconde, et sur l'opération la plus fréquente de l'app.
+    /// This is the path taken on every arrow key press. Linear scanning
+    /// cost 3.3 ms on a 100,000-word document — for a one-millisecond
+    /// budget, on the app's most frequent operation.
     static func revealedIndices(index: SpanIndex,
                                 selection: NSRange,
                                 lineRange: NSRange,
@@ -116,10 +116,10 @@ enum RevealPolicy {
                     revealed.insert(candidate)
                 }
             case .wholeBlock:
-                // Un bloc délimité ne se révèle pas sous une sélection : ses
-                // deux clôtures sont des lignes entières, et les faire
-                // réapparaître au milieu d'un glissement de souris déplacerait
-                // verticalement ce que l'utilisateur est en train de viser.
+                // A delimited block does not reveal under a selection: its
+                // two fences are whole lines, and making them reappear in
+                // the middle of a mouse drag would vertically shift what the
+                // user is aiming at.
                 if selection.length == 0, contains(span.range, caret) {
                     revealed.insert(candidate)
                 }
@@ -129,64 +129,64 @@ enum RevealPolicy {
         return revealed
     }
 
-    /// Le curseur est-il **dans** l'un des marqueurs de cette construction ?
+    /// Is the caret **inside** one of this construct's markers?
     ///
-    /// # Le trou que ce test bouche
+    /// # The gap this test closes
     ///
-    /// « La plus intérieure gagne » suffisait tant que deux constructions inline
-    /// ne se disputaient pas la même plage. Deux cas réels la lui disputent :
+    /// "The innermost wins" was enough as long as two inline constructs did
+    /// not contend for the same range. Two real cases do:
     ///
-    /// - `***gras et italique***`. cmark rend une emphase dont le contenu est
-    ///   *exactement* le gras qu'elle enveloppe. L'emphase n'a donc **aucun
-    ///   marqueur** — le complément est vide — mais la même longueur que le
-    ///   gras. À longueur égale elle passait la première, gagnait le concours,
-    ///   et les trois étoiles du gras restaient masquées **avec le curseur
-    ///   dedans**.
-    /// - `[lien **gras**](https://x.fr)`. À la position qui suit `**gras**`, le
-    ///   curseur touche la fin du gras — bornes comprises — et le début du
-    ///   `](…)` du lien. Le gras, plus court, gagnait ; le marqueur du lien
-    ///   restait masqué avec le curseur dedans.
+    /// - `***bold and italic***`. cmark renders an emphasis whose content is
+    ///   *exactly* the bold it wraps. The emphasis therefore has **no
+    ///   marker** — the complement is empty — but the same length as the
+    ///   bold. At equal length it came first, won the contest, and the
+    ///   bold's three asterisks stayed hidden **with the caret inside
+    ///   them**.
+    /// - `[link **bold**](https://example.com)`. At the position right
+    ///   after `**bold**`, the caret touches both the end of the bold —
+    ///   bounds included — and the start of the link's `](…)`. The shorter
+    ///   bold won; the link's marker stayed hidden with the caret inside it.
     ///
-    /// Les deux étaient exactement ce que le §2.3 déclarait impossible. La règle
-    /// devient donc : **un marqueur qui contient le curseur est révélé, quoi
-    /// qu'il arrive**, et le concours de la plus intérieure ne décide plus que
-    /// du reste. C'est le seul ordre de priorité qui rende l'invariant vrai par
-    /// construction, et `FidelityTests` le vérifie sur chaque position de
-    /// chaque document du corpus.
+    /// Both were exactly what §2.3 declared impossible. The rule therefore
+    /// becomes: **a marker that contains the caret is revealed, no matter
+    /// what**, and the innermost-wins contest only decides the rest. This is
+    /// the only priority order that makes the invariant true by
+    /// construction, and `FidelityTests` verifies it at every position of
+    /// every document in the corpus.
     ///
-    /// `NSLocationInRange` et non `contains` : la borne haute d'un marqueur est
-    /// la position qui le suit, elle n'est pas *dedans*.
+    /// `NSLocationInRange`, not `contains`: a marker's upper bound is the
+    /// position right after it, not a position *inside* it.
     private static func holdsCaretInAMarker(_ span: SyntaxSpan, caret: Int) -> Bool {
         span.markers.contains { NSLocationInRange(caret, $0) }
     }
 
-    /// Une construction à portée ligne montre-t-elle ses marqueurs ?
+    /// Does a line-scoped construct show its markers?
     ///
-    /// Le test porte sur les **marqueurs** et non sur la plage : une citation de
-    /// dix lignes en pose un par ligne, et c'est celui de la ligne du curseur
-    /// qui décide. Sans cette restriction, être sur la première ligne d'un long
-    /// bloc suffirait à révéler les neuf autres.
+    /// The test looks at the **markers**, not the range: a ten-line
+    /// blockquote sets one marker per line, and it is the one on the
+    /// caret's line that decides. Without this restriction, being on the
+    /// first line of a long block would be enough to reveal the other nine.
     private static func revealsLinePrefix(_ span: SyntaxSpan,
                                           caret: Int,
                                           line: NSRange,
                                           latched: Bool) -> Bool {
         for marker in span.markers {
             guard contains(line, marker.location) else { continue }
-            // Bornes comprises, exactement comme pour l'inline : c'est ce qui
-            // garantit qu'aucune position d'un marqueur masqué n'est atteignable.
+            // Bounds included, exactly as for inline: this guarantees that
+            // no position of a hidden marker is reachable.
             if contains(marker, caret) { return true }
         }
-        // Le loquet ne s'applique qu'à la ligne où il a été posé, et seulement
-        // aux constructions qui y sont — sinon un titre garderait ses dièses
-        // pendant qu'on écrit trois lignes plus bas.
+        // The latch only applies to the line where it was set, and only to
+        // the constructs on it — otherwise a heading would keep its hashes
+        // while typing three lines further down.
         return latched && intersects(span.range, line) && contains(line, caret)
     }
 
-    /// Version de référence, par balayage.
+    /// Reference version, by scanning.
     ///
-    /// Conservée parce qu'elle est la définition littérale de la règle, et
-    /// parce que `SpanIndexTests` s'en sert pour vérifier que l'index rend
-    /// exactement la même réponse.
+    /// Kept because it is the literal definition of the rule, and because
+    /// `SpanIndexTests` uses it to verify that the index gives exactly the
+    /// same answer.
     static func revealedIndicesByScan(spans: [SyntaxSpan],
                                       selection: NSRange,
                                       lineRange: NSRange,
@@ -195,10 +195,10 @@ enum RevealPolicy {
         let caret = selection.location
         var revealed = Set<Int>()
 
-        // Portée ligne et portée bloc : plusieurs peuvent être révélées en même
-        // temps, et c'est voulu — une ligne de liste dans une citation montre
-        // à la fois son `>` et son `-` dès que le curseur touche les deux
-        // préfixes, sinon on ne pourrait pas éditer l'un des deux.
+        // Line-scoped and block-scoped: several can be revealed at the same
+        // time, and that is intended — a list line inside a blockquote
+        // shows both its `>` and its `-` as soon as the caret touches both
+        // prefixes, otherwise neither could be edited.
         var innermostInline: (index: Int, length: Int)?
 
         for (index, span) in spans.enumerated() {
@@ -207,11 +207,11 @@ enum RevealPolicy {
                 if selection.length == 0, holdsCaretInAMarker(span, caret: caret) {
                     revealed.insert(index)
                 }
-                // La plus intérieure gagne : c'est la plus courte de celles qui
-                // contiennent le curseur. `<` et non `<=` pour que, à longueur
-                // égale, la première rencontrée l'emporte de façon stable. Une
-                // construction sans marqueur n'entre pas dans le concours : elle
-                // n'a rien à montrer, et gagner l'empêcherait de montrer.
+                // The innermost wins: the shortest of those that contain the
+                // caret. `<` and not `<=` so that, at equal length, the
+                // first one encountered wins, stably. A construct with no
+                // marker does not enter the contest: it has nothing to
+                // show, and winning would prevent it from showing.
                 guard !span.markers.isEmpty, encloses(span.range, selection) else { continue }
                 if innermostInline == nil || span.range.length < innermostInline!.length {
                     innermostInline = (index, span.range.length)
@@ -235,22 +235,24 @@ enum RevealPolicy {
         return revealed
     }
 
-    /// Appartenance **bornes comprises** — c'est tout l'objet de la règle.
-    /// `NSLocationInRange` exclut la borne haute et ne convient donc pas.
+    /// Membership **bounds included** — that is the whole point of the
+    /// rule. `NSLocationInRange` excludes the upper bound and is therefore
+    /// unsuitable.
     static func contains(_ range: NSRange, _ location: Int) -> Bool {
         location >= range.location && location <= range.location + range.length
     }
 
-    /// La construction couvre-t-elle **toute** la sélection, bornes comprises ?
+    /// Does the construct cover **all** of the selection, bounds included?
     ///
-    /// Sur un curseur — longueur nulle — c'est exactement `contains`. Sur une
-    /// sélection, c'est ce qui remplace l'ancien « une sélection ne révèle
-    /// rien » : garder les marqueurs d'une construction qui contient toute la
-    /// sélection ne fait *apparaître* aucune syntaxe, puisque le curseur les
-    /// montrait déjà avant qu'on étende. Ce qui disparaît, c'est le saut de
-    /// ligne à chaque `⇧→` dans un mot en gras. Une sélection qui déborde de la
-    /// construction, elle, ne révèle toujours rien : c'est le cas du glissement
-    /// à la souris, où le texte ne doit pas bouger sous le pointeur.
+    /// On a caret — zero length — this is exactly `contains`. On a
+    /// selection, this replaces the old "a selection reveals nothing" rule:
+    /// keeping the markers of a construct that contains the whole selection
+    /// does not make any syntax *appear*, since the caret was already
+    /// showing them before the selection extended. What disappears is the
+    /// line jump on every `⇧→` inside a bold word. A selection that extends
+    /// past the construct, on the other hand, still reveals nothing: that
+    /// is the case of a mouse drag, where the text must not move under the
+    /// pointer.
     static func encloses(_ range: NSRange, _ selection: NSRange) -> Bool {
         selection.location >= range.location && selection.upperBound <= range.upperBound
     }

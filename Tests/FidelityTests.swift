@@ -1,19 +1,18 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// **Le test qui valide la promesse du §5 de bout en bout.**
+/// **The test that validates the §5 promise end to end.**
 ///
-/// Les autres tests de fidélité travaillent sur des chaînes construites pour
-/// l'occasion. Celui-ci prend de **vrais documents** — ceux du dépôt, plus un
-/// corpus taillé pour les cas tordus — les fait passer par toute la chaîne
-/// (lecture, analyse, rendu complet, écriture) et vérifie que les octets
-/// ressortent identiques.
+/// The other fidelity tests work on strings built for the occasion. This one
+/// takes **real documents** — the ones in the repository, plus a corpus cut
+/// for the awkward cases — runs them through the whole pipeline (read,
+/// parse, full render, write) and checks that the bytes come out identical.
 ///
-/// C'est l'équivalent automatisé du `git diff` vide après ouverture et
-/// enregistrement sans rien toucher.
+/// It's the automated equivalent of an empty `git diff` after opening and
+/// saving without touching anything.
 @MainActor
 final class FidelityTests: XCTestCase {
 
@@ -21,10 +20,10 @@ final class FidelityTests: XCTestCase {
         for (name, source) in Corpus.documents {
             let original = Data(source.utf8)
 
-            // 1. Lecture, comme `MarkdownDocument.read(from:)`.
+            // 1. Read, as in `MarkdownDocument.read(from:)`.
             let contents = try TextFile.read(original)
 
-            // 2. Analyse et rendu complet, comme à l'ouverture d'une fenêtre.
+            // 2. Parse and full render, as when a window opens.
             let view = EditorTextView.make()
             let storage = try XCTUnwrap(view.textStorage)
             storage.replaceCharacters(in: NSRange(location: 0, length: storage.length),
@@ -34,18 +33,17 @@ final class FidelityTests: XCTestCase {
                 .render(storage, spans: parsed.spans, revealed: [],
                         in: NSRange(location: 0, length: storage.length))
 
-            // 3. Écriture, comme `MarkdownDocument.data(ofType:)`.
+            // 3. Write, as in `MarkdownDocument.data(ofType:)`.
             let written = TextFile.write(text: view.string, lineEnding: contents.lineEnding)
 
             XCTAssertEqual(written, original,
-                           "\(name) est ressorti différent de ce qui est entré")
+                           "\(name) came out different from what went in")
         }
     }
 
 
-    /// Le rendu ne doit pas dépendre de la position du curseur pour laisser le
-    /// texte intact : quel que soit l'endroit où l'on se place, les caractères
-    /// sont les mêmes.
+    /// Rendering must not depend on the caret position to leave the text
+    /// intact: wherever it's placed, the characters stay the same.
     func testRevealingMarkersNeverAltersTheText() throws {
         let source = Corpus.documents["torture"]!
         let view = EditorTextView.make()
@@ -61,19 +59,19 @@ final class FidelityTests: XCTestCase {
                 lineRange: parsed.positions.lineRange(containing: caret))
             renderer.render(storage, spans: parsed.spans, revealed: revealed,
                             in: NSRange(location: 0, length: storage.length))
-            XCTAssertEqual(view.string, source, "Curseur en \(caret)")
+            XCTAssertEqual(view.string, source, "Caret at \(caret)")
         }
     }
 
-    /// **L'invariant du §2.3, vérifié sur de vrais documents.**
+    /// **The §2.3 invariant, checked on real documents.**
     ///
-    /// Il n'y a pas de « position de curseur invisible » : quand un marqueur est
-    /// masqué, le curseur ne peut pas s'y trouver. Ce test est ici et pas dans
-    /// `RevealPolicyTests` parce que c'est sur du markdown réel qu'il a de la
-    /// valeur — titres, citations imbriquées, listes de tâches, clôtures de
-    /// blocs —, et parce que c'est lui qui protège la règle de révélation des
-    /// préfixes contre une régression : elle porte sur les marqueurs, bornes
-    /// comprises, et c'est exactement ce qui rend l'invariant vrai.
+    /// There is no "invisible caret position": when a marker is hidden, the
+    /// caret can never land inside it. This test lives here rather than in
+    /// `RevealPolicyTests` because it only earns its keep on real markdown —
+    /// headings, nested blockquotes, task lists, code fences — and because it
+    /// guards the prefix-reveal rule against a regression: that rule applies
+    /// to markers, bounds included, and that's exactly what makes the
+    /// invariant true.
     func testNoCaretPositionFallsInsideAHiddenMarker() throws {
         for (name, source) in Corpus.documents {
             let parsed = MarkdownParser.parse(source)
@@ -85,16 +83,15 @@ final class FidelityTests: XCTestCase {
                 for (index, span) in parsed.spans.enumerated() {
                     for marker in span.markers where NSLocationInRange(caret, marker) {
                         XCTAssertTrue(revealed.contains(index),
-                                      "\(name), position \(caret) : dans un marqueur masqué de \(span.kind)")
+                                      "\(name), position \(caret): inside a hidden marker of \(span.kind)")
                     }
                 }
             }
         }
     }
 
-    /// Aucune position du document ne doit faire planter le parcours : c'est le
-    /// test qui attrape les erreurs de conversion de plages sur les cas que
-    /// personne n'a prévus.
+    /// No position in the document should crash the walk: this is the test
+    /// that catches range-conversion errors on the cases nobody planned for.
     func testEveryCaretPositionIsSafe() throws {
         for (name, source) in Corpus.documents {
             let parsed = MarkdownParser.parse(source)
@@ -104,100 +101,102 @@ final class FidelityTests: XCTestCase {
                                                  selection: NSRange(location: caret, length: 0),
                                                  lineRange: line)
             }
-            // Toutes les plages doivent tenir dans le document, sinon la pose
-            // d'attributs lèverait une exception à l'exécution.
+            // Every range must fit inside the document, otherwise applying
+            // attributes would raise a runtime exception.
             let length = source.utf16.count
             for span in parsed.spans {
-                XCTAssertLessThanOrEqual(span.range.upperBound, length, "\(name) : plage hors bornes")
+                XCTAssertLessThanOrEqual(span.range.upperBound, length, "\(name): range out of bounds")
                 for marker in span.markers {
-                    XCTAssertLessThanOrEqual(marker.upperBound, length, "\(name) : marqueur hors bornes")
+                    XCTAssertLessThanOrEqual(marker.upperBound, length, "\(name): marker out of bounds")
                     XCTAssertGreaterThanOrEqual(marker.location, span.range.location,
-                                                "\(name) : marqueur hors de sa construction")
+                                                "\(name): marker outside its construct")
                 }
             }
         }
     }
 }
 
-/// Le corpus de référence.
+/// The reference corpus.
 ///
-/// Il est versionné dans le code plutôt que lu depuis des fichiers : les tests
-/// doivent tourner sans dépendre de ce qui traîne sur le disque de celui qui
-/// les lance.
+/// It's versioned in code rather than read from files: the tests must run
+/// without depending on whatever happens to be lying around on the disk of
+/// whoever runs them.
 private enum Corpus {
 
     static let documents: [String: String] = [
-        "prose française": prose,
+        "prose": prose,
         "torture": torture,
-        "cas limites": edgeCases,
+        "edge cases": edgeCases,
     ]
 
-    /// Du français ordinaire, très accentué : le cas nominal de Fovea.
+    /// Ordinary prose, heavily accented: the nominal case for Fovea.
+    /// Accented text: exercises the UTF-8 -> UTF-16 offset conversion.
     static let prose = """
     ---
-    title: Un document de démonstration
-    auteur: Elior
+    title: A sample document
+    author: Elior
     ---
 
-    # Le cahier des charges
+    # The spec
 
-    Ce document mêle du **gras**, de l'*italique*, du `code inline` et des
-    [liens](https://exemple.fr) — le tout avec des accents à foison : é, è, ê,
+    This document mixes **bold**, *italic*, `inline code` and
+    [links](https://example.com) — all sprinkled with accents: é, è, ê,
     ë, à, ù, ç, œ, æ.
 
-    ## Une section
+    ## A section
 
-    > Une citation sur deux lignes,
-    > qui garde son chevron partout.
+    > A two-line blockquote,
+    > that keeps its chevron on every line.
 
-    - Un item
-    - Un autre, avec du **gras dedans**
-      - Un item imbriqué
+    - An item
+    - Another, with **bold inside**
+      - A nested item
 
-    1. Premier
-    2. Deuxième
+    1. First
+    2. Second
 
-    - [ ] Une tâche à faire
-    - [x] Une tâche faite
+    - [ ] An unchecked task
+    - [x] A checked task
 
     ```swift
-    let x = 1  // du code, avec des accents dans un commentaire : déjà vu
+    let x = 1  // code, with an accent in a comment: café
     ```
 
     ---
 
-    Un renvoi[^note] vers une note.
+    A reference[^note] to a footnote.
 
-    [^note]: Le texte de la note.
+    [^note]: The footnote text.
 
     """
 
-    /// Tout ce qui peut casser une conversion de plages, réuni sur peu de lignes.
+    /// Everything that can break a range conversion, packed into a few lines.
     static let torture = """
-    Emoji 🙂 puis **gras**, CJK 日本語 puis *italique*, accent combinant e\u{0301} puis `code`.
+    Emoji 🙂 then **bold**, CJK 日本語 then *italic*, combining accent e\u{0301} then `code`.
 
-    Un ***gras et italique*** imbriqué, du ~~barré~~, et un [lien **gras**](https://x.fr).
+    Nested ***bold and italic***, some ~~strikethrough~~, and a [**bold** link](https://x.fr).
 
-    Du <b>HTML brut</b> qui ne doit jamais être interprété.
+    Raw <b>HTML</b> that must never be interpreted.
 
-    ``Un code inline contenant un `backtick` `` et un autre.
+    ``An inline code span containing a `backtick` `` and another.
 
     | a | b |
     |---|---|
     | 1 | 2 |
     """
 
-    /// Les cas du §6 : ce qui doit se comporter sans planter ni rien avaler.
+    /// The §6 cases: what must behave correctly without crashing or silently
+    /// dropping anything.
     static let edgeCases = """
     ```
-    un bloc de code jamais refermé, avec un [^1] dedans et des **étoiles**
+    a code block that's never closed, with a [^1] inside it and some **asterisks**
 
-    | tableau | malformé
+    | table | malformed
     |---
 
-    ###### Un titre de niveau six
+    ###### A level-six heading
 
-    ####### Sept dièses, qui ne sont pas un titre
+    ####### Seven hashes, which is not a heading
 
     -
 
@@ -205,8 +204,8 @@ private enum Corpus {
 
     ****
 
-    [lien sans destination]()
+    [link with no destination]()
 
-    ![](image-sans-alt.png)
+    ![](image-with-no-alt.png)
     """
 }

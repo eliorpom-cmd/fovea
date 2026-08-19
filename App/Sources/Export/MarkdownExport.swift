@@ -1,28 +1,29 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Les exports du §4.6 : HTML autonome, texte riche, PDF.
+/// The §4.6 exports: standalone HTML, rich text, PDF.
 ///
-/// # Le seul endroit où l'AST est re-sérialisé
+/// # The only place where the AST is re-serialized
 ///
-/// Partout ailleurs, Fovea ne fait qu'habiller le texte source (§3.1). Ici
-/// c'est différent, et c'est sans danger : on écrit dans un **autre** fichier.
-/// Le document markdown, lui, n'est jamais touché.
+/// Everywhere else, Fovea only dresses up the source text (§3.1). Here it's
+/// different, and it's safe: this writes to an **other** file. The markdown
+/// document itself is never touched.
 @MainActor
 enum MarkdownExport {
 
-    // MARK: - HTML autonome
+    // MARK: - Standalone HTML
 
-    /// Un seul fichier, CSS en ligne, images en `data:` (§4.6).
+    /// A single file, inline CSS, images as `data:` URIs (§4.6).
     ///
-    /// Autonome veut dire ce qu'il dit : le fichier s'ouvre dans un navigateur
-    /// sans son dossier d'images, s'envoie par courriel, et se lit dans dix ans.
-    /// `followingSystemAppearance` ne vaut que pour le fichier autonome, qui
-    /// s'ouvre dans un navigateur — celui-ci applique aussi le **fond**, donc
-    /// la variante sombre s'y tient. Le texte riche et le PDF atterrissent sur
-    /// du papier ou dans le document d'une autre app, où le fond reste blanc :
-    /// la variante sombre n'y laissait qu'un gris clair illisible.
+    /// Standalone means what it says: the file opens in a browser without
+    /// its image folder, can be emailed, and stays readable in ten years.
+    /// `followingSystemAppearance` only applies to the standalone file,
+    /// which opens in a browser: the browser also applies the
+    /// **background**, so the dark variant holds up there. Rich text and
+    /// PDF land on paper or in another app's document, where the background
+    /// stays white: the dark variant there left nothing but unreadable
+    /// light gray.
     static func html(from markdown: String,
                      title: String,
                      documentURL: URL?,
@@ -40,7 +41,7 @@ enum MarkdownExport {
         """
         return """
         <!doctype html>
-        <html lang="fr">
+        <html lang="en">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -77,13 +78,13 @@ enum MarkdownExport {
         """
     }
 
-    // MARK: - Texte riche
+    // MARK: - Rich text
 
-    /// Ce que `⌘⇧C` met dans le presse-papier (§4.6).
+    /// What `⌘⇧C` puts on the pasteboard (§4.6).
     ///
-    /// En pratique l'export le plus utilisé : on colle dans Mail, Pages ou
-    /// Slack. Il est produit depuis le HTML, parce que c'est le seul format que
-    /// toutes ces apps savent lire de la même façon.
+    /// In practice the most used export: pasted into Mail, Pages or Slack.
+    /// It's produced from the HTML, because that's the only format all
+    /// these apps read the same way.
     static func richText(from markdown: String, documentURL: URL?) -> NSAttributedString? {
         let source = html(from: markdown, title: "", documentURL: documentURL,
                           followingSystemAppearance: false)
@@ -110,13 +111,14 @@ enum MarkdownExport {
     }
 }
 
-// MARK: - Écriture du corps HTML
+// MARK: - HTML body writing
 
-/// Traduit les constructions repérées en HTML.
+/// Translates the recognized constructs into HTML.
 ///
-/// Le parcours se fait **sur le texte**, pas sur un arbre : les `SyntaxSpan`
-/// donnent déjà les plages, et les traverser dans l'ordre suffit. C'est aussi
-/// ce qui garantit que l'export montre exactement ce que l'écran montrait.
+/// The walk happens **over the text**, not over a tree: the `SyntaxSpan`
+/// values already give the ranges, and traversing them in order is enough.
+/// This is also what guarantees the export shows exactly what the screen
+/// showed.
 @MainActor
 private struct HTMLWriter {
 
@@ -132,7 +134,7 @@ private struct HTMLWriter {
 
         while index < text.length {
             var line = text.lineRange(for: NSRange(location: index, length: 0))
-            // La plage de ligne inclut son terminateur ; on travaille sans.
+            // The line range includes its terminator; this works without it.
             var content = line
             while content.length > 0, isNewline(text.character(at: content.upperBound - 1)) {
                 content.length -= 1
@@ -141,16 +143,16 @@ private struct HTMLWriter {
             if line.upperBound <= line.location { break }
             line = content
 
-            // Un bloc de code est traité d'un tenant : ses lignes ne sont pas
-            // des paragraphes.
+            // A code block is handled as a whole: its lines aren't
+            // paragraphs.
             if let block = codeBlock(containing: line.location) {
                 output.append(renderCodeBlock(block))
                 index = max(index, block.range.upperBound)
                 closeLists(&listStack, into: &output)
                 continue
             }
-            // Un tableau non plus. Sans ce cas, chacune de ses lignes ressortait
-            // en paragraphe, pipes compris.
+            // Neither is a table. Without this case, each of its lines came
+            // out as a paragraph, pipes included.
             if let block = table(containing: line.location) {
                 closeLists(&listStack, into: &output)
                 output.append(renderTable(block))
@@ -197,10 +199,11 @@ private struct HTMLWriter {
             }
 
             closeLists(&listStack, into: &output)
-            // Un paragraphe coupé à 80 signes reste **un** paragraphe. Ligne à
-            // ligne, chacune ressortait en `<p>` — avec l'espacement d'un
-            // paragraphe entier entre deux — et toute construction à cheval sur
-            // la coupure était perdue, laissant sa syntaxe brute à l'écran.
+            // A paragraph wrapped at 80 characters stays **one** paragraph.
+            // Line by line, each used to come out as its own `<p>`, with the
+            // spacing of a full paragraph between them, and any construct
+            // straddling the wrap point was lost, leaving its raw syntax on
+            // screen.
             var paragraph = line
             while index < text.length {
                 let following = self.line(at: index)
@@ -216,14 +219,15 @@ private struct HTMLWriter {
 
     // MARK: - Inline
 
-    /// Rend une plage de texte, en appliquant les constructions inline qu'elle
-    /// contient. Le parcours va de gauche à droite, en sautant les marqueurs.
+    /// Renders a text range, applying the inline constructs it contains.
+    /// The walk goes left to right, skipping markers.
     ///
-    /// `deeperThan` est la profondeur AST de la construction qu'on est en train
-    /// de rendre : on ne considère que ses descendants. Sans ce garde-fou,
-    /// `***gras***` bouclait à l'infini — cmark donne au nœud `emphasis` et au
-    /// nœud `strong` **la même** plage source, donc le contenu de l'emphase est
-    /// sa propre plage, et on la re-sélectionnait sans jamais avancer.
+    /// `deeperThan` is the AST depth of the construct currently being
+    /// rendered: only its descendants are considered. Without this guard,
+    /// `***bold***` looped forever: cmark gives the `emphasis` node and the
+    /// `strong` node **the same** source range, so the emphasis's content is
+    /// its own range, and it kept getting re-selected without ever
+    /// advancing.
     private func inline(in range: NSRange, deeperThan depth: Int = Int.min) -> String {
         let text = source as NSString
         var output = ""
@@ -237,14 +241,14 @@ private struct HTMLWriter {
             }
             let unit = text.character(at: index)
 
-            // Une barre inverse en fin de ligne est une coupure dure : elle ne
-            // s'écrit pas, c'est le `<br>` qui la remplace.
+            // A backslash at the end of a line is a hard break: it isn't
+            // written out, the `<br>` replaces it.
             if unit == 92, index + 1 < range.upperBound, isNewline(text.character(at: index + 1)) {
                 index += 1
                 continue
             }
-            // Dans un paragraphe, une coupure de ligne vaut une espace — c'est
-            // le navigateur qui la replie. Sauf si l'auteur l'a rendue dure.
+            // In a paragraph, a line break is worth a space: it's the
+            // browser that collapses it. Unless the author made it hard.
             if isNewline(unit) {
                 output += isHardBreak(before: index) ? "<br>\n" : "\n"
                 index += 1
@@ -252,9 +256,9 @@ private struct HTMLWriter {
                 continue
             }
 
-            // Une paire de substitution se copie **entière**. Convertir l'unité
-            // UTF-16 seule en `UnicodeScalar` échouait sur la moitié haute d'un
-            // emoji, et chaque emoji ressortait en deux espaces.
+            // A surrogate pair is copied **whole**. Converting the lone
+            // UTF-16 unit to a `UnicodeScalar` used to fail on the high half
+            // of an emoji, and every emoji came out as two spaces.
             var step = 1
             if unit >= 0xD800, unit <= 0xDBFF, index + 1 < range.upperBound { step = 2 }
             output += MarkdownExport.escape(text.substring(with: NSRange(location: index, length: step)))
@@ -280,9 +284,9 @@ private struct HTMLWriter {
         }
     }
 
-    /// Une image devient une `data:` URI : c'est ce qui rend le fichier
-    /// **autonome** (§4.6). Si elle est introuvable, on garde le chemin, qui
-    /// reste plus utile qu'une image cassée sans indice.
+    /// An image becomes a `data:` URI: this is what makes the file
+    /// **standalone** (§4.6). If it can't be found, the path is kept, which
+    /// stays more useful than a broken image with no clue.
     private func embeddedSource(_ source: String) -> String {
         guard let url = ImageStore.resolve(source, relativeTo: documentURL),
               let data = try? Data(contentsOf: url), data.count < 8 * 1024 * 1024 else {
@@ -303,7 +307,7 @@ private struct HTMLWriter {
         }
     }
 
-    // MARK: - Blocs
+    // MARK: - Blocks
 
     private func renderCodeBlock(_ span: SyntaxSpan) -> String {
         let code = MarkdownExport.escape((source as NSString).substring(with: span.content))
@@ -313,14 +317,14 @@ private struct HTMLWriter {
         return "<pre><code class=\"language-\(MarkdownExport.escape(language))\">\(code)</code></pre>"
     }
 
-    /// Le tableau, avec son en-tête et ses alignements.
+    /// The table, with its header row and alignments.
     ///
-    /// La géométrie vient de la même lecture que celle de l'écran : ce qui est
-    /// exporté est donc exactement ce que la grille montrait, alignements
-    /// compris.
+    /// The geometry comes from the same read as the screen's: what's
+    /// exported is therefore exactly what the grid showed, alignments
+    /// included.
     private func renderTable(_ span: SyntaxSpan) -> String {
         guard case .table(let table) = span.kind, let table, let header = table.rows.first else {
-            // Tableau malformé : la source, telle quelle, comme à l'écran (§6).
+            // Malformed table: the source, as-is, just like on screen (§6).
             return "<pre><code>\(MarkdownExport.escape((source as NSString).substring(with: span.range)))</code></pre>"
         }
 
@@ -342,8 +346,8 @@ private struct HTMLWriter {
     }
 
     private func quoteContent(of span: SyntaxSpan, line: NSRange) -> NSRange {
-        // Le `>` de la ligne courante est un marqueur ; le contenu est ce qui
-        // reste de la ligne après lui.
+        // The `>` on the current line is a marker; the content is what's
+        // left of the line after it.
         for marker in span.markers where NSIntersectionRange(marker, line).length > 0 {
             let start = marker.upperBound
             return NSRange(location: start, length: max(0, line.upperBound - start))
@@ -367,10 +371,10 @@ private struct HTMLWriter {
         return false
     }
 
-    // MARK: - Recherche de constructions
+    // MARK: - Construct lookup
 
-    /// La ligne qui commence à `location`, sans son terminateur, et l'endroit
-    /// où commence la suivante.
+    /// The line starting at `location`, without its terminator, and where
+    /// the next one starts.
     private func line(at location: Int) -> (content: NSRange, next: Int) {
         let text = source as NSString
         let full = text.lineRange(for: NSRange(location: location, length: 0))
@@ -381,10 +385,11 @@ private struct HTMLWriter {
         return (content, full.upperBound)
     }
 
-    /// Vrai si cette ligne ouvre autre chose que la suite d'un paragraphe.
+    /// True if this line opens something other than the continuation of a
+    /// paragraph.
     ///
-    /// Sert à recoller un paragraphe coupé à 80 signes : on avale les lignes
-    /// suivantes tant qu'elles le continuent.
+    /// Used to reassemble a paragraph wrapped at 80 characters: subsequent
+    /// lines are consumed as long as they continue it.
     private func startsAnotherBlock(_ line: NSRange) -> Bool {
         let text = source as NSString
         if line.length == 0 { return true }
@@ -433,8 +438,8 @@ private struct HTMLWriter {
         }
     }
 
-    /// La construction inline la plus intérieure qui commence exactement ici,
-    /// parmi les descendantes de la profondeur `depth`.
+    /// The innermost inline construct that starts exactly here, among the
+    /// descendants at depth `depth`.
     private func innermostInline(at location: Int,
                                  within range: NSRange,
                                  deeperThan depth: Int) -> SyntaxSpan? {
@@ -444,8 +449,9 @@ private struct HTMLWriter {
                       && $0.range.upperBound <= range.upperBound
                       && $0.depth > depth }
             .min { lhs, rhs in
-                // La plus longue d'abord ; à longueur égale, la plus extérieure,
-                // pour que `***gras***` sorte `<em><strong>` et non l'inverse.
+                // Longest first; at equal length, the outermost, so that
+                // `***bold***` comes out as `<em><strong>` and not the
+                // reverse.
                 lhs.range.length != rhs.range.length
                     ? lhs.range.length > rhs.range.length
                     : lhs.depth < rhs.depth
@@ -454,7 +460,7 @@ private struct HTMLWriter {
 
     private func isNewline(_ unit: unichar) -> Bool { unit == 10 || unit == 13 }
 
-    /// Deux espaces ou une barre inverse en fin de ligne : la coupure est dure.
+    /// Two spaces or a backslash at the end of a line: the break is hard.
     private func isHardBreak(before newline: Int) -> Bool {
         let text = source as NSString
         if newline >= 1, text.character(at: newline - 1) == 92 { return true }

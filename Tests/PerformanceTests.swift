@@ -1,48 +1,48 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// **Les budgets du §9, mesurés plutôt qu'espérés.**
+/// **The budgets from §9, measured rather than hoped for.**
 ///
-/// Un budget dépassé bloque le jalon. Les seuils sont écrits en dur ici pour
-/// que l'échec soit une erreur de test et non une ligne dans un rapport que
-/// personne ne lit.
+/// An exceeded budget blocks the milestone. The thresholds are hardcoded here
+/// so that a failure is a test error rather than a line in a report nobody
+/// reads.
 ///
-/// Les mesures sont prises sur un corpus fixe, construit par programme pour que
-/// deux exécutions comparent la même chose.
+/// Measurements are taken on a fixed corpus, built programmatically so that
+/// two runs compare the same thing.
 @MainActor
 final class PerformanceTests: XCTestCase {
 
-    // MARK: - Le coût réel : le reparse
+    // MARK: - The real cost: the reparse
 
-    /// §9 : cycle frappe → affichage, document de 10 000 mots, budget **8 ms**
-    /// — une trame à 120 Hz.
+    /// §9: keystroke → display cycle, 10,000-word document, budget **8 ms**,
+    /// one frame at 120 Hz.
     func testKeystrokeCycleUnder8msAt10kWords() throws {
         let source = Corpus.document(words: 10_000)
         let elapsed = try measureKeystrokeCycle(on: source)
         XCTAssertLessThan(elapsed, 0.008,
-                          "Cycle de frappe à 10 000 mots : \(ms(elapsed)) pour un budget de 8 ms")
+                          "Keystroke cycle at 10,000 words: \(ms(elapsed)) for an 8 ms budget")
     }
 
-    /// §9 : idem à 100 000 mots, budget **16 ms**.
+    /// §9: same at 100,000 words, budget **16 ms**.
     func testKeystrokeCycleUnder16msAt100kWords() throws {
         let source = Corpus.document(words: 100_000)
         let elapsed = try measureKeystrokeCycle(on: source)
         XCTAssertLessThan(elapsed, 0.016,
-                          "Cycle de frappe à 100 000 mots : \(ms(elapsed)) pour un budget de 16 ms")
+                          "Keystroke cycle at 100,000 words: \(ms(elapsed)) for a 16 ms budget")
     }
 
-    /// §9 : ouverture et premier affichage, 100 000 mots, budget **500 ms**.
+    /// §9: opening and first display, 100,000 words, budget **500 ms**.
     func testOpeningA100kWordDocumentUnder500ms() throws {
         let source = Corpus.document(words: 100_000)
         let controller = EditorController(typography: .default)
         controller.scrollView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
 
-        // Ce qui est mesuré, c'est le chemin **jusqu'au premier affichage** :
-        // l'ouverture progressive fait juste ce qu'il faut pour peindre, et
-        // termine l'analyse au tour de boucle suivant.
+        // What is measured is the path **up to the first display**:
+        // progressive opening does just enough to paint, and finishes parsing
+        // on the next run loop turn.
         let start = CFAbsoluteTimeGetCurrent()
         controller.setText(source)
         let layout = try XCTUnwrap(controller.textView.textLayoutManager)
@@ -50,11 +50,11 @@ final class PerformanceTests: XCTestCase {
         let elapsed = CFAbsoluteTimeGetCurrent() - start
 
         XCTAssertLessThan(elapsed, 0.5,
-                          "Premier affichage de 100 000 mots : \(ms(elapsed)) pour un budget de 500 ms")
+                          "First display of 100,000 words: \(ms(elapsed)) for a 500 ms budget")
     }
 
-    /// L'ouverture progressive ne doit pas laisser le document à moitié analysé :
-    /// une fois la boucle d'événements repassée, tout doit être là.
+    /// Progressive opening must not leave the document half-parsed: once the
+    /// run loop has turned, everything must be there.
     func testProgressiveOpeningCompletesTheWholeDocument() async throws {
         let source = Corpus.document(words: 100_000)
         let controller = EditorController(typography: .default)
@@ -65,22 +65,22 @@ final class PerformanceTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(2000))
 
         XCTAssertGreaterThan(controller.spans.count, head,
-                             "L'analyse du reste du document doit avoir eu lieu")
+                             "Parsing of the rest of the document must have happened")
         let last = try XCTUnwrap(controller.spans.last)
         XCTAssertGreaterThan(last.range.upperBound, source.utf16.count / 2,
-                             "Les constructions doivent couvrir la fin du document")
+                             "Constructs must cover the end of the document")
     }
 
-    /// L'opération la plus fréquente de toute l'app : une flèche du clavier.
-    /// Elle doit rester **sous la milliseconde** quelle que soit la taille du
-    /// document, parce qu'elle ne recalcule que ce qui a changé.
+    /// The most frequent operation in the whole app: an arrow key. It must
+    /// stay **under a millisecond** regardless of document size, because it
+    /// only recomputes what changed.
     func testCaretMovementIsSubMillisecondAt100kWords() throws {
         let source = Corpus.document(words: 100_000)
         let parsed = MarkdownParser.parse(source)
         let length = source.utf16.count
 
-        // L'index est construit à l'analyse, pas à chaque déplacement : c'est
-        // ce que fait `EditorController`, et c'est ce qu'il faut mesurer.
+        // The index is built at parse time, not on every movement: that is
+        // what `EditorController` does, and that is what must be measured.
         let index = SpanIndex(parsed.spans)
         let start = CFAbsoluteTimeGetCurrent()
         var iterations = 0
@@ -94,37 +94,38 @@ final class PerformanceTests: XCTestCase {
         let perMove = (CFAbsoluteTimeGetCurrent() - start) / Double(iterations)
 
         XCTAssertLessThan(perMove, 0.001,
-                          "Déplacement de curseur : \(ms(perMove)) pour un budget de 1 ms")
+                          "Caret movement: \(ms(perMove)) for a 1 ms budget")
     }
 
-    // MARK: - La géométrie ne doit pas bouger sous la main
+    // MARK: - Geometry must not move under the caret
 
-    /// **Peindre le fond ne met en page que ce qui se voit.**
+    /// **Painting the background only lays out what is visible.**
     ///
-    /// C'est le test de la régression la plus grave qu'ait connue l'app.
-    /// `DecorationPainter` écartait les marques hors champ *après* leur avoir
-    /// demandé leur position — et demander la position d'une plage la met en
-    /// page. Avec une marque par item de liste, par citation et par bloc de
-    /// code, chaque passe de dessin mettait en page le document **entier**,
-    /// depuis l'intérieur de la passe de dessin.
+    /// This is the test for the most serious regression the app has had.
+    /// `DecorationPainter` discarded off-screen marks *after* asking them for
+    /// their position, and asking a range for its position lays it out. With
+    /// one mark per list item, per blockquote and per code block, every
+    /// paint pass laid out the **entire** document, from inside the paint
+    /// pass itself.
     ///
-    /// Ce que l'utilisateur voyait : la vue de texte se redimensionnait au
-    /// milieu de son propre affichage, la vue de défilement rattrapait, et le
-    /// texte sautait — sous le curseur en tapant, sous le pointeur en
-    /// sélectionnant, où la sélection partait alors très loin de la souris.
+    /// What the user saw: the text view resized in the middle of its own
+    /// display, the scroll view caught up, and the text jumped: under the
+    /// caret while typing, under the pointer while selecting, where the
+    /// selection would then land far from the mouse.
     ///
-    /// Le test porte sur la **hauteur mise en page** et non sur une durée :
-    /// c'est la grandeur qui décrit le défaut, et elle ne dépend pas de la
-    /// machine. Avant correction, elle passait de 634 à 35 160 points.
+    /// The test measures the **laid-out height**, not a duration: that is
+    /// the quantity that describes the bug, and it does not depend on the
+    /// machine. Before the fix, it went from 634 to 35,160 points.
     func testPaintingTheBackgroundDoesNotLayOutTheWholeDocument() throws {
-        // **Les réglages de la personne qui lance les tests ne doivent rien
-        // décider.** `AppSettings.shared` lit les préférences de l'app, et le
-        // test s'exécute dans son binaire : quelqu'un qui active la machine à
-        // écrire dans Fovea faisait échouer ce test-ci, sans rapport. La machine
-        // à écrire demande la place du curseur à chaque changement de sélection
-        // ; `setText` laisse le curseur en fin de document, et le mesurer met en
-        // page tout ce qui le précède — les 40 000 mots. Le mode n'est pas en
-        // cause : c'est le test qui doit dire dans quel état il travaille.
+        // **The settings of whoever runs the tests must not decide anything.**
+        // `AppSettings.shared` reads the app's preferences, and the test runs
+        // inside its binary: someone with typewriter mode enabled in Fovea
+        // made this test fail, unrelated to the change under review.
+        // Typewriter mode asks for the caret's position on every selection
+        // change; `setText` leaves the caret at the end of the document, and
+        // measuring it lays out everything before it: the 40,000 words. The
+        // mode itself is not at fault: it is the test that must state which
+        // state it runs in.
         let typewriter = AppSettings.shared.typewriterMode
         AppSettings.shared.typewriterMode = false
         defer { AppSettings.shared.typewriterMode = typewriter }
@@ -141,7 +142,7 @@ final class PerformanceTests: XCTestCase {
         let laidOut = layout.usageBoundsForTextContainer.height
 
         XCTAssertGreaterThan(view.decorations.count, 100,
-                             "Le corpus doit porter assez de marques pour que le test ait un sens")
+                             "The corpus must carry enough marks for the test to be meaningful")
 
         let image = NSImage(size: viewport.size)
         image.lockFocus()
@@ -149,23 +150,23 @@ final class PerformanceTests: XCTestCase {
             .draw(view.decorations, in: view, dirtyRect: viewport)
         image.unlockFocus()
 
-        // Une marge : un bloc qui déborde du champ visible est légitimement mis
-        // en page. Ce qui ne doit plus arriver, c'est le document entier.
+        // A margin: a block that overflows the visible area is legitimately
+        // laid out. What must no longer happen is the entire document.
         XCTAssertLessThan(layout.usageBoundsForTextContainer.height, laidOut * 1.5,
-                          "Le dessin du fond a mis en page \(layout.usageBoundsForTextContainer.height) points "
-                          + "là où seuls \(laidOut) étaient à l'écran")
+                          "Painting the background laid out \(layout.usageBoundsForTextContainer.height) points "
+                          + "where only \(laidOut) were on screen")
     }
 
-    /// Le revers du test précédent : **ce qui se voit se dessine encore**.
+    /// The reverse of the previous test: **what is visible still gets drawn**.
     ///
-    /// Écarter les marques par leur plage est ce qui rend le dessin gratuit ;
-    /// c'est aussi ce qui pourrait en faire disparaître. Le test descend au
-    /// milieu d'un long document et vérifie que les cases à cocher de cette
-    /// hauteur-là — et elles seules — ont bien une zone posée.
+    /// Discarding marks by their range is what makes drawing cheap; it is
+    /// also what could make marks disappear. The test scrolls to the middle
+    /// of a long document and verifies that the checkboxes at that
+    /// height, and only those, do get a hit box.
     func testMarksStayVisibleAfterScrolling() throws {
-        var source = "# Tâches\n\n"
+        var source = "# Tasks\n\n"
         for index in 0..<400 {
-            source += "- [ ] Tâche numéro \(index), avec un libellé assez long pour tenir la ligne\n"
+            source += "- [ ] Task number \(index), with a label long enough to fill the line\n"
         }
 
         let controller = EditorController(typography: .default)
@@ -184,24 +185,24 @@ final class PerformanceTests: XCTestCase {
 
         let targets = painter.checkboxTargets(among: view.decorations, in: view)
         XCTAssertFalse(targets.isEmpty,
-                       "Aucune case posée au milieu du document : le tri par plage en a trop écarté")
+                       "No checkbox laid out in the middle of the document: range-based culling discarded too much")
 
-        // Toutes celles qui sont rendues tombent bien dans le champ visible.
+        // All the ones that are drawn do fall within the visible area.
         let visible = view.visibleRect.insetBy(dx: 0, dy: -200)
         for target in targets {
             XCTAssertTrue(visible.intersects(target.box),
-                          "Une case a été posée hors du champ visible : \(target.box) hors de \(visible)")
+                          "A checkbox was laid out outside the visible area: \(target.box) outside \(visible)")
         }
     }
 
-    // MARK: - Instrument
+    // MARK: - Instrumentation
 
-    /// Un cycle de frappe **tel qu'il se produit réellement** : par
-    /// `EditorController`, donc par le chemin incrémental.
+    /// A keystroke cycle **as it actually happens**: through
+    /// `EditorController`, hence through the incremental path.
     ///
-    /// Mesurer l'analyse complète et le rendu complet donnerait le chiffre de
-    /// l'implémentation naïve, pas celui que l'utilisateur ressent. C'est
-    /// précisément l'erreur que la première version de ce test commettait.
+    /// Measuring a full parse and a full render would give the naive
+    /// implementation's number, not the one the user feels. That is exactly
+    /// the mistake the first version of this test made.
     private func measureKeystrokeCycle(on source: String) throws -> TimeInterval {
         let controller = EditorController(typography: .default)
         controller.scrollView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -209,8 +210,8 @@ final class PerformanceTests: XCTestCase {
 
         let view = controller.textView
         let storage = try XCTUnwrap(view.textStorage)
-        // On tape au milieu d'un paragraphe : le cas nominal, et celui où le
-        // découpage par bloc doit faire son travail.
+        // Typing happens in the middle of a paragraph: the nominal case, and
+        // the one where the block-level splitting must do its job.
         let caret = storage.length / 2
         view.setSelectedRange(NSRange(location: caret, length: 0))
 
@@ -229,16 +230,16 @@ final class PerformanceTests: XCTestCase {
     }
 }
 
-/// Un document de taille voulue, bâti par programme.
+/// A document of a chosen size, built programmatically.
 ///
-/// Il mêle délibérément les constructions coûteuses — gras, liens, listes,
-/// citations, blocs de code — et du français accentué, qui force le chemin
-/// lent de la conversion de plages. Un corpus purement ASCII donnerait des
-/// chiffres flatteurs et faux.
+/// It deliberately mixes expensive constructs (bold, links, lists,
+/// blockquotes, code blocks) with accented text, which forces the slow path
+/// of range conversion. A purely ASCII corpus would give flattering and
+/// wrong numbers.
 private enum Corpus {
 
     static func document(words: Int) -> String {
-        var text = "# Un document de \(words) mots\n\n"
+        var text = "# A document of \(words) words\n\n"
         var written = 0
         var block = 0
         while written < words {
@@ -247,19 +248,19 @@ private enum Corpus {
                 text += "## Section \(block / 6 + 1)\n\n"
                 written += 3
             case 1, 2:
-                text += "Un paragraphe avec du **gras**, de l'*italique*, du `code` et un "
-                text += "[lien](https://exemple.fr) — le tout très accentué : é è ê à ù ç.\n\n"
+                text += "A paragraph with some **bold**, some *italics*, some `code` and a "
+                text += "[link](https://example.com): very accented café, naïve, façade.\n\n"
                 written += 24
             case 3:
-                text += "- Premier item de la liste\n- Deuxième, avec du **gras dedans**\n"
-                text += "- Troisième, et un `bout de code`\n\n"
+                text += "- First item of the list\n- Second one, with **bold inside**\n"
+                text += "- Third one, and a `bit of code`\n\n"
                 written += 20
             case 4:
-                text += "> Une citation qui tient sur deux lignes,\n"
-                text += "> et qui garde son chevron sur chacune.\n\n"
+                text += "> A blockquote spanning two full lines,\n"
+                text += "> and keeping its chevron on each one.\n\n"
                 written += 16
             default:
-                text += "```swift\nlet valeur = \(block) // un commentaire accentué : déjà\n```\n\n"
+                text += "```swift\nlet value = \(block) // an accented comment already: café\n```\n\n"
                 written += 10
             }
             block += 1

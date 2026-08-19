@@ -1,16 +1,16 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import SwiftUI
 import AppKit
 
-/// La fenêtre de réglages (§4.7).
+/// The settings window (§4.7).
 ///
-/// En SwiftUI, hébergée dans une fenêtre AppKit : c'est le seul endroit de
-/// l'app où SwiftUI est le bon outil — des formulaires, pas de texte à mettre
-/// en page. L'éditeur, lui, reste en AppKit pur.
+/// In SwiftUI, hosted in an AppKit window: this is the only place in the app
+/// where SwiftUI is the right tool — forms, not text to lay out. The editor
+/// itself stays in pure AppKit.
 ///
-/// Trois onglets, et rien de plus. Un réglage qu'on ne sait pas où ranger est
-/// presque toujours un réglage qui n'aurait pas dû exister.
+/// Three tabs, and nothing more. A setting with no obvious place to live is
+/// almost always a setting that should not exist.
 struct SettingsView: View {
 
     @Bindable var settings: AppSettings
@@ -18,66 +18,64 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             AppearanceSettings(settings: settings)
-                .tabItem { Label("Apparence", systemImage: "textformat") }
+                .tabItem { Label("Appearance", systemImage: "textformat") }
             EditingSettings(settings: settings)
-                .tabItem { Label("Édition", systemImage: "pencil.line") }
+                .tabItem { Label("Editing", systemImage: "pencil.line") }
             AboutSettings()
-                .tabItem { Label("À propos", systemImage: "info.circle") }
+                .tabItem { Label("About", systemImage: "info.circle") }
         }
-        // **Une taille de départ, plus un plancher — et la fenêtre s'agrandit.**
+        // **A starting size, plus a floor — and the window can grow.**
         //
-        // La hauteur était figée à 560, et le `styleMask` n'avait pas
-        // `.resizable` : sur l'onglet Apparence, « Coloration en couleurs »
-        // était coupé en deux par le bord inférieur, et sur l'onglet Édition,
-        // « Dossier des images » et son explication étaient entièrement sous la
-        // ligne de flottaison. Rien ne disait qu'il fallait faire défiler, et
-        // rien ne permettait d'agrandir.
+        // The height was fixed at 560, and `styleMask` had no `.resizable`:
+        // on the Appearance tab, "Colorful syntax highlighting" was cut in
+        // half by the bottom edge, and on the Editing tab, "Image folder" and
+        // its explanation were entirely below the fold. Nothing indicated
+        // that scrolling was needed, and nothing allowed the window to grow.
         //
-        // Intrinsèque tout court ne marche toujours pas — `NSHostingController`
-        // ne remonte pas la hauteur d'un `Form` imbriqué dans un `TabView` —
-        // d'où le couple minimum/idéal.
+        // Plain intrinsic sizing still does not work — `NSHostingController`
+        // does not propagate the height of a `Form` nested in a `TabView` —
+        // hence the minimum/ideal pair.
         .frame(minWidth: 480, idealWidth: 480, minHeight: 420, idealHeight: 660)
-        // §7 : le monochrome vaut aussi pour l'écran qui explique les réglages.
-        // Segmenté, curseurs et interrupteurs étaient les seules surfaces
-        // d'accent bleu restées dans l'app.
+        // §7: monochrome also applies to the screen that explains the
+        // settings. The segmented control, sliders and toggles were the only
+        // remaining surfaces of blue accent color in the app.
         //
-        // **La barre d'onglets d'un `TabView` y échappe** : sur macOS elle est
-        // rendue par le contrôle système, qui ignore la teinte. On ne la
-        // repeindra pas à la main — ce serait une pièce d'AppKit réécrite pour
-        // trois pixels, et elle cesserait de suivre le système le jour où il
-        // change.
+        // **A `TabView`'s tab bar escapes this**: on macOS it is rendered by
+        // the system control, which ignores the tint. It will not be
+        // repainted by hand — that would mean rewriting a piece of AppKit for
+        // three pixels, and it would stop following the system the day it
+        // changes.
         .tint(Color(nsColor: Theme.NS.label))
     }
 }
 
-// MARK: - Apparence
+// MARK: - Appearance
 
 private struct AppearanceSettings: View {
     @Bindable var settings: AppSettings
-    /// Incrémenté à chaque import ou retrait, pour que les listes se
-    /// reconstruisent : la bibliothèque vit sur le disque, pas dans un modèle
-    /// observable.
+    /// Incremented on every import or removal, so the lists rebuild: the
+    /// library lives on disk, not in an observable model.
     @State private var fontLibraryVersion = 0
 
     var body: some View {
         Form {
             Section {
-                Picker("Thème", selection: $settings.appearance) {
+                Picker("Theme", selection: $settings.appearance) {
                     ForEach(AppSettings.Appearance.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
             }
 
-            Section("Texte") {
-                FontPicker(title: "Police du corps", selection: $settings.bodyFontName,
+            Section("Text") {
+                FontPicker(title: "Body Font", selection: $settings.bodyFontName,
                            monospaced: false, libraryVersion: fontLibraryVersion)
-                FontPicker(title: "Police du code", selection: $settings.monoFontName,
+                FontPicker(title: "Code Font", selection: $settings.monoFontName,
                            monospaced: true, libraryVersion: fontLibraryVersion)
 
-                // Une taille en points ne dit rien à personne ; ce qu'on juge,
-                // c'est le résultat. Le pas de 1 pt suffit — un demi-point ne
-                // se voit pas et double le nombre de crans à parcourir.
-                LabeledContent("Taille") {
+                // A size in points means nothing to anyone; what matters is
+                // the result. A step of 1 pt is enough — half a point is not
+                // visible and doubles the number of steps to scroll through.
+                LabeledContent("Size") {
                     HStack {
                         Slider(value: $settings.bodySize, in: 11...32, step: 1)
                         Text("\(Int(settings.bodySize)) pt")
@@ -87,7 +85,7 @@ private struct AppearanceSettings: View {
                     }
                 }
 
-                LabeledContent("Interlignage") {
+                LabeledContent("Line Spacing") {
                     HStack {
                         Slider(value: $settings.lineHeightMultiple, in: 1.0...2.2, step: 0.05)
                         Text(String(format: "%.2f", settings.lineHeightMultiple))
@@ -97,14 +95,14 @@ private struct AppearanceSettings: View {
                     }
                 }
 
-                // Mesurée en signes, pas en points : c'est la grandeur qui a du
-                // sens en lecture, et elle suit le choix de police.
-                LabeledContent("Largeur de colonne") {
+                // Measured in characters, not points: that is the quantity
+                // that matters for reading, and it follows the font choice.
+                LabeledContent("Column Width") {
                     HStack {
                         Slider(value: .init(get: { Double(settings.columnWidthInCharacters) },
                                             set: { settings.columnWidthInCharacters = Int($0) }),
                                in: 50...100, step: 1)
-                        Text("\(settings.columnWidthInCharacters) signes")
+                        Text("\(settings.columnWidthInCharacters) characters")
                             .font(.callout.monospacedDigit())
                             .foregroundStyle(.secondary)
                             .frame(width: 74, alignment: .trailing)
@@ -116,10 +114,10 @@ private struct AppearanceSettings: View {
                                bodyFontName: $settings.bodyFontName,
                                monoFontName: $settings.monoFontName)
 
-            Section("Blocs de code") {
-                Toggle("Coloration en couleurs", isOn: $settings.colorfulCodeBlocks)
-                Text("Sans cette option, la coloration passe par la graisse et l'opacité. "
-                     + "C'est le seul endroit de l'app où la couleur est autorisée.")
+            Section("Code Blocks") {
+                Toggle("Colorful syntax highlighting", isOn: $settings.colorfulCodeBlocks)
+                Text("Without this option, highlighting relies on weight and opacity instead. "
+                     + "This is the only place in the app where color is allowed.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -128,48 +126,48 @@ private struct AppearanceSettings: View {
     }
 }
 
-// MARK: - Édition
+// MARK: - Editing
 
 private struct EditingSettings: View {
     @Bindable var settings: AppSettings
 
     var body: some View {
         Form {
-            // Chaque réglage dans sa propre section, avec sa propre
-            // explication. Les deux partageaient un encadré et une seule
-            // phrase, posée en dessous des deux : elle avait l'air de décrire
-            // le mode focus, qui n'en avait aucune — et c'est celui des deux
-            // dont le comportement surprend le plus.
-            Section("Écriture") {
-                Toggle("Mode focus", isOn: $settings.focusMode)
+            // Each setting in its own section, with its own explanation.
+            // The two used to share one box and a single sentence below both:
+            // it looked like it described focus mode, which had none of its
+            // own — and that is the one of the two whose behavior is most
+            // surprising.
+            Section("Writing") {
+                Toggle("Focus Mode", isOn: $settings.focusMode)
                 if settings.focusMode {
-                    Picker("Garder en évidence", selection: $settings.focusUnit) {
+                    Picker("Keep in focus", selection: $settings.focusUnit) {
                         ForEach(AppSettings.FocusUnit.allCases) { Text($0.label).tag($0) }
                     }
                 }
-                Text("Tout s'atténue sauf ce que vous écrivez. L'unité active s'arrête "
-                     + "aux lignes vides, aux titres et à chaque item de liste.")
+                Text("Everything dims except what you're writing. The active unit stops "
+                     + "at blank lines, headings and each list item.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Section {
-                Toggle("Machine à écrire", isOn: $settings.typewriterMode)
-                Text("La ligne active reste à hauteur fixe et le texte défile dessous. "
-                     + "Désactivé, le défilement est celui de n'importe quelle app.")
+                Toggle("Typewriter Mode", isOn: $settings.typewriterMode)
+                Text("The active line stays at a fixed height and the text scrolls underneath. "
+                     + "When disabled, scrolling behaves like any other app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
-            Section("Statistiques") {
-                Toggle("Afficher les statistiques", isOn: $settings.showStatistics)
+            Section("Statistics") {
+                Toggle("Show statistics", isOn: $settings.showStatistics)
                 if settings.showStatistics {
-                    LabeledContent("Objectif de session") {
+                    LabeledContent("Session Goal") {
                         HStack {
                             TextField("", value: $settings.sessionWordGoal, format: .number)
                                 .labelsHidden()
                                 .frame(width: 70)
-                            Text(settings.sessionWordGoal == 0 ? "aucun" : "mots")
+                            Text(settings.sessionWordGoal == 0 ? "none" : "words")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -177,34 +175,34 @@ private struct EditingSettings: View {
             }
 
             Section("Markdown") {
-                Toggle("Reconnaître les constructions à la frappe", isOn: $settings.markdownShortcutsWhileTyping)
-                Text("« - » continue la liste au retour à la ligne, ⇥ change le niveau.")
+                Toggle("Recognize constructs while typing", isOn: $settings.markdownShortcutsWhileTyping)
+                Text("`-` continues the list on Return, ⇥ changes the level.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Toggle("Fermer les paires automatiquement", isOn: $settings.automaticPairs)
-                Text("« ( » pose « () », « ** » pose « **** » et place le curseur au milieu ; "
-                     + "⇥ ressort du format. Avec du texte sélectionné, la touche l'entoure au "
-                     + "lieu de l'effacer. L'apostrophe est laissée tranquille.")
+                Toggle("Close pairs automatically", isOn: $settings.automaticPairs)
+                Text("`(` inserts `()`, `**` inserts `****` and places the caret in the middle; "
+                     + "⇥ steps out of the format. With text selected, the key wraps it instead "
+                     + "of deleting it. The apostrophe is left alone.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Picker("Menu d'insertion sur « / »", selection: $settings.slashMenuScope) {
+                Picker("Insertion menu on \"/\"", selection: $settings.slashMenuScope) {
                     ForEach(AppSettings.SlashMenuScope.allCases) { Text($0.label).tag($0) }
                 }
-                Text("Un « / » propose les blocs : titre, liste, citation, code, tableau, "
-                     + "filet. Il n'ouvre le menu que s'il commence un mot, jamais collé à "
-                     + "un caractère — « https:// » et « 12/03 » restent ce qu'ils sont.")
+                Text("A `/` offers blocks: heading, list, blockquote, code, table, "
+                     + "horizontal rule. It only opens the menu when it starts a word, never "
+                     + "right after a character — `https://` and `12/03` stay as they are.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                LabeledContent("Dossier des images") {
+                LabeledContent("Image folder") {
                     TextField("", text: $settings.assetsFolderName)
                         .labelsHidden()
                         .frame(width: 140)
                 }
-                Text("Les images déposées y sont copiées, à côté du document, "
-                     + "et référencées en chemin relatif.")
+                Text("Images dropped there are copied next to the document, "
+                     + "and referenced with a relative path.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -213,7 +211,7 @@ private struct EditingSettings: View {
     }
 }
 
-// MARK: - À propos
+// MARK: - About
 
 private struct AboutSettings: View {
     @State private var isDefaultHandler = DefaultHandler.isDefault
@@ -237,12 +235,12 @@ private struct AboutSettings: View {
             }
 
             Section {
-                LabeledContent("Fichiers Markdown") {
+                LabeledContent("Markdown Files") {
                     if isDefaultHandler {
-                        Label("Ouverts avec \(AppConfig.name)", systemImage: "checkmark.circle.fill")
+                        Label("Opened with \(AppConfig.name)", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.secondary)
                     } else {
-                        Button("Utiliser \(AppConfig.name) par défaut") {
+                        Button("Use \(AppConfig.name) by Default") {
                             Task {
                                 await DefaultHandler.makeDefault()
                                 isDefaultHandler = DefaultHandler.isDefault
@@ -253,9 +251,9 @@ private struct AboutSettings: View {
             }
 
             Section {
-                Link("Code source et signalements", destination: AppConfig.repositoryURL)
-                Text("GNU AGPL v3 ou ultérieure. Analyse markdown par swift-markdown (Apple), "
-                     + "sous licence Apache 2.0.")
+                Link("Source Code and Issues", destination: AppConfig.repositoryURL)
+                Text("GNU AGPL v3 or later. Markdown parsing by swift-markdown (Apple), "
+                     + "under the Apache 2.0 license.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -264,28 +262,28 @@ private struct AboutSettings: View {
     }
 }
 
-// MARK: - Choix de police
+// MARK: - Font Picker
 
-/// Un sélecteur de police qui ne propose que ce qui a un sens ici.
+/// A font picker that only offers what makes sense here.
 ///
-/// La liste complète des polices installées compte des centaines d'entrées,
-/// dont les dingbats et les alphabets non latins. On ne montre que les familles
-/// **lisibles pour du texte suivi**, et pour le code, que les chasses fixes.
+/// The full list of installed fonts has hundreds of entries, including
+/// dingbats and non-Latin alphabets. Only families **readable for running
+/// text** are shown, and for code, only monospaced ones.
 ///
-/// Les polices apportées par l'utilisateur (§4.7) sont présentées **en tête**,
-/// avant les installées : quelqu'un qui prend la peine d'en déposer une la
-/// cherchera en premier, pas au milieu de trois cents familles système.
+/// Fonts the user has imported (§4.7) are shown **first**, ahead of the
+/// installed ones: someone who bothers to import a font will look for it
+/// first, not in the middle of three hundred system families.
 private struct FontPicker: View {
     let title: String
     @Binding var selection: String?
     let monospaced: Bool
-    /// Change quand une police est importée ou retirée, pour reconstruire la
-    /// liste sans relancer l'app.
+    /// Changes when a font is imported or removed, to rebuild the list
+    /// without relaunching the app.
     var libraryVersion: Int = 0
 
     var body: some View {
         Picker(title, selection: $selection) {
-            Text(monospaced ? "SF Mono (système)" : "SF Pro (système)").tag(String?.none)
+            Text(monospaced ? "SF Mono (system)" : "SF Pro (system)").tag(String?.none)
             if !imported.isEmpty {
                 Divider()
                 ForEach(imported, id: \.self) { family in
@@ -297,11 +295,12 @@ private struct FontPicker: View {
                 Text(family).tag(String?.some(family))
             }
         }
-        // **L'identité doit distinguer les deux sélecteurs.** `.id` désigne une
-        // vue parmi ses sœurs ; les deux ne portaient que `libraryVersion`,
-        // donc la même valeur, et SwiftUI les tenait pour une seule vue :
-        // « Police du code » s'affichait en double de « Police du corps », même
-        // intitulé et même valeur, et la police du code n'était plus réglable.
+        // **The identity must distinguish the two pickers.** `.id` identifies
+        // a view among its siblings; both used to carry only
+        // `libraryVersion`, so the same value, and SwiftUI treated them as a
+        // single view: "Code Font" was rendered as a duplicate of "Body
+        // Font" — same label and same value — and the code font stopped
+        // being adjustable.
         .id("\(monospaced)-\(libraryVersion)")
     }
 
@@ -311,17 +310,17 @@ private struct FontPicker: View {
                                                             version: libraryVersion).installed }
 }
 
-/// Les familles proposables, **calculées une fois**.
+/// The offerable families, **computed once**.
 ///
-/// Le tri instanciait une `NSFont` par famille installée pour savoir si elle
-/// est à chasse fixe — plusieurs centaines — et il vivait dans une propriété
-/// calculée de la vue. SwiftUI réévalue le corps à chaque frappe et à chaque
-/// cran de curseur : bouger le réglage de taille refaisait donc tout ce travail
-/// des dizaines de fois par seconde, et les curseurs des réglages traînaient.
+/// Sorting used to instantiate an `NSFont` per installed family to check
+/// whether it is monospaced — several hundred of them — and it lived in a
+/// computed property of the view. SwiftUI re-evaluates the body on every
+/// keystroke and every slider step: dragging the size setting redid all of
+/// that work dozens of times per second, and the settings sliders lagged.
 ///
-/// La liste ne change qu'à l'import ou au retrait d'une police, ce que
-/// `version` dit. On ne garde que la génération courante : deux entrées, le
-/// corps et le code.
+/// The list only changes when a font is imported or removed, which is what
+/// `version` tracks. Only the current generation is kept: two entries, body
+/// and code.
 @MainActor
 private enum FontCatalogue {
 
@@ -337,8 +336,8 @@ private enum FontCatalogue {
         if let hit = cache[key] { return hit }
 
         let isSuitable = { (family: String) -> Bool in
-            // Les familles à nom préfixé d'un point sont internes au système ;
-            // les proposer n'apporterait que de la confusion.
+            // Families whose name is prefixed with a dot are internal to the
+            // system; offering them would only cause confusion.
             guard !family.hasPrefix(".") else { return false }
             guard let font = NSFont(name: family, size: 12) else { return false }
             return monospaced ? font.isFixedPitch : true
@@ -356,14 +355,14 @@ private enum FontCatalogue {
     }
 }
 
-// MARK: - Bibliothèque de polices
+// MARK: - Font Library
 
-/// Déposer un fichier `.otf` ou `.ttf`, et le retirer.
+/// Drop an `.otf` or `.ttf` file, and remove it.
 ///
-/// Le retrait est offert ici parce que la portée `.process` le rend
-/// **réversible sans trace** : la police n'a jamais été installée dans le
-/// système, la retirer est supprimer un fichier. C'est ce qui permet d'essayer
-/// une police sans conséquence.
+/// Removal is offered here because the `.process` scope makes it
+/// **reversible without a trace**: the font was never installed system-wide,
+/// so removing it just deletes a file. That is what makes it safe to try a
+/// font without consequences.
 private struct FontLibrarySection: View {
     @Binding var version: Int
     @Binding var bodyFontName: String?
@@ -371,11 +370,11 @@ private struct FontLibrarySection: View {
     @State private var failure: String?
 
     var body: some View {
-        Section("Vos polices") {
+        Section("Your Fonts") {
             let families = FontLibrary.importedFamilies()
             if families.isEmpty {
-                Text("Aucune police importée. Les fichiers déposés ici ne sont "
-                     + "disponibles que dans Fovea : votre système n'est pas touché.")
+                Text("No fonts imported. Files dropped here are only available within "
+                     + "Fovea: your system is left untouched.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
@@ -383,13 +382,13 @@ private struct FontLibrarySection: View {
                     HStack {
                         Text(family)
                         Spacer()
-                        Button("Retirer") { remove(family) }
+                        Button("Remove") { remove(family) }
                             .buttonStyle(.link)
                     }
                 }
             }
 
-            Button("Importer une police…") { pick() }
+            Button("Import a Font…") { pick() }
 
             if let failure {
                 Text(failure)
@@ -403,7 +402,7 @@ private struct FontLibrarySection: View {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = FontLibrary.acceptedContentTypes
         panel.allowsMultipleSelection = true
-        panel.message = "Les polices sont copiées dans Fovea, pas installées dans le système."
+        panel.message = "Fonts are copied into Fovea, not installed system-wide."
         guard panel.runModal() == .OK else { return }
 
         failure = nil
@@ -418,8 +417,8 @@ private struct FontLibrarySection: View {
     }
 
     private func remove(_ family: String) {
-        // Une police retirée ne doit pas rester sélectionnée : le texte
-        // retomberait sur la police système sans que le réglage le dise.
+        // A removed font must not stay selected: the text would fall back to
+        // the system font without the setting reflecting it.
         if bodyFontName == family { bodyFontName = nil }
         if monoFontName == family { monoFontName = nil }
         FontLibrary.remove(family: family)
@@ -427,9 +426,9 @@ private struct FontLibrarySection: View {
     }
 }
 
-// MARK: - Fenêtre
+// MARK: - Window
 
-/// La fenêtre de réglages, en un seul exemplaire.
+/// The settings window, as a single instance.
 @MainActor
 final class SettingsWindowController: NSWindowController {
 
@@ -438,14 +437,14 @@ final class SettingsWindowController: NSWindowController {
     private convenience init() {
         let hosting = NSHostingController(rootView: SettingsView(settings: .shared))
         let window = NSWindow(contentViewController: hosting)
-        window.title = "Réglages"
+        window.title = "Settings"
         window.styleMask = [.titled, .closable, .resizable]
-        // `idealHeight` ne remonte pas jusqu'à la fenêtre au travers du
-        // `TabView` : on pose la taille de départ ici, et `.resizable` laisse
-        // l'utilisateur agrandir si sa police système est plus grande.
+        // `idealHeight` does not propagate up to the window through the
+        // `TabView`: the starting size is set here, and `.resizable` lets
+        // the user enlarge it if their system font is larger.
         window.setContentSize(NSSize(width: 480, height: 660))
-        // Une fenêtre de réglages qui reste ouverte derrière l'éditeur brouille
-        // le retour au texte ; celle-ci se referme et se rouvre à l'identique.
+        // A settings window left open behind the editor muddles the return
+        // to the text; this one closes and reopens identically.
         window.isReleasedWhenClosed = false
         window.center()
         self.init(window: window)

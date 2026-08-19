@@ -1,18 +1,19 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Repérage des notes de bas de page, que `swift-markdown` ne parse pas.
+/// Locates footnotes, which `swift-markdown` does not parse.
 ///
-/// Le cahier des charges (§4.1) posait la question ; la réponse est non :
-/// `cmark-gfm` possède bien l'extension, mais `swift-markdown` ne l'expose pas
-/// et `[^1]` ressort en `Text` brut. Le motif étant sans la moindre ambiguïté,
-/// une passe maison suffit — c'est le repli qui était prévu.
+/// The spec (§4.1) raised the question; the answer is no: `cmark-gfm` does
+/// have the extension, but `swift-markdown` does not expose it, and `[^1]`
+/// comes out as plain `Text`. The pattern being entirely unambiguous, a
+/// homemade pass is enough — this is the fallback that was planned.
 ///
-/// Deux constructions en sortent : le **renvoi** `[^1]` dans le corps du texte,
-/// et la **définition** `[^1]: …` en début de ligne. La seconde est révélée à la
-/// ligne — poser le curseur dessus rend `[^1]: ` visible et modifiable — ce qui
-/// permet de la mettre en forme sans enfermer l'auteur hors de son texte.
+/// Two constructs come out of it: the **reference** `[^1]` in the body of the
+/// text, and the **definition** `[^1]: …` at the start of a line. The second
+/// is revealed at the line — placing the caret on it makes `[^1]: ` visible
+/// and editable — which lets it be formatted without locking the author out
+/// of their own text.
 enum Footnotes {
 
     static func scan(utf16: [UInt16], skippingCodeIn verbatim: [NSRange]) -> [SyntaxSpan] {
@@ -28,7 +29,7 @@ enum Footnotes {
                 index += 1
                 continue
             }
-            // Un `[` échappé n'ouvre rien.
+            // An escaped `[` opens nothing.
             if index > 0, utf16[index - 1] == backslash {
                 index += 1
                 continue
@@ -37,8 +38,8 @@ enum Footnotes {
             var end = index + 2
             var identifier = ""
             while end < utf16.count, utf16[end] != closeBracket {
-                // Un identifiant ne franchit pas une fin de ligne : sans cette
-                // borne, un `[` isolé avalerait la moitié du document.
+                // An identifier does not cross a line ending: without this
+                // bound, a stray `[` would swallow half the document.
                 guard let scalar = UnicodeScalar(utf16[end]), scalar != "\n" else { break }
                 identifier.unicodeScalars.append(scalar)
                 end += 1
@@ -53,18 +54,19 @@ enum Footnotes {
                 index = end + 1
                 continue
             }
-            // La **définition** `[^1]: …` en début de ligne est une autre
-            // construction : `[^` et `]:` sont ses marqueurs, le reste de la
-            // ligne est le texte de la note.
+            // The **definition** `[^1]: …` at the start of a line is a
+            // different construct: `[^` and `]:` are its markers, the rest
+            // of the line is the note's text.
             //
-            // Elle est révélée à la ligne, comme un titre ou une puce : poser
-            // le curseur dessus rend `[^1]:` visible, donc modifiable. C'est
-            // ce qui permet de la mettre en forme sans jamais enfermer
-            // l'auteur hors de son propre texte.
+            // It is revealed at the line, like a heading or a bullet:
+            // placing the caret on it makes `[^1]:` visible, hence editable.
+            // This is what lets it be formatted without ever locking the
+            // author out of their own text.
             if isDefinition(utf16: utf16, referenceStart: index, referenceEnd: end) {
-                // L'espace qui suit le `:` **n'est pas** un marqueur : masqué
-                // avec lui, l'exposant se collait au premier mot de la note.
-                // Il est le seul blanc qui sépare le numéro de son texte.
+                // The space that follows the `:` is **not** a marker: hidden
+                // along with it, the superscript would stick to the note's
+                // first word. It is the only blank that separates the
+                // number from its text.
                 let contentStart = end + 2
                 var lineEnd = contentStart
                 while lineEnd < utf16.count, utf16[lineEnd] != UInt16(UnicodeScalar("\n").value) {
@@ -80,9 +82,10 @@ enum Footnotes {
                 continue
             }
 
-            // Les crochets sont la syntaxe, l'identifiant est le contenu : il
-            // se rend en exposant. Tout masquer ferait disparaître le renvoi de
-            // l'écran, et l'auteur n'aurait plus aucun repère vers sa note.
+            // The brackets are the syntax, the identifier is the content: it
+            // renders as a superscript. Hiding everything would make the
+            // reference disappear from the screen, leaving the author with
+            // no way to find their way back to the note.
             spans.append(SyntaxSpan(
                 kind: .footnoteReference(identifier: identifier),
                 range: range,
@@ -94,8 +97,8 @@ enum Footnotes {
         return spans
     }
 
-    /// Vrai si le motif est une **définition** et non un renvoi : seul du blanc
-    /// le précède sur sa ligne, et un `:` le suit immédiatement.
+    /// True if the pattern is a **definition** and not a reference: only
+    /// whitespace precedes it on its line, and a `:` follows it immediately.
     private static func isDefinition(utf16: [UInt16], referenceStart: Int, referenceEnd: Int) -> Bool {
         let colon = UInt16(UnicodeScalar(":").value)
         guard referenceEnd + 1 < utf16.count, utf16[referenceEnd + 1] == colon else { return false }

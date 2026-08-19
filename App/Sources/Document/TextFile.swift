@@ -1,37 +1,38 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Lecture et écriture du fichier texte, sans AppKit — donc testable.
+/// Reading and writing the text file, without AppKit, so it's testable.
 ///
-/// Ce type porte la promesse du §5 du cahier des charges : **ce que
-/// l'utilisateur n'a pas touché ressort octet pour octet**. Rien ici ne
-/// normalise, ne rogne ni ne reformate quoi que ce soit.
+/// This type carries the promise of §5 of the spec: **what the user hasn't
+/// touched comes back out byte for byte**. Nothing here normalizes, trims
+/// or reformats anything.
 enum TextFile {
 
-    /// Le style de fin de ligne trouvé à l'ouverture, à restituer tel quel.
+    /// The line-ending style found on open, to be restored as-is.
     enum LineEnding: String, Sendable {
         case lf = "\n"
         case crlf = "\r\n"
-        /// Mac OS classique. Quasi disparu, mais un fichier qui en contient
-        /// doit ressortir comme il est entré.
+        /// Classic Mac OS. Nearly extinct, but a file that has it must come
+        /// back out the way it came in.
         case cr = "\r"
 
-        /// Nouveau document : LF, la convention d'à peu près tout aujourd'hui.
+        /// New document: LF, the convention of just about everything today.
         static let `default` = LineEnding.lf
     }
 
     struct Contents: Sendable {
-        /// Le texte, **toujours normalisé en LF en mémoire**.
+        /// The text, **always normalized to LF in memory**.
         ///
-        /// C'est une commodité d'édition, pas une réécriture : `NSTextStorage`
-        /// et `swift-markdown` comptent tous les deux les lignes en LF, et un
-        /// CRLF dans le tampon ferait diverger leurs index. Le style d'origine
-        /// est conservé dans `lineEnding` et restitué à l'écriture.
+        /// This is an editing convenience, not a rewrite: `NSTextStorage`
+        /// and `swift-markdown` both count lines in LF, and a CRLF in the
+        /// buffer would make their indexes diverge. The original style is
+        /// kept in `lineEnding` and restored on write.
         var text: String
         var lineEnding: LineEnding
-        /// L'encodage lu. Fovea écrit **toujours** en UTF-8 (§5) ; ce champ ne
-        /// sert qu'à prévenir l'utilisateur quand une conversion aura lieu.
+        /// The encoding read. Fovea **always** writes UTF-8 (§5); this
+        /// field only serves to warn the user when a conversion will take
+        /// place.
         var sourceEncoding: String.Encoding
         var hadBOM: Bool
     }
@@ -43,35 +44,35 @@ enum TextFile {
         var errorDescription: String? {
             switch self {
             case .binary:
-                return "Ce fichier n'est pas du texte."
+                return "This file isn't text."
             case .undecodable:
-                return "Impossible de lire ce fichier comme du texte."
+                return "This file can't be read as text."
             }
         }
 
         var recoverySuggestion: String? {
             switch self {
             case .binary:
-                return "Il contient des données binaires. Son extension est peut-être trompeuse."
+                return "It contains binary data. Its extension may be misleading."
             case .undecodable:
-                return "Son encodage n'a pas pu être identifié."
+                return "Its encoding couldn't be identified."
             }
         }
     }
 
-    // MARK: - Lecture
+    // MARK: - Reading
 
     static func read(_ data: Data) throws -> Contents {
         let (payload, hadBOM, bomEncoding) = stripBOM(data)
 
-        // Un octet nul ne peut pas apparaître dans du texte valide sur un octet.
-        // Sans ce garde-fou, un binaire renommé `.md` s'ouvrirait en un
-        // mégaoctet de charabia (§6).
+        // A null byte can't appear in valid single-byte text. Without this
+        // guard, a binary file renamed to `.md` would open as a megabyte of
+        // gibberish (§6).
         //
-        // L'UTF-16 est justement plein d'octets nuls — d'où l'exemption quand
-        // une BOM UTF-16 l'annonce explicitement. Sans BOM, un UTF-16 sera
-        // refusé comme binaire : c'est le compromis assumé, personne n'écrit
-        // du markdown en UTF-16 sans BOM.
+        // UTF-16 is precisely full of null bytes, hence the exemption when
+        // a UTF-16 BOM explicitly announces it. Without a BOM, UTF-16 gets
+        // rejected as binary: that's the accepted trade-off, nobody writes
+        // markdown in UTF-16 without a BOM.
         let isDeclaredUTF16 = bomEncoding == .utf16LittleEndian || bomEncoding == .utf16BigEndian
         if !isDeclaredUTF16, payload.prefix(8192).contains(0) { throw ReadError.binary }
 
@@ -96,22 +97,22 @@ enum TextFile {
                         hadBOM: hadBOM)
     }
 
-    // MARK: - Écriture
+    // MARK: - Writing
 
-    /// UTF-8 sans BOM, toujours (§5). Le style de fin de ligne d'origine est
-    /// rétabli au dernier moment, sur le texte qui vivait en LF en mémoire.
+    /// UTF-8 without a BOM, always (§5). The original line-ending style is
+    /// restored at the last moment, on the text that lived as LF in memory.
     static func write(text: String, lineEnding: LineEnding) -> Data {
         let restored = lineEnding == .lf ? text : text.replacingOccurrences(of: "\n", with: lineEnding.rawValue)
         return Data(restored.utf8)
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
-    /// Le **premier** terminateur rencontré fait foi. Un fichier mixte — ça
-    /// existe, notamment après une fusion git bâclée — sera uniformisé à
-    /// l'enregistrement, et c'est le seul cas où Fovea touche à ce qu'elle n'a
-    /// pas édité. L'alternative serait de mémoriser le style ligne par ligne,
-    /// pour un fichier déjà cassé.
+    /// The **first** terminator encountered wins. A mixed file exists,
+    /// notably after a sloppy git merge, and gets normalized on save: this
+    /// is the only case where Fovea touches something it hasn't edited.
+    /// The alternative would be to remember the style line by line, for a
+    /// file that's already broken.
     static func detectLineEnding(_ text: String) -> LineEnding {
         var iterator = text.unicodeScalars.makeIterator()
         var previous: Unicode.Scalar?
@@ -124,11 +125,12 @@ enum TextFile {
     }
 
     static func normalizeToLF(_ text: String) -> String {
-        // `text.contains("\r")` serait faux : Swift compare des **graphèmes**,
-        // et `\r\n` en est un seul, distinct de `\r`. Un fichier Windows
-        // passait donc au travers de la normalisation, puis voyait chacun de
-        // ses `\n` re-préfixé à l'enregistrement — un `\r` de plus par ligne, à
-        // chaque sauvegarde. Le parcours se fait donc sur les scalaires.
+        // `text.contains("\r")` would be false: Swift compares
+        // **graphemes**, and `\r\n` is a single one, distinct from `\r`. A
+        // Windows file used to slip through normalization, and then had
+        // each of its `\n` re-prefixed on save: one more `\r` per line,
+        // every time it was saved. The walk is therefore done over the
+        // scalars.
         guard text.unicodeScalars.contains("\r") else { return text }
         return text
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -147,9 +149,9 @@ enum TextFile {
         return (data, false, nil)
     }
 
-    /// Dernier recours, pour les fichiers écrits avant qu'UTF-8 ne s'impose.
-    /// Latin-1 accepte n'importe quelle suite d'octets, donc il vient en
-    /// dernier : il ne doit jamais masquer un encodage qui aurait mieux marché.
+    /// Last resort, for files written before UTF-8 took over. Latin-1
+    /// accepts any sequence of bytes, so it comes last: it must never mask
+    /// an encoding that would have worked better.
     private static func guessLegacyEncoding(_ data: Data) -> (text: String, encoding: String.Encoding)? {
         for encoding: String.Encoding in [.windowsCP1252, .isoLatin1] {
             if let text = String(data: data, encoding: encoding) {

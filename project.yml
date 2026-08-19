@@ -1,23 +1,23 @@
 # =============================================================================
-#  Fovea — éditeur markdown WYSIWYG natif pour macOS
+#  Fovea — native WYSIWYG markdown editor for macOS
 #
-#  Ce fichier est la SOURCE DE VÉRITÉ du projet Xcode. `Fovea.xcodeproj` est
-#  généré et git-ignoré : on n'y touche jamais. Après avoir ajouté un fichier
-#  Swift, relancer `xcodegen generate`, sinon la compilation échoue sur
-#  « cannot find X in scope ».
+#  This file is the SOURCE OF TRUTH for the Xcode project. `Fovea.xcodeproj`
+#  is generated and git-ignored: it is never touched directly. After adding a
+#  Swift file, rerun `xcodegen generate`, or the build fails with
+#  "cannot find X in scope".
 #
-#  Le nom est court et sans espace, donc une seule forme suffit — contrairement
-#  à TBD qui en avait trois. « Fovea » sert au bundle, à l'exécutable, au module
-#  Swift, au Finder et au menu de l'app.
+#  The name is short and has no space, so a single form is enough — unlike
+#  TBD, which had three. "Fovea" is used for the bundle, the executable, the
+#  Swift module, the Finder and the app menu.
 # =============================================================================
 name: Fovea
 
 options:
   bundleIdPrefix: com.byelior
   deploymentTarget:
-    # macOS 15 et pas 13 comme TBD : le cœur de cette app EST TextKit 2, et
-    # TextKit 2 traîne sur Ventura des défauts de fragments et d'attachements
-    # qu'il faudrait contourner à la main. Voir §3.2 du cahier des charges.
+    # macOS 15, not 13 like TBD: the core of this app IS TextKit 2, and
+    # TextKit 2 carries fragment and attachment bugs on Ventura that would
+    # need manual workarounds. See §3.2 of the spec.
     macOS: "15.0"
   createIntermediateGroups: true
 
@@ -30,9 +30,9 @@ settings:
     CODE_SIGN_STYLE: Automatic
 
 packages:
-  # L'AST de cmark-gfm exposé en Swift, avec des SourceRange sur chaque nœud.
-  # C'est précisément ce dont dépend le §3.3 : on ne re-sérialise jamais l'AST,
-  # on ne s'en sert que pour savoir OÙ poser les attributs dans le texte source.
+  # The cmark-gfm AST exposed in Swift, with a SourceRange on every node.
+  # This is exactly what §3.3 depends on: the AST is never re-serialized, it
+  # is only used to know WHERE to set attributes in the source text.
   Markdown:
     url: https://github.com/apple/swift-markdown
     from: "0.8.0"
@@ -43,9 +43,9 @@ targets:
     platform: macOS
     sources:
       - path: App/Sources
-      # L'icône, produite par scripts/icon.sh. Sans ce chemin, le .icns ne
-      # serait pas copié dans le bundle et le Finder afficherait l'icône
-      # générique.
+      # The icon, produced by scripts/icon.sh. Without this path, the .icns
+      # wouldn't be copied into the bundle and the Finder would show the
+      # generic icon.
       - path: App/Resources
     dependencies:
       - package: Markdown
@@ -56,24 +56,24 @@ targets:
         INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/Fovea.entitlements
         GENERATE_INFOPLIST_FILE: NO
-        # Hardened runtime OFF : requis uniquement pour la notarisation Apple,
-        # qui demande un compte développeur payant. À passer à YES le jour où
-        # le Developer ID existe (§10 du cahier des charges).
+        # Hardened runtime OFF: only required for Apple notarization, which
+        # requires a paid developer account. Flip to YES the day the
+        # Developer ID exists (§10 of the spec).
         ENABLE_HARDENED_RUNTIME: NO
         MACOSX_DEPLOYMENT_TARGET: "15.0"
-        # Zéro avertissement toléré. Posé sur la CIBLE et pas sur le projet :
-        # au niveau projet, le drapeau atteindrait aussi les dépendances SwiftPM
-        # qui compilent avec -suppress-warnings, et les deux ensemble sont une
-        # erreur dure du compilateur.
+        # Zero warnings tolerated. Set on the TARGET, not the project: at the
+        # project level, the flag would also reach the SwiftPM dependencies,
+        # which compile with -suppress-warnings, and the two together would
+        # be a hard compiler error.
         SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         SWIFT_STRICT_CONCURRENCY: complete
         LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
           - "@executable_path/../Frameworks"
 
-  # La couche Markdown/ est testée sans interface : c'est là que vit la
-  # conversion de plages UTF-8 → UTF-16 du §3.3, qui doit être juste au
-  # caractère près sur du français accentué, des emoji et du CJK.
+  # The Markdown/ layer is tested without an interface: this is where the
+  # §3.3 UTF-8 → UTF-16 range conversion lives, and it must be exact down to
+  # the character on accented text, emoji and CJK.
   FoveaTests:
     type: bundle.unit-test
     platform: macOS

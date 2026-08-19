@@ -1,26 +1,26 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Un bandeau **non bloquant**, en haut de la colonne de texte (§6).
+/// A **non-blocking** banner, at the top of the text column (§6).
 ///
-/// # Pourquoi un bandeau et pas une alerte
+/// # Why a banner and not an alert
 ///
-/// Trois états du §6 doivent être dits sans interrompre : un document
-/// volumineux, un encodage qui sera converti, un fichier en lecture seule.
-/// Aucun des trois n'appelle une décision immédiate — ce sont des faits à
-/// connaître, pas des questions. Une alerte modale obligerait à cliquer avant
-/// d'écrire, pour une information qu'on veut simplement avoir vue.
+/// Three states from §6 must be communicated without interrupting: a large
+/// document, an encoding that will be converted, a read-only file. None of
+/// the three calls for an immediate decision — they are facts to know, not
+/// questions. A modal alert would force a click before writing, for
+/// information the user simply wants to have seen.
 ///
-/// Il se referme d'un clic et ne revient pas pour le même document. Le §7 veut
-/// que l'app disparaisse : un bandeau permanent serait exactement le chrome
-/// qu'on cherche à éviter.
+/// It closes with one click and does not come back for the same document.
+/// §7 wants the app to disappear: a permanent banner would be exactly the
+/// chrome this seeks to avoid.
 @MainActor
 final class DocumentBanner: NSView {
 
     private let label = NSTextField(labelWithString: "")
     private let closeButton = NSButton()
-    /// Contrainte de hauteur : zéro quand il n'y a rien à dire.
+    /// Height constraint: zero when there is nothing to say.
     private var heightConstraint: NSLayoutConstraint!
 
     private static let visibleHeight: CGFloat = 34
@@ -36,12 +36,12 @@ final class DocumentBanner: NSView {
 
         closeButton.bezelStyle = .accessoryBarAction
         closeButton.isBordered = false
-        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Fermer")
+        closeButton.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
         closeButton.contentTintColor = Theme.NS.labelTertiary
         closeButton.target = self
         closeButton.action = #selector(dismiss)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.setAccessibilityLabel("Fermer le bandeau")
+        closeButton.setAccessibilityLabel("Close banner")
 
         let separator = NSBox()
         separator.boxType = .custom
@@ -74,9 +74,9 @@ final class DocumentBanner: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("aucune vue ne vient d'un xib") }
+    required init?(coder: NSCoder) { fatalError("no view comes from a xib") }
 
-    /// Même raison que dans le plan : voir `applyLayerBackground(_:)`.
+    /// Same reason as in the outline: see `applyLayerBackground(_:)`.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyLayerBackground(Theme.NS.fillQuaternary)
@@ -89,7 +89,7 @@ final class DocumentBanner: NSView {
 
     var isShowing: Bool { !isHidden }
 
-    /// Affiche les messages, joints. Rien à dire referme le bandeau.
+    /// Shows the messages, joined. Nothing to say closes the banner.
     func show(_ messages: [String]) {
         let text = messages.filter { !$0.isEmpty }.joined(separator: "  ·  ")
         guard !text.isEmpty else {
@@ -100,22 +100,22 @@ final class DocumentBanner: NSView {
         setAccessibilityLabel(text)
         isHidden = false
         heightConstraint.constant = Self.visibleHeight
-        // §8 : le bandeau apparaît quand même si les animations sont réduites,
-        // il ne glisse simplement pas.
+        // §8: the banner still appears if animations are reduced, it simply
+        // does not slide in.
         Accessibility.animate(0.18) { superview?.layoutSubtreeIfNeeded() }
     }
 
     @objc func dismiss() {
         guard !isHidden else { return }
         heightConstraint.constant = 0
-        // `isHidden` est posé **à la fin**, pas avant : appliqué tout de suite,
-        // il faisait disparaître le bandeau d'un coup et l'animation qui suit
-        // repliait une vue déjà invisible. Le bandeau sautait au lieu de se
-        // refermer, et le glissement écrit juste au-dessus ne se voyait jamais.
+        // `isHidden` is set **at the end**, not before: applied right away,
+        // it made the banner disappear all at once and the animation that
+        // follows collapsed a view already invisible. The banner jumped
+        // instead of closing, and the slide written just above never showed.
         Accessibility.animate(0.18) { superview?.layoutSubtreeIfNeeded() } completion: {
             MainActor.assumeIsolated { [weak self] in
-                // Un `show` a pu passer entre-temps : on ne masque que ce qui
-                // est bien resté replié.
+                // A `show` may have happened in the meantime: only what
+                // actually stayed collapsed gets hidden.
                 guard let self, heightConstraint.constant == 0 else { return }
                 isHidden = true
             }
@@ -123,34 +123,34 @@ final class DocumentBanner: NSView {
     }
 }
 
-// MARK: - Les messages du §6
+// MARK: - The §6 messages
 
 extension DocumentBanner {
 
-    /// Ce qu'il y a à dire d'un document à son ouverture, ou rien.
+    /// What there is to say about a document when it opens, or nothing.
     ///
-    /// La fonction est pure et rendue publique pour être testée : ce sont des
-    /// phrases que l'utilisateur lira, et leur exactitude compte autant que
-    /// celle du code qui les déclenche.
+    /// The function is pure and made public so it can be tested: these are
+    /// sentences the user will read, and their accuracy matters as much as
+    /// that of the code that triggers them.
     nonisolated static func messages(byteCount: Int,
                                      encoding: String.Encoding,
                                      isWritable: Bool) -> [String] {
         var result: [String] = []
 
         if !isWritable {
-            // §6 : le document s'ouvre et reste modifiable en mémoire. Ce qui
-            // ne marchera pas, c'est l'enregistrement — et il vaut mieux
-            // l'apprendre avant d'écrire trois pages.
-            result.append("Fichier en lecture seule. Utilisez « Enregistrer sous… » "
-                          + "pour conserver vos modifications.")
+            // §6: the document opens and stays editable in memory. What will
+            // not work is saving — and it is better to learn that before
+            // writing three pages.
+            result.append("Read-only file. Use \"Save As…\" "
+                          + "to keep your changes.")
         }
         if byteCount > 1_000_000 {
-            // L'app ne bascule jamais toute seule (§6) : elle informe.
-            result.append("Document volumineux. Le mode source (⌥⌘S) sera plus fluide.")
+            // The app never switches on its own (§6): it informs.
+            result.append("Large document. Source mode (⌥⌘S) will be smoother.")
         }
         if encoding != .utf8 {
-            result.append("Fichier lu en \(name(of: encoding)). Il sera converti "
-                          + "en UTF-8 à l'enregistrement.")
+            result.append("File read as \(name(of: encoding)). It will be converted "
+                          + "to UTF-8 when saved.")
         }
         return result
     }
@@ -161,7 +161,7 @@ extension DocumentBanner {
         case .isoLatin1: "ISO-8859-1"
         case .utf16LittleEndian, .utf16BigEndian, .utf16: "UTF-16"
         case .macOSRoman: "Mac OS Roman"
-        default: "un autre encodage"
+        default: "another encoding"
         }
     }
 }

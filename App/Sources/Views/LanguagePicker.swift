@@ -1,13 +1,13 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le choix du langage d'un bloc de code.
+/// The language picker for a code block.
 ///
-/// Il s'ouvre tout seul dès que le curseur se pose après les accents graves
-/// d'une ouverture, et se filtre à mesure qu'on tape — exactement comme le menu
-/// slash, et pour la même raison : personne ne devrait avoir à connaître par
-/// cœur le mot que l'app attend.
+/// It opens on its own as soon as the caret lands right after the backticks
+/// of an opening fence, and filters as the user types — exactly like the
+/// slash menu, and for the same reason: no one should have to know by heart
+/// the word the app expects.
 @MainActor
 final class LanguagePicker: FloatingPanel {
 
@@ -34,7 +34,7 @@ final class LanguagePicker: FloatingPanel {
         tableView.delegate = self
         tableView.target = self
         tableView.action = #selector(rowClicked)
-        tableView.addTableColumn(NSTableColumn(identifier: .init("langage")))
+        tableView.addTableColumn(NSTableColumn(identifier: .init("language")))
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
@@ -54,8 +54,8 @@ final class LanguagePicker: FloatingPanel {
         ])
     }
 
-    /// - Returns: `false` quand rien ne correspond ; le panneau se referme et
-    ///   l'appelant sait que ce qui est tapé n'est pas un langage connu.
+    /// - Returns: `false` when nothing matches; the panel closes and the
+    ///   caller knows what was typed is not a known language.
     @discardableResult
     func present(query: String, caretRect: NSRect, over host: NSWindow?) -> Bool {
         entries = CodeFence.matching(query)
@@ -95,11 +95,11 @@ extension LanguagePicker: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { entries.count }
 
-    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    /// The selection is gray, not blue. See `ListRowView`.
     ///
-    /// Ce sélecteur avait été oublié : c'était la seule liste de l'app où la
-    /// ligne choisie restait peinte à la couleur d'accent du système, ce que le
-    /// §7 réserve au contenu de l'utilisateur.
+    /// This picker had been overlooked: it was the only list in the app
+    /// where the chosen row stayed painted in the system's accent color,
+    /// which §7 reserves for the user's content.
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         ListRowView()
     }

@@ -1,26 +1,26 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// L'import de polices (§4.7).
+/// Font import (§4.7).
 ///
-/// La promesse tenue ici est étroite mais précise : **le système de
-/// l'utilisateur n'est jamais touché**. Une police déposée n'existe que
-/// pendant que Fovea tourne, et la retirer est supprimer un fichier.
+/// The promise kept here is narrow but precise: **the user's system is
+/// never touched**. An imported font exists only while Fovea is running,
+/// and removing it means deleting a file.
 @MainActor
 final class FontLibraryTests: XCTestCase {
 
-    /// Statique, et non une propriété d'instance : `setUp` et `tearDown` sont
-    /// déclarés `nonisolated` par XCTest, et y capturer `self` pour repasser
-    /// sur le thread principal est refusé par la concurrence stricte. Une
-    /// variable locale passée dans la fermeture ne capture rien.
+    /// Static, not an instance property: `setUp` and `tearDown` are declared
+    /// `nonisolated` by XCTest, and capturing `self` in them to hop back to
+    /// the main thread is rejected by strict concurrency. A local variable
+    /// passed into the closure captures nothing.
     private nonisolated(unsafe) static var sandbox: URL!
 
-    // Une classe `@MainActor` voit `setUp` appelé sur le thread principal ;
-    // `assumeIsolated` est donc l'affirmation exacte de ce qui est vrai, et
-    // elle lèvera une erreur bruyante si ça cesse de l'être.
+    // A `@MainActor` class sees `setUp` called on the main thread;
+    // `assumeIsolated` is therefore the exact assertion of what is true,
+    // and it will raise a loud error if that ever stops being the case.
 
     override nonisolated func setUp() {
         super.setUp()
@@ -42,8 +42,8 @@ final class FontLibraryTests: XCTestCase {
         super.tearDown()
     }
 
-    /// Un vrai fichier de police, pris dans le système. Le test ne le modifie
-    /// pas ; il le copie, comme le ferait l'utilisateur.
+    /// A real font file, taken from the system. The test does not modify
+    /// it; it copies it, the way a user would.
     private func systemFontFile() throws -> URL {
         let candidates = [
             "/System/Library/Fonts/Supplemental/Academy Engraved LET Fonts.ttf",
@@ -52,7 +52,7 @@ final class FontLibraryTests: XCTestCase {
         ].map(URL.init(fileURLWithPath:))
 
         guard let found = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            throw XCTSkip("Aucune police système connue sur cette machine")
+            throw XCTSkip("No known system font found on this machine")
         }
         return found
     }
@@ -64,13 +64,13 @@ final class FontLibraryTests: XCTestCase {
         XCTAssertTrue(FontLibrary.importedFamilies().isEmpty)
 
         let added = try FontLibrary.importFont(at: source)
-        XCTAssertFalse(added.isEmpty, "L'import doit rendre la famille ajoutée")
+        XCTAssertFalse(added.isEmpty, "The import must return the family that was added")
         XCTAssertEqual(FontLibrary.importedFamilies(), added)
     }
 
     func testTheFileIsCopiedNotMoved() throws {
-        // L'utilisateur dépose une police, il ne la donne pas : l'original
-        // reste où il est.
+        // The user drops a font in, they don't give it away: the original
+        // stays where it is.
         let source = try systemFontFile()
         _ = try FontLibrary.importFont(at: source)
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
@@ -79,8 +79,9 @@ final class FontLibraryTests: XCTestCase {
     }
 
     func testAnImportedFontIsUsableImmediately() throws {
-        // Enregistrée en portée `.process`, elle doit être résolvable sans
-        // relancer l'app — sinon le réglage ne montrerait rien avant demain.
+        // Registered at `.process` scope, it must be resolvable without
+        // relaunching the app — otherwise the setting would show nothing
+        // until tomorrow.
         let source = try systemFontFile()
         let added = try FontLibrary.importFont(at: source)
         let family = try XCTUnwrap(added.first)
@@ -93,24 +94,24 @@ final class FontLibraryTests: XCTestCase {
 
         XCTAssertThrowsError(try FontLibrary.importFont(at: source)) { error in
             guard case FontLibrary.ImportError.alreadyPresent = error else {
-                return XCTFail("Attendu : déjà présente, obtenu \(error)")
+                return XCTFail("Expected: already present, got \(error)")
             }
         }
     }
 
     func testAFileThatIsNotAFontIsRefused() throws {
         try FileManager.default.createDirectory(at: Self.sandbox, withIntermediateDirectories: true)
-        let fake = Self.sandbox.appendingPathComponent("faux.ttf")
-        try Data("ceci n'est pas une police".utf8).write(to: fake)
+        let fake = Self.sandbox.appendingPathComponent("fake.ttf")
+        try Data("this is not a font".utf8).write(to: fake)
 
         XCTAssertThrowsError(try FontLibrary.importFont(at: fake)) { error in
             guard case FontLibrary.ImportError.unreadable = error else {
-                return XCTFail("Attendu : illisible, obtenu \(error)")
+                return XCTFail("Expected: unreadable, got \(error)")
             }
         }
     }
 
-    // MARK: - Retrait
+    // MARK: - Removal
 
     func testRemovingAFamilyDeletesItsFile() throws {
         let source = try systemFontFile()
@@ -124,12 +125,12 @@ final class FontLibraryTests: XCTestCase {
             atPath: Self.sandbox.appendingPathComponent(source.lastPathComponent).path))
     }
 
-    // MARK: - Relance
+    // MARK: - Relaunch
 
     func testRegisteringAtLaunchPicksUpWhatIsOnDisk() throws {
-        // La portée `.process` impose de tout ré-enregistrer à chaque
-        // lancement. Ce test vérifie que la boucle de démarrage retrouve bien
-        // les fichiers laissés par la session précédente.
+        // The `.process` scope requires re-registering everything on every
+        // launch. This test checks that the startup loop does find the
+        // files left behind by the previous session.
         let source = try systemFontFile()
         try FileManager.default.createDirectory(at: Self.sandbox, withIntermediateDirectories: true)
         try FileManager.default.copyItem(
@@ -140,8 +141,8 @@ final class FontLibraryTests: XCTestCase {
     }
 
     func testAnEmptyLibraryIsNotAnError() {
-        // Le cas de très loin le plus fréquent : personne n'a jamais rien
-        // importé, et le dossier n'existe même pas.
+        // By far the most frequent case: nobody has ever imported
+        // anything, and the folder doesn't even exist.
         XCTAssertTrue(FontLibrary.importedFamilies().isEmpty)
         FontLibrary.registerAll()
     }

@@ -1,26 +1,26 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// La fenêtre d'édition.
+/// The editing window.
 ///
-/// Elle est aussi vide que possible : pas de barre d'outils, pas de barre
-/// latérale, un titre transparent. C'est l'application directe du §7 — l'app
-/// doit disparaître, il ne doit rester que la colonne de texte.
+/// It is as empty as possible: no toolbar, no sidebar, a transparent title.
+/// This is the direct application of §7: the app must disappear, leaving
+/// only the text column.
 final class DocumentWindowController: NSWindowController {
 
     let editor = EditorController()
-    /// Les états du §6 qui se disent sans interrompre.
+    /// The §6 states, communicated without interrupting.
     let banner = DocumentBanner()
     private let statusBar = StatusBar()
     private let outline = OutlinePanel()
     private let palette = CommandPalette()
-    /// Largeur du plan quand il est ouvert. Zéro le referme.
+    /// Outline width when open. Zero closes it.
     private var outlineWidth: NSLayoutConstraint!
-    /// Le retrait laissé à la barre de titre — et à la barre d'onglets quand
-    /// elle est là. Voir `applyTitleBarInset()`.
+    /// The inset left for the title bar, and for the tab bar when present.
+    /// See `applyTitleBarInset()`.
     private var bannerTop: NSLayoutConstraint!
-    /// L'abonnement aux réglages, à rendre à la fermeture.
+    /// The settings subscription, released on close.
     private var settingsObserver: (any NSObjectProtocol)?
 
     convenience init() {
@@ -30,10 +30,9 @@ final class DocumentWindowController: NSWindowController {
             backing: .buffered,
             defer: false)
 
-        // Le titre est masqué mais la barre reste : elle porte les boutons de
-        // fenêtre et le glisser-déposer du document. La rendre transparente
-        // laisse le texte défiler derrière, ce qui est exactement l'effet
-        // recherché.
+        // The title is hidden but the bar stays: it carries the window
+        // buttons and the document's drag handle. Making it transparent lets
+        // the text scroll behind it, which is exactly the effect wanted.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = Theme.NS.window
@@ -44,11 +43,11 @@ final class DocumentWindowController: NSWindowController {
         self.init(window: window)
         window.delegate = self
 
-        // La colonne de texte est centrée, donc sa marge dépend de la largeur
-        // disponible. `windowDidResize` ne suffit pas : au premier affichage il
-        // n'a pas encore été appelé et la vue de défilement n'a pas sa taille
-        // définitive, ce qui laissait le texte collé à gauche. Le recalcul est
-        // donc rattaché à la mise en page de la vue elle-même.
+        // The text column is centered, so its margin depends on the width
+        // available. `windowDidResize` isn't enough: on first display it
+        // hasn't been called yet and the scroll view doesn't have its final
+        // size, which left the text stuck to the left. The recalculation is
+        // therefore tied to the view's own layout pass.
         let content = LayoutObservingView()
         content.onLayout = { [weak self, weak editor] in
             self?.applyTitleBarInset()
@@ -71,15 +70,15 @@ final class DocumentWindowController: NSWindowController {
             outline.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             outlineWidth,
 
-            // Le bandeau est **au-dessus** de la colonne, pas par-dessus : il
-            // pousse le texte au lieu de le masquer, et le rend intégralement
-            // quand il se referme.
+            // The banner sits **above** the column, not over it: it pushes
+            // the text down instead of covering it, and gives it back in
+            // full once it closes.
             //
-            // Le retrait est celui du plan, et pour la même raison : la barre
-            // de titre est transparente et les onglets s'y superposent. À 40,
-            // le bandeau passait dessous — de ses 34 points de hauteur, seuls
-            // les dix derniers dépassaient, et son message était illisible au
-            // moment précis où il faut le lire.
+            // The inset matches the outline's, for the same reason: the
+            // title bar is transparent and tabs overlap it. At 40, the
+            // banner passed underneath it: of its 34 points of height, only
+            // the last ten showed, and its message was unreadable at the
+            // exact moment it needed to be read.
             bannerTop,
             banner.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
             banner.trailingAnchor.constraint(equalTo: content.trailingAnchor),
@@ -89,9 +88,9 @@ final class DocumentWindowController: NSWindowController {
             editor.scrollView.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
-            // Flottante au-dessus du texte, dans le coin bas-droit : elle ne
-            // vole pas de place à la colonne, et s'efface quand la souris est
-            // ailleurs.
+            // Floating above the text, in the bottom-right corner: it
+            // doesn't steal space from the column, and fades out when the
+            // pointer is elsewhere.
             statusBar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Theme.Space.s16),
             statusBar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -Theme.Space.s12),
             statusBar.heightAnchor.constraint(equalToConstant: 20),
@@ -106,33 +105,34 @@ final class DocumentWindowController: NSWindowController {
         outline.onSelect = { [weak self] location in self?.goTo(location) }
         refreshStatistics()
 
-        // La barre d'état est la seule pièce du chrome dont l'affichage est un
-        // réglage. Sans cet abonnement, décocher « Afficher les statistiques »
-        // ne faisait rien de visible : la barre ne partait qu'à la frappe
-        // suivante, quand un autre chemin appelait `refreshStatistics`. On
-        // croyait le réglage cassé alors qu'il était seulement en retard.
-        // Le jeton est retenu et rendu au `deinit` : la variante à bloc
-        // n'efface **pas** son observateur toute seule, contrairement à celle
-        // qui prend une cible. Le bloc restait enregistré après la fermeture de
-        // la fenêtre, et chaque document ouvert dans la session en laissait un
-        // de plus derrière lui.
+        // The status bar is the only piece of chrome whose visibility is a
+        // setting. Without this subscription, unchecking "Show statistics"
+        // did nothing visible: the bar only went away on the next
+        // keystroke, when some other path called `refreshStatistics`. The
+        // setting looked broken when it was only late.
+        // The token is retained and released in `deinit`: the block-based
+        // variant does **not** remove its observer by itself, unlike the
+        // one that takes a target. The block stayed registered after the
+        // window closed, and every document opened in the session left one
+        // more behind.
         settingsObserver = NotificationCenter.default.addObserver(
             forName: AppSettings.didChange, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshStatistics() }
             }
 
-        // Le premier répondeur doit être la vue de texte dès l'ouverture : dans
-        // une app d'écriture, le curseur clignote avant que la main ne quitte
-        // le clavier.
+        // The first responder must be the text view as soon as the window
+        // opens: in a writing app, the caret should be blinking before the
+        // hand leaves the keyboard.
         window.makeFirstResponder(editor.textView)
 
-        // **La taille est mémorisée, la position se décale.**
+        // **The size is remembered, the position shifts.**
         //
-        // Un nom d'autosauvegarde de cadre désactive la cascade d'AppKit : les
-        // fenêtres de deux documents ouverts côte à côte se superposaient au
-        // pixel près, et la seconde paraissait ne pas s'être ouverte. On garde
-        // donc le cadre enregistré — c'est lui qui rend la taille choisie — et
-        // on décale à la main dès qu'une autre fenêtre occupe déjà la place.
+        // A frame autosave name disables AppKit's window cascading: windows
+        // for two documents opened side by side landed pixel-for-pixel on
+        // top of each other, and the second looked like it hadn't opened at
+        // all. The saved frame is kept, since it restores the chosen size,
+        // and the window is shifted by hand whenever another window already
+        // occupies that spot.
         windowFrameAutosaveName = "FoveaDocumentWindow"
         if let taken = NSApp.windows.first(where: {
             $0 !== window && $0.isVisible && $0.frame.origin == window.frame.origin
@@ -147,42 +147,43 @@ final class DocumentWindowController: NSWindowController {
         editor.applyColumnLayout()
     }
 
-    /// Laisse au texte la hauteur que la barre de titre lui prend **vraiment**.
+    /// Gives the text back exactly the height the title bar **actually**
+    /// takes.
     ///
-    /// # Ce que les 64 points codés en dur ne voyaient pas
+    /// # What the hardcoded 64 points missed
     ///
-    /// La fenêtre est en `fullSizeContentView` : le contenu s'étend sous la
-    /// barre de titre, et c'est voulu — le texte défile derrière. Encore
-    /// faut-il ne pas *commencer* dessous.
+    /// The window is `fullSizeContentView`: the content extends under the
+    /// title bar, and that's intentional: the text scrolls behind it. It
+    /// still shouldn't *start* underneath it.
     ///
-    /// 64 points suffisaient à une barre de titre seule. Dès qu'un second
-    /// onglet s'ouvre, macOS ajoute la barre d'onglets par-dessus : la première
-    /// ligne visible était alors **coupée en deux** par son bord inférieur
-    /// pendant tout le défilement. Le plan, lui, posait déjà un retrait pour
-    /// exactement cette raison — mais lui aussi en dur.
+    /// 64 points was enough for a title bar alone. As soon as a second tab
+    /// opens, macOS adds a tab bar on top of it: the first visible line was
+    /// then **cut in half** by its bottom edge for the whole scroll. The
+    /// outline already had an inset for exactly this reason, but that one
+    /// was hardcoded too.
     ///
-    /// `contentLayoutRect` est la seule mesure juste : c'est AppKit qui dit ce
-    /// qu'il a pris.
+    /// `contentLayoutRect` is the only measurement that's accurate: it's
+    /// AppKit reporting what it actually took.
     private func applyTitleBarInset() {
         guard let window, let content = window.contentView else { return }
-        // 64 reste le **plancher** : c'est l'air voulu au-dessus du premier
-        // mot, pas une estimation de la barre de titre. Ce que la mesure
-        // apporte, c'est ce qui vient en plus — la barre d'onglets, qui prend
-        // près de quarante points et sous laquelle la première ligne visible
-        // était coupée en deux.
+        // 64 remains the **floor**: it's the breathing room wanted above
+        // the first word, not an estimate of the title bar. What the
+        // measurement adds is whatever comes on top of that: the tab bar,
+        // which takes close to forty points and under which the first
+        // visible line was cut in half.
         let taken = max(Theme.Space.s64, content.bounds.height - window.contentLayoutRect.height)
         guard abs(bannerTop.constant - taken) > 0.5 else { return }
         bannerTop.constant = taken
         outline.topInset = taken
     }
 
-    /// Le recomptage en attente. Voir `refreshStatistics`.
+    /// The pending recount. See `refreshStatistics`.
     private var pendingStatistics: DispatchWorkItem?
 
-    /// Rafraîchit la barre d'état.
+    /// Refreshes the status bar.
     ///
-    /// Appelée à chaque changement de sélection **et** à chaque frappe. La
-    /// barre étant masquable, on ne paie rien du tout quand elle est cachée.
+    /// Called on every selection change **and** on every keystroke. Since
+    /// the bar can be hidden, nothing is paid at all when it is.
     func refreshStatistics() {
         guard AppSettings.shared.showStatistics else {
             statusBar.isHidden = true
@@ -190,17 +191,17 @@ final class DocumentWindowController: NSWindowController {
         }
         statusBar.isHidden = false
 
-        // **Le comptage est repoussé, pas fait à chaque frappe.**
+        // **The count is debounced, not redone on every keystroke.**
         //
-        // Il exclut la syntaxe markdown, donc il parcourt le document entier et
-        // alloue au passage un drapeau par caractère : 26 ms sur 50 000 mots,
-        // mesuré. Appelé à chaque touche *et* à chaque déplacement du curseur,
-        // il était devenu le poste le plus cher du cycle de frappe — largement
-        // au-dessus du budget de 16 ms du §9 — pour un chiffre que personne ne
-        // lit pendant qu'il tape.
+        // It excludes markdown syntax, so it walks the whole document and
+        // allocates a flag per character along the way: 26 ms for 50,000
+        // words, measured. Called on every key *and* every caret move, it
+        // had become the most expensive step of the typing cycle, well
+        // above the 16 ms budget from §9, for a number nobody reads while
+        // typing.
         //
-        // Un quart de seconde de silence suffit : le compteur se met à jour
-        // dès qu'on lève les doigts, et la frappe ne le paie plus jamais.
+        // A quarter second of silence is enough: the counter updates as
+        // soon as the fingers lift, and typing never pays for it again.
         pendingStatistics?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -213,10 +214,10 @@ final class DocumentWindowController: NSWindowController {
     }
 }
 
-/// Une vue qui prévient quand elle vient d'être mise en page.
+/// A view that notifies when it has just been laid out.
 ///
-/// `NSViewController.viewDidLayout` ferait le même travail, mais imposerait un
-/// contrôleur de vue entier pour une seule ligne de rappel.
+/// `NSViewController.viewDidLayout` would do the same job, but would
+/// require a whole view controller for a single callback line.
 private final class LayoutObservingView: NSView {
     var onLayout: (() -> Void)?
 
@@ -230,23 +231,23 @@ private final class LayoutObservingView: NSView {
 
 extension DocumentWindowController: NSWindowDelegate {
 
-    /// On rend l'abonnement aux réglages ici plutôt qu'au `deinit` : celui-ci
-    /// est `nonisolated`, et le jeton d'un observateur ne traverse pas les
-    /// domaines d'isolement. La fermeture de la fenêtre est de toute façon le
-    /// moment exact où l'abonnement cesse d'avoir un objet.
+    /// The settings subscription is released here rather than in `deinit`:
+    /// the latter is `nonisolated`, and an observer token doesn't cross
+    /// isolation domains. The window closing is, in any case, the exact
+    /// moment the subscription stops having an object.
     func windowWillClose(_ notification: Notification) {
         if let settingsObserver {
             NotificationCenter.default.removeObserver(settingsObserver)
             self.settingsObserver = nil
         }
-        // La palette est une fenêtre à part : sans cela, elle survivrait au
-        // document qu'elle pilote.
+        // The palette is a separate window: without this, it would outlive
+        // the document it operates on.
         palette.dismiss()
         pendingStatistics?.cancel()
     }
 }
 
-// MARK: - Commandes de la barre de menus
+// MARK: - Menu bar commands
 
 extension DocumentWindowController: NSMenuItemValidation {
 
@@ -263,8 +264,8 @@ extension DocumentWindowController: NSMenuItemValidation {
     @objc func toggleTaskAtCaret(_ sender: Any?) { editor.toggleTaskAtCaret() }
 
     @objc func setHeadingLevel(_ sender: Any?) {
-        // Le niveau voyage dans le `tag` de l'entrée de menu : six entrées, une
-        // seule action, et le raccourci ⌘⌃n reste lisible dans le menu.
+        // The level travels in the menu item's `tag`: six entries, one
+        // action, and the ⌘⌃n shortcut stays readable in the menu.
         guard let item = sender as? NSMenuItem else { return }
         editor.setHeadingLevel(item.tag)
     }
@@ -285,8 +286,8 @@ extension DocumentWindowController: NSMenuItemValidation {
         else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        // Le RTF **et** le texte brut : une app qui ne sait pas lire le premier
-        // doit trouver le second plutôt que de coller un presse-papier vide.
+        // RTF **and** plain text: an app that can't read the former should
+        // find the latter instead of pasting an empty pasteboard.
         pasteboard.declareTypes([.rtf, .string], owner: nil)
         pasteboard.setData(rtf, forType: .rtf)
         pasteboard.setString(rich.string, forType: .string)
@@ -300,7 +301,7 @@ extension DocumentWindowController: NSMenuItemValidation {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.html]
         panel.nameFieldStringValue = (documentName as NSString).deletingPathExtension + ".html"
-        panel.message = "Un seul fichier, images comprises."
+        panel.message = "A single file, images included."
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let html = MarkdownExport.html(from: editor.text,
@@ -309,14 +310,14 @@ extension DocumentWindowController: NSMenuItemValidation {
         try? Data(html.utf8).write(to: url)
     }
 
-    /// Ouvre la feuille de partage du système sur le fichier lui-même.
+    /// Opens the system share sheet on the file itself.
     ///
-    /// C'est le `.md` qui part, pas un rendu : partager un document markdown,
-    /// c'est envoyer un fichier que le destinataire pourra rouvrir et modifier.
-    /// Qui veut un PDF a le menu Exporter juste au-dessus.
+    /// It's the `.md` that gets shared, not a render: sharing a markdown
+    /// document means sending a file the recipient can reopen and edit.
+    /// Anyone who wants a PDF has the Export menu right above.
     ///
-    /// Un document jamais enregistré n'a rien à partager ; l'entrée est alors
-    /// désactivée plutôt que d'ouvrir une feuille vide.
+    /// A document that has never been saved has nothing to share; the item
+    /// is disabled instead, rather than opening an empty sheet.
     @objc func shareDocument(_ sender: Any?) {
         guard let url: URL = document?.fileURL else { return }
         let picker = NSSharingServicePicker(items: [url])
@@ -333,19 +334,19 @@ extension DocumentWindowController: NSMenuItemValidation {
         exportPDF(to: url)
     }
 
-    /// Produit le PDF depuis une vue de rendu **jetable**, sans le chrome de
-    /// l'éditeur et tous marqueurs masqués (§4.6).
+    /// Produces the PDF from a **disposable** rendering view, without the
+    /// editor's chrome and with every marker hidden (§4.6).
     ///
-    /// Imprimer la vue d'édition elle-même donnerait sa largeur de colonne, sa
-    /// couleur de fond et son curseur. La pagination est confiée à
-    /// `NSPrintOperation` : découper à la main produirait des paragraphes
-    /// coupés en deux au bas des pages.
+    /// Printing the editing view itself would carry over its column width,
+    /// its background color and its caret. Pagination is left to
+    /// `NSPrintOperation`: splitting by hand would produce paragraphs cut in
+    /// half at the bottom of pages.
     private func exportPDF(to url: URL) {
         guard let rich = MarkdownExport.richText(from: editor.text, documentURL: editor.documentURL) else {
             return
         }
         let info = NSPrintInfo()
-        info.paperSize = NSSize(width: 595, height: 842)   // A4 à 72 ppp
+        info.paperSize = NSSize(width: 595, height: 842)   // A4 at 72 dpi
         info.topMargin = 64; info.bottomMargin = 64
         info.leftMargin = 64; info.rightMargin = 64
         info.horizontalPagination = .fit
@@ -372,18 +373,19 @@ extension DocumentWindowController: NSMenuItemValidation {
         (document as? NSDocument)?.displayName ?? "Document"
     }
 
-    // MARK: - Plan et palette (§4.5)
+    // MARK: - Outline and palette (§4.5)
 
     @objc func toggleOutline(_ sender: Any?) {
         let opening = outlineWidth.constant == 0
-        // La largeur **avant** le remplissage : `refreshOutline` se garde
-        // d'agir sur un panneau fermé, et l'appeler d'abord le laissait vide.
+        // The width **before** the fill: `refreshOutline` guards against
+        // acting on a closed panel, and calling it first left it empty.
         //
-        // **220 points, mais jamais plus du tiers de la fenêtre.** La largeur
-        // était fixe : dans une fenêtre de 430 points — au-dessus du minimum
-        // autorisé — le plan prenait plus de la moitié de la place et la colonne
-        // de texte tombait à une quinzaine de signes par ligne. Le plan sert à
-        // naviguer dans un document ; il ne doit pas empêcher de le lire.
+        // **220 points, but never more than a third of the window.** The
+        // width used to be fixed: in a 430-point window (above the allowed
+        // minimum), the outline took up more than half the space and the
+        // text column dropped to about fifteen characters per line. The
+        // outline is there to navigate a document; it shouldn't get in the
+        // way of reading it.
         let available = window?.frame.width ?? 820
         outlineWidth.constant = opening ? min(220, max(140, available / 3)) : 0
         if opening {
@@ -391,21 +393,23 @@ extension DocumentWindowController: NSMenuItemValidation {
             refreshOutlineHighlight()
         }
 
-        // « Réduire les animations » est un besoin, pas une préférence (§8) :
-        // le panneau s'ouvre quand même, il ne glisse simplement pas. Le
-        // réglage est lu par `Accessibility`, seul point d'entrée.
+        // "Reduce motion" is a need, not a preference (§8): the panel still
+        // opens, it just doesn't slide. The setting is read by
+        // `Accessibility`, the sole entry point.
         Accessibility.animate(0.2) {
             window?.contentView?.layoutSubtreeIfNeeded()
         } completion: {
-            // Le bloc de fin est appelé par AppKit sans isolement déclaré, mais
-            // toujours sur le thread principal — c'est lui qui anime.
+            // The completion block is called by AppKit with no declared
+            // isolation, but always on the main thread: it's the one
+            // animating.
             MainActor.assumeIsolated { [weak self] in self?.editor.applyColumnLayout() }
         }
     }
 
     @objc func showCommandPalette(_ sender: Any?) {
-        // Le raccourci qui ouvre referme : `⌘K` sur une palette déjà là la
-        // réinitialisait, ce qui ressemblait à une touche sans effet.
+        // The shortcut that opens also closes: `⌘K` on a palette that was
+        // already showing used to reset it, which looked like a key with no
+        // effect.
         guard !palette.isVisible else {
             palette.dismiss()
             return
@@ -413,77 +417,77 @@ extension DocumentWindowController: NSMenuItemValidation {
         palette.present(entries: paletteEntries(), relativeTo: window)
     }
 
-    /// Les commandes **et** les titres du document, dans la même liste.
+    /// Commands **and** the document's headings, in the same list.
     ///
-    /// Dans un document long, chercher un titre et y sauter est plus fréquent
-    /// que n'importe quelle commande — les séparer obligerait à choisir un
-    /// mode avant de savoir ce qu'on cherche.
+    /// In a long document, searching for a heading and jumping to it is
+    /// more frequent than any command; separating them would force a choice
+    /// of mode before even knowing what's being searched for.
     private func paletteEntries() -> [CommandPalette.Entry] {
-        // Les raccourcis sont **lus dans la barre de menus**, jamais écrits ici :
-        // macOS les remappe selon la disposition du clavier, et la palette
-        // était le seul endroit de l'app à en afficher — donc le seul à se
-        // tromper. Voir `MainMenu.shortcut(for:tag:)`.
+        // Shortcuts are **read from the menu bar**, never written here:
+        // macOS remaps them based on the keyboard layout, and the palette
+        // was the only place in the app that displayed them, so the only
+        // place that got them wrong. See `MainMenu.shortcut(for:tag:)`.
         let key = MainMenu.shortcut
         var entries: [CommandPalette.Entry] = [
-            .init(title: editor.isSourceMode ? "Masquer la source" : "Afficher la source",
+            .init(title: editor.isSourceMode ? "Hide Source" : "Show Source",
                   detail: key(#selector(toggleSourceMode(_:)), nil)) { [weak self] in
                       self?.editor.toggleSourceMode()
                   },
-            .init(title: outlineWidth.constant == 0 ? "Plan du document" : "Masquer le plan",
+            .init(title: outlineWidth.constant == 0 ? "Document Outline" : "Hide Outline",
                   detail: key(#selector(toggleOutline(_:)), nil)) { [weak self] in self?.toggleOutline(nil) },
-            .init(title: AppSettings.shared.focusMode ? "Désactiver le mode focus" : "Mode focus",
+            .init(title: AppSettings.shared.focusMode ? "Turn Off Focus Mode" : "Focus Mode",
                   detail: key(#selector(toggleFocusMode(_:)), nil)) { AppSettings.shared.focusMode.toggle() },
-            .init(title: AppSettings.shared.typewriterMode ? "Désactiver la machine à écrire" : "Machine à écrire",
+            .init(title: AppSettings.shared.typewriterMode ? "Turn Off Typewriter Mode" : "Typewriter Mode",
                   detail: key(#selector(toggleTypewriterMode(_:)), nil)) { AppSettings.shared.typewriterMode.toggle() },
-            .init(title: "Gras", detail: key(#selector(toggleBold(_:)), nil)) { [weak self] in
+            .init(title: "Bold", detail: key(#selector(toggleBold(_:)), nil)) { [weak self] in
                 self?.editor.wrapSelection(with: "**")
             },
-            .init(title: "Italique", detail: key(#selector(toggleItalic(_:)), nil)) { [weak self] in
+            .init(title: "Italic", detail: key(#selector(toggleItalic(_:)), nil)) { [weak self] in
                 self?.editor.wrapSelection(with: "*")
             },
             .init(title: "Code", detail: key(#selector(toggleInlineCode(_:)), nil)) { [weak self] in
                 self?.editor.wrapSelection(with: "`")
             },
-            .init(title: "Barré", detail: key(#selector(toggleStrikethrough(_:)), nil)) { [weak self] in
+            .init(title: "Strikethrough", detail: key(#selector(toggleStrikethrough(_:)), nil)) { [weak self] in
                 self?.editor.wrapSelection(with: "~~")
             },
-            .init(title: "Tableau…", detail: key(#selector(insertMarkdownTable(_:)), nil)) { [weak self] in
+            .init(title: "Table…", detail: key(#selector(insertMarkdownTable(_:)), nil)) { [weak self] in
                 self?.editor.presentTableSizePicker()
             },
-            .init(title: "Lien…", detail: key(#selector(insertLink(_:)), nil)) { [weak self] in
+            .init(title: "Link…", detail: key(#selector(insertLink(_:)), nil)) { [weak self] in
                 self?.editor.insertLink()
             },
-            .init(title: "Exporter en HTML autonome",
+            .init(title: "Export as Standalone HTML",
                   detail: key(#selector(exportHTML(_:)), nil)) { [weak self] in self?.exportHTML(nil) },
-            .init(title: "Exporter en PDF",
+            .init(title: "Export as PDF",
                   detail: key(#selector(exportPDF(_:)), nil)) { [weak self] in self?.exportPDF(nil) },
-            .init(title: "Copier en texte riche",
+            .init(title: "Copy as Rich Text",
                   detail: key(#selector(copyAsRichText(_:)), nil)) { [weak self] in self?.copyAsRichText(nil) },
-            .init(title: "Réglages",
+            .init(title: "Settings",
                   detail: key(#selector(AppDelegate.showSettings(_:)), nil)) {
                       SettingsWindowController.shared.present()
                   },
         ]
         for level in 1...3 {
-            entries.append(.init(title: "Titre \(level)",
+            entries.append(.init(title: "Heading \(level)",
                                  detail: key(#selector(setHeadingLevel(_:)), level)) { [weak self] in
                 self?.editor.setHeadingLevel(level)
             })
         }
 
         let text = editor.textView.textStorage?.mutableString ?? NSMutableString()
-        // Les marqueurs une fois pour tous les titres, comme dans le plan :
-        // les recalculer par titre est quadratique.
+        // The markers only once for all headings, like in the outline:
+        // recomputing them per heading would be quadratic.
         let markers = OutlinePanel.inlineMarkers(of: editor.spans)
         for span in editor.spans {
             guard case .heading(let level) = span.kind,
                   span.content.upperBound <= text.length else { continue }
-            // Le même texte que le plan : celui du document, pas de sa source.
-            // Un titre qui contient du gras s'y listait avec ses étoiles.
+            // The same text as the outline: the document's, not its source.
+            // A heading containing bold text used to list with its asterisks.
             let title = OutlinePanel.plainText(of: span.content, markers: markers, text: text)
             guard !title.isEmpty else { continue }
             entries.append(.init(title: title,
-                                 detail: "Titre \(level)") { [weak self] in
+                                 detail: "Heading \(level)") { [weak self] in
                 self?.goTo(span.range.location)
             })
         }
@@ -501,9 +505,9 @@ extension DocumentWindowController: NSMenuItemValidation {
         guard outlineWidth?.constant != 0 else { return }
         outline.update(spans: editor.spans,
                        text: editor.textView.textStorage?.mutableString ?? NSMutableString())
-        // Un rechargement défait la ligne en évidence : on la repose. Le plan
-        // se garde lui-même de recharger pour rien, donc c'est gratuit dans le
-        // cas courant.
+        // A reload clears the highlighted line: it's restored here. The
+        // outline already guards itself against reloading for nothing, so
+        // this is free in the common case.
         refreshOutlineHighlight()
     }
 
@@ -512,13 +516,13 @@ extension DocumentWindowController: NSMenuItemValidation {
         outline.highlight(caret: editor.textView.selectedRange().location)
     }
 
-    /// `NSWindowController` n'hérite pas de la validation : sans cette
-    /// conformité, les entrées resteraient grisées alors que les actions
-    /// existent. C'est aussi ici que les états cochés se mettent à jour.
+    /// `NSWindowController` doesn't inherit validation: without this
+    /// conformance, the items would stay grayed out even though the actions
+    /// exist. This is also where the checked states get updated.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(toggleSourceMode(_:)):
-            menuItem.title = editor.isSourceMode ? "Masquer la source" : "Afficher la source"
+            menuItem.title = editor.isSourceMode ? "Hide Source" : "Show Source"
 
         case #selector(toggleFocusMode(_:)):
             menuItem.state = AppSettings.shared.focusMode ? .on : .off
@@ -533,24 +537,24 @@ extension DocumentWindowController: NSMenuItemValidation {
             return document?.fileURL != nil
 
         case #selector(toggleTaskAtCaret(_:)):
-            // L'entrée dit ce qu'elle fera, et se grise hors d'une tâche plutôt
-            // que de ne rien faire quand on la choisit.
+            // The item says what it will do, and grays out outside a task
+            // rather than doing nothing when chosen.
             let caret = editor.textView.selectedRange().location
             let task = editor.spans.first { span in
                 guard case .taskItem(_, let checked) = span.kind,
                       RevealPolicy.contains(span.range, caret) else { return false }
-                menuItem.title = checked ? "Décocher la tâche" : "Cocher la tâche"
+                menuItem.title = checked ? "Uncheck Task" : "Check Task"
                 return true
             }
-            if task == nil { menuItem.title = "Cocher la tâche" }
+            if task == nil { menuItem.title = "Check Task" }
             return task != nil && !editor.isSourceMode
 
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)),
              #selector(toggleStrikethrough(_:)), #selector(toggleInlineCode(_:)),
              #selector(insertLink(_:)), #selector(insertMarkdownTable(_:)), #selector(setHeadingLevel(_:)):
-            // Le mode source montre le fichier tel qu'il est : y appliquer un
-            // formatage par raccourci reviendrait à écrire des étoiles à
-            // l'aveugle dans du texte brut.
+            // Source mode shows the file exactly as it is: applying
+            // formatting through a shortcut there would mean writing
+            // asterisks blindly into plain text.
             return !editor.isSourceMode
 
         default:

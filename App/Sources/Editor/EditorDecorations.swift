@@ -1,100 +1,100 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Ce qui est **dessiné** plutôt qu'écrit.
+/// What is **drawn** rather than written.
 ///
-/// # Pourquoi cette couche existe
+/// # Why this layer exists
 ///
-/// Masquer `- ` fait disparaître le tiret, mais ne fait apparaître aucune
-/// puce. Or le §3.1 interdit d'insérer le moindre caractère dans le tampon :
-/// un `•` ajouté au texte se retrouverait dans le fichier.
+/// Masking `- ` makes the dash disappear, but doesn't make any
+/// bullet appear. And §3.1 forbids inserting even a single character into the buffer:
+/// a `•` added to the text would end up in the file.
 ///
-/// La sortie est de **dessiner derrière le texte**. La puce, la barre de
-/// citation, le filet horizontal et le fond des blocs de code n'existent nulle
-/// part dans le document : ce sont des marques posées par l'éditeur, au même
-/// titre qu'un curseur.
+/// The way out is to **draw behind the text**. The bullet, the blockquote
+/// bar, the horizontal rule and the code block background don't exist
+/// anywhere in the document: they're marks applied by the editor, the same
+/// way a caret is.
 ///
-/// Le fond des blocs de code y gagne aussi en qualité. Un `.backgroundColor`
-/// posé caractère par caractère produit un liseré dentelé qui s'arrête au
-/// dernier signe de chaque ligne ; dessiné, c'est un rectangle arrondi propre
-/// qui couvre toute la colonne.
+/// The code block background gains quality this way too. A `.backgroundColor`
+/// applied character by character produces a jagged fringe that stops at the
+/// last character of each line; drawn instead, it's a clean rounded rectangle
+/// that covers the whole column.
 struct EditorDecoration {
 
     enum Kind: Equatable {
-        /// Barre verticale à gauche d'une citation.
+        /// Vertical bar to the left of a blockquote.
         case quoteBar
-        /// Puce ou numéro d'un item de liste, dessiné dans le retrait.
+        /// Bullet or number of a list item, drawn in the indent.
         case listMarker(String)
-        /// Case à cocher d'une liste de tâches.
+        /// Checkbox of a task list.
         case checkbox(checked: Bool)
-        /// Filet horizontal d'un `---`.
+        /// Horizontal rule from a `---`.
         case rule
-        /// Fond arrondi d'un bloc de code.
+        /// Rounded background of a code block.
         case codeBackground
-        /// Une image rendue dans le flux (§4.4).
+        /// An image rendered inline (§4.4).
         case image(source: String, alt: String)
-        /// Un des filets horizontaux d'un tableau (§2.6).
+        /// One of a table's horizontal rules (§2.6).
         case tableRule(TableRule, width: CGFloat)
-        /// Les filets verticaux entre les colonnes, sur toute la hauteur du
-        /// tableau. Les abscisses viennent de `TableLayout`, celle-là même qui a
-        /// posé le crénage : les filets tombent donc exactement entre les
-        /// colonnes, et non à côté.
+        /// The vertical rules between columns, spanning the full height of the
+        /// table. The x-coordinates come from `TableLayout`, the same one that
+        /// applied the kerning: the rules therefore land exactly between the
+        /// columns, not beside them.
         case tableColumns(x: [CGFloat], width: CGFloat)
     }
 
-    /// Où se pose un filet horizontal dans la plage qui le porte.
+    /// Where a horizontal rule sits within the range that carries it.
     ///
-    /// # Ce qui a changé, et pourquoi
+    /// # What changed, and why
     ///
-    /// Il n'y en avait que trois — en haut, sous l'en-tête, en bas — au motif
-    /// qu'« un cadre complet avec ses traits verticaux donnerait une feuille de
-    /// calcul au milieu d'un texte ». L'intention était bonne, le résultat ne
-    /// l'était pas : sans séparation, on ne voit **pas les cellules**. Trois
-    /// colonnes alignées sans rien entre elles se lisent comme trois listes
-    /// posées côte à côte, pas comme un tableau.
+    /// There used to be only three — top, under the header, bottom — on the
+    /// grounds that "a full frame with vertical lines would look like a spreadsheet
+    /// in the middle of a text". The intent was good, the result
+    /// wasn't: without separation, the cells **aren't visible**. Three
+    /// columns aligned with nothing between them read like three lists
+    /// placed side by side, not like a table.
     ///
-    /// La grille est donc complète — un filet sous chaque rangée, un entre
-    /// chaque colonne — mais tracée dans la couleur des séparateurs, à 10 % :
-    /// assez pour structurer, trop peu pour faire du bruit. La discrétion se
-    /// joue sur la valeur du trait, pas sur son absence.
+    /// The grid is therefore complete — a rule under every row, one between
+    /// every column — but drawn in the separator color, at 10%:
+    /// enough to structure, too little to add noise. Discretion is achieved
+    /// through the weight of the line, not its absence.
     enum TableRule: Equatable {
-        /// Au sommet de la première ligne.
+        /// At the top of the first row.
         case top
-        /// Au milieu de la ligne de délimitation, dont la hauteur a été réduite
-        /// pour lui faire exactement cette place. Plus appuyé que les autres.
+        /// In the middle of the delimiter row, whose height has been reduced
+        /// to make exactly this much room for it. Bolder than the others.
         case header
-        /// Sous une rangée de contenu.
+        /// Under a content row.
         case row
-        /// Sous la dernière ligne.
+        /// Under the last row.
         case bottom
     }
 
     var kind: Kind
-    /// La plage de texte sur laquelle la marque s'appuie pour trouver sa place.
+    /// The text range the mark relies on to find its position.
     var range: NSRange
-    /// Retrait de gauche du paragraphe porteur, en points.
+    /// Left indent of the carrying paragraph, in points.
     var indent: CGFloat
 }
 
 extension EditorDecoration {
 
-    /// Construit les décorations à partir des constructions repérées.
+    /// Builds decorations from the detected constructs.
     ///
-    /// - Parameter revealed: les constructions que le curseur touche.
+    /// - Parameter revealed: the constructs the caret touches.
     ///
-    /// # La règle : une marque dessinée **remplace** une source masquée
+    /// # The rule: a drawn mark **replaces** a masked source
     ///
-    /// Une marque n'existe que parce que sa syntaxe est cachée. Dès que la
-    /// source réapparaît, la marque doit donc s'effacer, sans quoi l'écran
-    /// affiche deux fois la même chose — et c'était le cas : un item de liste
-    /// sous le curseur montrait `• - Un item`, la puce dessinée par l'éditeur
-    /// juste à côté du tiret du fichier. Voir aussi la puce et le tiret dans un
-    /// filet horizontal, dont le trait barrait les `---` revenus.
+    /// A mark exists only because its syntax is hidden. As soon as the
+    /// source reappears, the mark must therefore disappear, otherwise the screen
+    /// shows the same thing twice — and that was the case: a list item
+    /// under the caret showed `• - An item`, the bullet drawn by the editor
+    /// right next to the file's dash. See also the bullet and dash of a
+    /// horizontal rule, whose drawn line used to strike through the reappeared `---`.
     ///
-    /// Deux exceptions, et elles se justifient : la barre d'une citation et le
-    /// fond d'un bloc de code ne **remplacent** rien — ils cadrent un bloc, et
-    /// ce bloc existe autant sous le curseur qu'ailleurs.
+    /// Two exceptions, and they're justified: a blockquote's bar and a
+    /// code block's background **replace** nothing — they frame a block, and
+    /// that block exists just as much under the caret as anywhere else.
     @MainActor
     static func build(from spans: [SyntaxSpan],
                       in storage: NSTextStorage,
@@ -106,8 +106,8 @@ extension EditorDecoration {
         for (index, span) in spans.enumerated() {
             let isRevealed = revealed.contains(index)
             switch span.kind {
-            // Les filets ne s'effacent plus sous le curseur : la grille non plus.
-            // On écrit dedans, elle doit donc rester cadrée pendant qu'on écrit.
+            // The rules no longer disappear under the caret: neither does the grid.
+            // Editing happens inside it, so it must stay framed while being edited.
             case .table(let table?):
                 decorations.append(contentsOf: rules(for: table, in: storage, typography: typography,
                                                      availableWidth: availableWidth))
@@ -136,8 +136,8 @@ extension EditorDecoration {
                                                     range: span.range,
                                                     indent: typography.codeBlockIndent))
 
-            // Une image au fil du texte ne se dessine pas : il n'y a pas de place
-            // réservée où la mettre. Voir `MarkdownRenderer.isBlockImage`.
+            // An inline image isn't drawn: there's no reserved
+            // space to put it in. See `MarkdownRenderer.isBlockImage`.
             case .image(let source, let alt)
                 where !isRevealed && MarkdownRenderer.isBlockImage(span, in: text):
                 decorations.append(EditorDecoration(kind: .image(source: source, alt: alt),
@@ -151,12 +151,12 @@ extension EditorDecoration {
         return decorations
     }
 
-    /// Cette construction a-t-elle une marque dessinée qui dépend de son état de
-    /// révélation ?
+    /// Does this construct have a drawn mark that depends on its reveal
+    /// state?
     ///
-    /// Sert au cycle de déplacement du curseur, qui ne doit reconstruire la
-    /// couche de décoration que lorsqu'elle a réellement changé — c'est
-    /// l'opération la plus fréquente de l'app (§9).
+    /// Used by the caret-movement cycle, which must rebuild the
+    /// decoration layer only when it has actually changed — this is
+    /// the app's most frequent operation (§9).
     static func hasRevealDependentMark(_ kind: SyntaxSpan.Kind) -> Bool {
         switch kind {
         case .table, .listItem, .taskItem, .thematicBreak, .image: true
@@ -164,16 +164,16 @@ extension EditorDecoration {
         }
     }
 
-    /// La grille d'un tableau, ou rien si elle ne tient pas dans la colonne —
-    /// auquel cas le rendu montre la source, qu'il ne faut pas cadrer comme une
-    /// grille.
+    /// A table's grid, or nothing if it doesn't fit in the column —
+    /// in which case the render shows the source, which must not be framed as a
+    /// grid.
     @MainActor
     private static func rules(for table: MarkdownTable,
                               in storage: NSTextStorage,
                               typography: EditorTypography,
                               availableWidth: CGFloat?) -> [EditorDecoration] {
-        // La même largeur que celle qui a posé le crénage : deux mesures
-        // différentes donneraient des filets à côté des colonnes.
+        // The same width used to apply the kerning: two different
+        // measurements would give rules that land beside the columns.
         let renderer = MarkdownRenderer(typography: typography, availableWidth: availableWidth)
         guard let layout = renderer.gridLayout(for: table, in: storage),
               let first = table.rows.first, let last = table.rows.last else { return [] }
@@ -185,17 +185,17 @@ extension EditorDecoration {
             EditorDecoration(kind: .tableRule(.bottom, width: width), range: last.line, indent: 0),
         ]
 
-        // Un filet sous chaque rangée, sauf la dernière — le filet du bas y est
-        // déjà, et deux traits au même endroit se voient.
+        // A rule under every row except the last — the bottom rule is
+        // already there, and two lines at the same spot are visible.
         for row in table.rows.dropFirst().dropLast() {
             decorations.append(EditorDecoration(kind: .tableRule(.row, width: width),
                                                 range: row.line, indent: 0))
         }
 
-        // Les filets entre colonnes, **plus les deux bords**. Sans eux la grille
-        // était ouverte à gauche et à droite : les filets horizontaux
-        // s'arrêtaient en l'air, et un tableau se lisait comme des lignes
-        // soulignées plutôt que comme une boîte.
+        // The rules between columns, **plus the two edges**. Without them the grid
+        // was open on the left and right: the horizontal rules
+        // stopped in mid-air, and a table read like underlined
+        // lines rather than a box.
         var separators = table.alignments.indices.compactMap { layout.separatorX(before: $0) }
         separators.append(0)
         separators.append((width - 1).rounded())
@@ -208,13 +208,13 @@ extension EditorDecoration {
         return decorations
     }
 
-    /// La puce d'une liste à puces est toujours `•`, quel que soit le signe
-    /// écrit : `-`, `*` et `+` veulent dire la même chose, et rendre trois
-    /// symboles différents ferait croire à trois listes différentes.
+    /// A bulleted list's bullet is always `•`, whatever character it's
+    /// written with: `-`, `*` and `+` mean the same thing, and rendering three
+    /// different symbols would suggest three different lists.
     ///
-    /// Le numéro d'une liste ordonnée, lui, est celui du fichier et non celui
-    /// que l'éditeur recalculerait : un document où l'auteur a écrit `1.` sur
-    /// chaque ligne doit se lire tel qu'il l'a écrit.
+    /// A numbered list's number, on the other hand, is the one from the file, not
+    /// one the editor would recalculate: a document where the author wrote `1.` on
+    /// every line must read exactly as they wrote it.
     private static func symbol(for marker: SyntaxSpan.ListMarker) -> String {
         switch marker {
         case .bullet: "•"
@@ -223,19 +223,19 @@ extension EditorDecoration {
     }
 }
 
-// MARK: - Dessin
+// MARK: - Drawing
 
 @MainActor
 struct DecorationPainter {
 
     var typography: EditorTypography
-    /// L'emplacement du document, pour résoudre les chemins d'image relatifs.
+    /// The document's location, to resolve relative image paths.
     var documentURL: URL?
 
-    /// Dessine les marques dans la vue, derrière le texte.
+    /// Draws the marks in the view, behind the text.
     ///
-    /// - Parameter dirtyRect: en coordonnées de la vue. Les marques hors champ
-    ///   sont écartées avant tout calcul de position, qui est la partie chère.
+    /// - Parameter dirtyRect: in view coordinates. Off-screen marks
+    ///   are discarded before any position calculation, which is the expensive part.
     func draw(_ decorations: [EditorDecoration],
               in view: NSTextView,
               dirtyRect: NSRect) {
@@ -256,22 +256,22 @@ struct DecorationPainter {
     }
 
     /// - Parameters:
-    ///   - frame: la place du texte porteur, **en coordonnées de la vue**.
-    ///   - columnLeft: l'abscisse du bord gauche de la colonne, dans les mêmes
-    ///     coordonnées. Sans elle, tout ce qui doit s'étendre sur la largeur de
-    ///     la colonne se calculait en mélangeant deux repères : les filets et le
-    ///     fond des blocs de code recevaient `columnWidth - frame.minX * 2`, où
-    ///     `frame.minX` comptait déjà la marge de centrage. Dans une fenêtre
-    ///     large — 1512 points, colonne de 612 —, cette largeur valait **−288** :
-    ///     les trois filets d'un tableau, le filet horizontal et le fond des
-    ///     blocs de code se dessinaient à l'envers, entièrement dans la marge
-    ///     gauche. Le défaut ne se voyait pas dans la fenêtre par défaut, où la
-    ///     marge est assez étroite pour que le compte reste positif.
-    ///   - columnWidth: la largeur du conteneur de texte.
+    ///   - frame: the position of the carrying text, **in view coordinates**.
+    ///   - columnLeft: the x-coordinate of the column's left edge, in the same
+    ///     coordinate space. Without it, anything meant to span the width of
+    ///     the column was computed by mixing two coordinate systems: the rules and the
+    ///     code block background received `columnWidth - frame.minX * 2`, where
+    ///     `frame.minX` already counted the centering margin. In a
+    ///     wide window — 1512 points, 612-point column — this width came out to **−288**:
+    ///     the three rules of a table, the horizontal rule and the
+    ///     code block background were drawn backwards, entirely in the left
+    ///     margin. The bug wasn't visible in the default window, where the
+    ///     margin is narrow enough for the count to stay positive.
+    ///   - columnWidth: the width of the text container.
     private func paint(_ decoration: EditorDecoration, at frame: NSRect,
                        columnLeft: CGFloat, columnWidth: CGFloat) {
-        /// La bande occupée par la colonne à la hauteur du texte porteur, une
-        /// fois retiré de chaque côté le retrait du paragraphe porteur.
+        /// The band occupied by the column at the height of the carrying text, once
+        /// the carrying paragraph's indent has been removed from each side.
         func columnSpan(inset: CGFloat) -> (x: CGFloat, width: CGFloat) {
             let indent = max(0, frame.minX - inset - columnLeft)
             return (columnLeft + indent, max(0, columnWidth - indent * 2))
@@ -279,16 +279,16 @@ struct DecorationPainter {
 
         switch decoration.kind {
         case .quoteBar:
-            // Le texte est retiré de `indent` ; la barre se pose au tiers de
-            // cet espace, ce qui lui laisse de l'air des deux côtés.
+            // The text is inset by `indent`; the bar is placed a third of the way into
+            // that space, which leaves it air on both sides.
             //
-            // **La hauteur n'est pas celle du cadre.** Avec un interlignage
-            // supérieur à 1, TextKit ajoute tout son surplus **au-dessus** du
-            // texte : le rectangle d'une ligne commence donc bien plus haut que
-            // la première lettre, et la barre dépassait d'autant — très visible
-            // sur une citation d'une seule ligne, où il n'y a rien pour
-            // rattraper l'œil. On retire ce surplus en haut ; en bas, le cadre
-            // s'arrête déjà sur le jambage.
+            // **The height isn't that of the frame.** With line spacing
+            // greater than 1, TextKit adds all of its surplus **above** the
+            // text: a line's rectangle therefore starts well above
+            // the first letter, and the bar overshot by that much — very visible
+            // on a single-line blockquote, where there's nothing to
+            // catch the eye. That surplus is removed at the top; at the bottom, the frame
+            // already stops at the descender.
             let leading = max(0, typography.lineHeight - (typography.body.ascender - typography.body.descender))
             let bar = NSRect(x: frame.minX - decoration.indent + (decoration.indent - 2) / 3,
                              y: frame.minY + leading,
@@ -303,13 +303,13 @@ struct DecorationPainter {
                 .foregroundColor: Theme.NS.labelTertiary,
             ]
             let size = (symbol as NSString).size(withAttributes: attributes)
-            // Aligné à droite sur l'écart : les numéros à deux chiffres restent
-            // alors alignés avec ceux à un chiffre, ce qui est le seul moyen de
-            // rendre une liste de dix items lisible.
-            // Alignée par le **bas** et non centrée dans la boîte de ligne.
-            // Avec un interlignage supérieur à 1, TextKit ajoute son surplus
-            // au-dessus du texte : centrer la puce dans la boîte la ferait
-            // flotter nettement plus haut que la ligne qu'elle introduit.
+            // Right-aligned against the gap: two-digit numbers then stay
+            // aligned with single-digit ones, which is the only way to
+            // make a ten-item list readable.
+            // Aligned by the **bottom**, not centered in the line box.
+            // With line spacing greater than 1, TextKit adds its surplus
+            // above the text: centering the bullet in the box would make it
+            // float noticeably higher than the line it introduces.
             let point = NSPoint(x: frame.minX - size.width - typography.listMarkerGap,
                                 y: frame.maxY - size.height)
             (symbol as NSString).draw(at: point, withAttributes: attributes)
@@ -321,13 +321,13 @@ struct DecorationPainter {
             if checked {
                 Theme.NS.label.setFill()
                 path.fill()
-                // La coche est tracée en négatif dans le carré plein : pas de
-                // couleur, seulement du contraste (§7).
+                // The check mark is drawn in negative within the filled square: no
+                // color, only contrast (§7).
                 //
-                // Les ordonnées descendent : `NSTextView` est une vue
-                // retournée, et le tracé lu « vers le haut » y dessinait un
-                // chevron à l'envers. Le point bas de la coche est donc celui
-                // dont l'ordonnée est la plus **grande**.
+                // Y-coordinates go downward: `NSTextView` is a
+                // flipped view, and a path read as going "upward" would draw an
+                // upside-down chevron there. The check mark's bottom point is therefore the one
+                // with the **largest** y-coordinate.
                 let check = NSBezierPath()
                 check.move(to: NSPoint(x: box.minX + side * 0.24, y: box.minY + side * 0.52))
                 check.line(to: NSPoint(x: box.minX + side * 0.43, y: box.minY + side * 0.72))
@@ -344,8 +344,8 @@ struct DecorationPainter {
             }
 
         case .rule:
-            // Le filet occupe toute la colonne, pas la largeur des trois tirets
-            // invisibles sur lesquels il s'appuie.
+            // The rule spans the whole column, not the width of the three
+            // invisible dashes it rests on.
             let span = columnSpan(inset: 0)
             let rule = NSRect(x: span.x, y: frame.midY - 0.5, width: span.width, height: 1)
             Theme.NS.separator.setFill()
@@ -355,25 +355,25 @@ struct DecorationPainter {
             paint(image: source, alt: alt, at: frame, columnWidth: columnWidth)
 
         case .tableRule(let position, let width):
-            // Le filet d'en-tête est plus appuyé que les autres : c'est lui qui
-            // sépare les titres des données, et c'est la séparation dont un
-            // tableau de prose a le plus besoin.
+            // The header rule is bolder than the others: it's the one that
+            // separates the titles from the data, and it's the separation a
+            // prose table needs most.
             let drop = MarkdownRenderer.rowRuleOffset(typography)
             let y: CGFloat = switch position {
             case .top: frame.minY + drop
             case .header: (frame.midY - 0.5).rounded() + drop
             case .row, .bottom: frame.maxY - 1 + drop
             }
-            // La largeur est celle de la **grille**, pas celle de la colonne de
-            // texte : un filet qui court jusqu'au bord droit autour d'un tableau
-            // de trois mots ne cadre rien, il souligne du vide.
+            // The width is that of the **grid**, not that of the text
+            // column: a rule that runs to the right edge around a three-word
+            // table frames nothing, it underlines empty space.
             let rule = NSRect(x: frame.minX, y: y, width: width, height: 1)
             (position == .header ? Theme.NS.labelTertiary : Theme.NS.separator).setFill()
             NSBezierPath(rect: rule).fill()
 
         case .tableColumns(let positions, _):
-            // Décalés comme les filets horizontaux, sinon la grille se disloque
-            // d'un demi-interligne à chaque croisement.
+            // Shifted the same way as the horizontal rules, otherwise the grid comes
+            // apart by half a line height at every crossing.
             let drop = MarkdownRenderer.rowRuleOffset(typography)
             Theme.NS.separator.setFill()
             for x in positions {
@@ -395,25 +395,25 @@ struct DecorationPainter {
         }
     }
 
-    /// Dessine l'image, ou son cadre d'absence.
+    /// Draws the image, or its missing-image frame.
     ///
-    /// La place a déjà été réservée par `minimumLineHeight` sur le paragraphe :
-    /// ici on ne fait que peindre dedans.
+    /// The space has already been reserved via `minimumLineHeight` on the paragraph:
+    /// this just paints into it.
     private func paint(image source: String, alt: String, at frame: NSRect, columnWidth: CGFloat) {
         switch ImageStore.shared.entry(for: source, relativeTo: documentURL) {
         case .loaded(let image, let animated):
             let size = ImageStore.displaySize(of: image, columnWidth: columnWidth)
             let box = NSRect(x: frame.minX, y: frame.minY, width: size.width, height: size.height)
             NSGraphicsContext.current?.imageInterpolation = .high
-            // `.sourceOver` et non `.copy` : une image à canal alpha doit se
-            // composer sur le fond, pas le remplacer par du transparent.
+            // `.sourceOver`, not `.copy`: an image with an alpha channel must
+            // composite over the background, not replace it with transparency.
             image.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
-            // §6 : seule la première trame est dessinée. Le dire évite de
-            // laisser croire que l'animation est cassée.
-            if animated { paintTag("Animé", in: box) }
+            // §6: only the first frame is drawn. Stating this avoids
+            // suggesting the animation is broken.
+            if animated { paintTag("Animated", in: box) }
 
         case .oversized(let thumbnail, let bytes):
-            // Le fichier existe : l'annoncer « introuvable » serait faux.
+            // The file exists: labeling it "not found" would be wrong.
             let size = thumbnail.map { ImageStore.displaySize(of: $0, columnWidth: columnWidth) }
                 ?? NSSize(width: min(columnWidth, 420), height: ImageStore.missingPlaceholderHeight - 8)
             let box = NSRect(x: frame.minX, y: frame.minY, width: size.width, height: size.height)
@@ -421,11 +421,11 @@ struct DecorationPainter {
                 NSGraphicsContext.current?.imageInterpolation = .high
                 thumbnail.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1)
             }
-            paintTag("\(bytes / (1024 * 1024)) Mo — aperçu", in: box)
+            paintTag("\(bytes / (1024 * 1024)) MB — preview", in: box)
 
         case .missing:
-            // §6 : un cadre au trait avec le chemin, et jamais un espace vide
-            // qui laisserait croire à un bug de l'éditeur.
+            // §6: an outlined frame with the path, and never an empty space
+            // that would suggest a bug in the editor.
             let box = NSRect(x: frame.minX, y: frame.minY,
                              width: min(columnWidth, 420),
                              height: ImageStore.missingPlaceholderHeight - 8)
@@ -434,7 +434,7 @@ struct DecorationPainter {
             Theme.NS.separator.setStroke()
             path.stroke()
 
-            let title = alt.isEmpty ? "Image introuvable" : "Image introuvable — \(alt)"
+            let title = alt.isEmpty ? "Image not found" : "Image not found — \(alt)"
             draw(title, in: box, at: 8, font: typography.uiFont(size: 12, weight: .medium),
                  color: Theme.NS.labelSecondary)
             draw(source, in: box, at: 26, font: typography.uiFont(size: 11, weight: .regular),
@@ -442,10 +442,10 @@ struct DecorationPainter {
         }
     }
 
-    /// Une pastille discrète dans le coin bas-gauche d'une image.
+    /// A discreet pill in the bottom-left corner of an image.
     ///
-    /// Posée sur l'image et non à côté : elle décrit cette image-là, et une
-    /// ligne de texte en dessous décalerait tout ce qui suit.
+    /// Placed on the image, not beside it: it describes that specific image, and a
+    /// line of text underneath would shift everything that follows.
     private func paintTag(_ text: String, in box: NSRect) {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: typography.uiFont(size: 10, weight: .medium),
@@ -472,17 +472,17 @@ struct DecorationPainter {
             withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: style])
     }
 
-    /// La case à cocher d'un item de tâche, posée à gauche de son texte.
+    /// A task item's checkbox, placed to the left of its text.
     ///
-    /// Alignée par le **bas** de la ligne et non centrée dans sa boîte : avec un
-    /// interlignage supérieur à 1, TextKit ajoute son surplus au-dessus du
-    /// texte, et une case centrée flotterait au-dessus de la ligne qu'elle
-    /// introduit. Le cheveu retiré en plus compense le jambage.
+    /// Aligned by the **bottom** of the line, not centered in its box: with
+    /// line spacing greater than 1, TextKit adds its surplus above the
+    /// text, and a centered box would float above the line it
+    /// introduces. The extra hair's-width removed compensates for the descender.
     ///
-    /// Une seule définition, parce qu'elle a deux lecteurs : le dessin, et le
-    /// clic qui coche (§2.5). Deux copies auraient divergé au premier
-    /// changement d'interlignage, et la case aurait cessé de répondre là où
-    /// elle se voit.
+    /// A single definition, because it has two readers: the drawing, and the
+    /// click that checks it (§2.5). Two copies would have diverged at the first
+    /// line-spacing change, and the box would have stopped responding where
+    /// it appears.
     func checkboxBox(at frame: NSRect) -> NSRect {
         let side = typography.bodySize * 0.8
         return NSRect(x: frame.minX - side - typography.listMarkerGap,
@@ -490,20 +490,20 @@ struct DecorationPainter {
                       width: side, height: side)
     }
 
-    /// Les cases à cocher affichées, avec la plage de la tâche qu'elles portent.
+    /// The displayed checkboxes, with the range of the task each one carries.
     ///
-    /// La zone sensible est élargie de quelques points autour du dessin : une
-    /// case fait treize points de côté à la taille par défaut, et viser
-    /// treize points à la souris n'est pas une expérience qu'on inflige. Elle
-    /// sert au clic **et** au pointeur, qui doivent répondre exactement à la
-    /// même surface — un pointeur qui change sans que le clic ne fasse rien est
-    /// pire que pas de pointeur du tout.
+    /// The hit area is widened by a few points around the drawing: a
+    /// box is thirteen points to a side at the default size, and aiming for
+    /// thirteen points with the mouse isn't an experience worth inflicting on anyone.
+    /// It's used both for the click **and** the pointer, which must respond to exactly
+    /// the same surface: a pointer that changes without the click doing anything is
+    /// worse than no pointer at all.
     ///
-    /// Seules les cases **visibles** sont calculées, et pour la même raison que
-    /// le dessin : demander la position d'une case met en page la portion du
-    /// document où elle se trouve. Ce que la souris ne peut pas atteindre n'a
-    /// de toute façon pas de zone à poser — `resetCursorRects` ne s'intéresse
-    /// qu'au champ visible, et un clic ne tombe jamais ailleurs.
+    /// Only **visible** boxes are computed, for the same reason as
+    /// the drawing: asking for a box's position lays out the portion of the
+    /// document it's in. What the mouse can't reach has
+    /// no hit zone to place anyway: `resetCursorRects` only cares
+    /// about the visible field, and a click never lands anywhere else.
     func checkboxTargets(among decorations: [EditorDecoration],
                          in view: NSTextView) -> [(range: NSRange, box: NSRect)] {
         guard let layout = view.textLayoutManager, let content = view.textContentStorage else { return [] }
@@ -520,45 +520,45 @@ struct DecorationPainter {
         }
     }
 
-    /// La tâche dont la case se trouve sous ce point, en coordonnées de la vue.
+    /// The task whose box is under this point, in view coordinates.
     func task(at point: NSPoint, among decorations: [EditorDecoration],
               in view: NSTextView) -> NSRange? {
         checkboxTargets(among: decorations, in: view).first { $0.box.contains(point) }?.range
     }
 
-    /// La plage de caractères couverte par une bande de la vue.
+    /// The character range covered by a band of the view.
     ///
-    /// # Le défaut que ce calcul répare
+    /// # The bug this calculation fixes
     ///
-    /// La boucle de dessin écartait bien les marques hors champ — mais
-    /// **après** avoir demandé leur position. Or demander la position d'une
-    /// plage force TextKit 2 à la mettre en page, et il y a une marque par
-    /// item de liste, par citation et par bloc de code du document. Peindre le
-    /// fond mettait donc en page le document **entier**, à chaque passe de
-    /// dessin, depuis l'intérieur de cette passe.
+    /// The drawing loop did discard off-screen marks — but
+    /// **after** asking for their position. And asking for a range's position
+    /// forces TextKit 2 to lay it out, and there's one mark per
+    /// list item, per blockquote and per code block in the document. Painting the
+    /// background therefore laid out the **entire** document, on every
+    /// drawing pass, from inside that very pass.
     ///
-    /// Mesuré sur 40 000 mots : la hauteur mise en page passait de 634 points
-    /// — le seul écran visible — à 35 160 pendant le dessin, en 56 ms. La vue
-    /// de texte se redimensionnait donc au milieu de son propre affichage, la
-    /// vue de défilement rattrapait, et le texte sautait sous le curseur. Le
-    /// même calcul relancé après une frappe coûtait 283 ms : la frappe invalide
-    /// la mise en page, et le dessin suivant la refaisait en entier.
+    /// Measured on 40,000 words: the laid-out height went from 634 points
+    /// — just the visible screen — to 35,160 during drawing, in 56 ms. The text
+    /// view was therefore resizing itself in the middle of its own display, the
+    /// scroll view was catching up, and the text jumped under the caret. The
+    /// same calculation re-run after a keystroke cost 283 ms: the keystroke invalidates
+    /// the layout, and the next drawing pass redid it entirely.
     ///
-    /// La bande est prise en coordonnées de la vue et convertie en plage de
-    /// caractères par les fragments qui la bordent — ce que la mise en page du
-    /// viewport a déjà calculé, donc gratuit. Une marque dont la plage ne la
-    /// touche pas ne coûte plus rien du tout.
+    /// The band is taken in view coordinates and converted to a character
+    /// range via the fragments bordering it — something the viewport's layout
+    /// has already computed, so it's free. A mark whose range doesn't
+    /// touch it now costs nothing at all.
     ///
-    /// - Returns: `nil` quand la bande ne peut pas être résolue, auquel cas
-    ///   rien n'est écarté : mieux vaut un dessin lent qu'un dessin absent.
+    /// - Returns: `nil` when the band can't be resolved, in which case
+    ///   nothing is discarded: a slow drawing pass is better than no drawing at all.
     private func characterRange(coveredBy band: NSRect,
                                 in view: NSTextView,
                                 layout: NSTextLayoutManager,
                                 content: NSTextContentStorage) -> NSRange? {
-        // De quoi couvrir ce qu'une marque déborde de son texte porteur :
-        // l'espace au-dessus d'un titre, la marge d'un fond de bloc de code.
-        // Un bloc qui traverse la bande, lui, est retenu par sa plage — elle
-        // couvre les caractères visibles — quelle que soit sa hauteur.
+        // Enough to cover how far a mark overflows its carrying text:
+        // the space above a heading, the margin of a code block background.
+        // A block that crosses the band, on the other hand, is retained by its range — it
+        // covers the visible characters — regardless of its height.
         let margin: CGFloat = 120
         let origin = view.textContainerOrigin
         let top = max(0, band.minY - origin.y - margin)
@@ -575,17 +575,17 @@ struct DecorationPainter {
         return NSRange(location: start, length: finish - start)
     }
 
-    /// Les deux plages se touchent-elles, bornes comprises ?
+    /// Do the two ranges touch, bounds inclusive?
     ///
-    /// `NSIntersectionRange` ne convient pas : la plage d'une marque peut être
-    /// vide — l'item de liste sans texte — et une intersection vide l'écarterait
-    /// alors qu'elle est bel et bien à l'écran.
+    /// `NSIntersectionRange` doesn't work here: a mark's range can be
+    /// empty — a list item with no text — and an empty intersection would discard it
+    /// even though it is in fact on screen.
     private func touches(_ range: NSRange, _ band: NSRange?) -> Bool {
         guard let band else { return true }
         return range.location <= band.upperBound && band.location <= range.upperBound
     }
 
-    /// Rectangle englobant d'une plage, en coordonnées du conteneur de texte.
+    /// Bounding rectangle of a range, in text container coordinates.
     private func boundingFrame(of range: NSRange,
                                layout: NSTextLayoutManager,
                                content: NSTextContentStorage) -> NSRect? {

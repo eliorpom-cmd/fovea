@@ -1,23 +1,23 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// La palette de commandes, `⌘K` (§4.5).
+/// The command palette, `⌘K` (§4.5).
 ///
-/// Elle sert deux choses à la fois, et c'est voulu : lancer une commande, et
-/// **naviguer par titre**. Dans un document long, chercher « Architecture » et
-/// y sauter est le geste le plus fréquent — plus fréquent que n'importe quelle
-/// commande.
+/// It serves two purposes at once, deliberately: run a command, and
+/// **navigate by title**. In a long document, searching for "Architecture"
+/// and jumping to it is the most frequent gesture — more frequent than any
+/// command.
 ///
-/// Le filtrage est **par sous-séquence**, comme partout ailleurs : taper
-/// « mdf » doit trouver « Mode focus ». Un filtrage par préfixe obligerait à
-/// se souvenir du premier mot exact, ce qui annule l'intérêt de la palette.
+/// Filtering is **by subsequence**, as everywhere else in the app: typing
+/// "mdf" must find "Mode focus". Prefix filtering would force remembering
+/// the exact first word, which defeats the purpose of the palette.
 @MainActor
 final class CommandPalette: NSPanel {
 
     struct Entry {
         var title: String
-        /// Ce qui s'affiche à droite : le raccourci, ou la section d'un titre.
+        /// What is shown on the right: the shortcut, or the section of a title.
         var detail: String
         var action: () -> Void
     }
@@ -25,7 +25,7 @@ final class CommandPalette: NSPanel {
     private let field = NSSearchField()
     private let tableView = NSTableView()
     private let scrollView = NSScrollView()
-    private let emptyLabel = NSTextField(labelWithString: "Aucun résultat.")
+    private let emptyLabel = NSTextField(labelWithString: "No results.")
 
     private var all: [Entry] = []
     private var filtered: [Entry] = []
@@ -40,18 +40,18 @@ final class CommandPalette: NSPanel {
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
         isMovableByWindowBackground = true
-        // Une palette qui survit à la perte du focus resterait en travers de
-        // l'écran ; celle-ci se ferme dès qu'on regarde ailleurs.
+        // A palette that survives losing focus would stay stranded across
+        // the screen; this one closes as soon as the user looks elsewhere.
         hidesOnDeactivate = true
         isFloatingPanel = true
         level = .modalPanel
         backgroundColor = .clear
-        // **Sans cela, `close()` sur-libère la fenêtre.** Le défaut d'un
-        // `NSWindow` créé en code est `true` : la fermeture envoie un `release`
-        // sur un objet qu'une propriété forte du contrôleur retient déjà. Un
-        // `⌘K`, un `⎋`, un second `⌘K`, et l'app tombait sur un objet mort.
-        // `SettingsWindowController` posait bien le drapeau ; la palette avait
-        // été oubliée.
+        // **Without this, `close()` over-releases the window.** The default
+        // for an `NSWindow` created in code is `true`: closing sends a
+        // `release` on an object a strong property of the controller already
+        // retains. A `⌘K`, an `⎋`, a second `⌘K`, and the app crashed on a
+        // dead object. `SettingsWindowController` did set the flag; the
+        // palette had been overlooked.
         isReleasedWhenClosed = false
 
         let visual = NSVisualEffectView()
@@ -62,7 +62,7 @@ final class CommandPalette: NSPanel {
         visual.layer?.cornerRadius = 12
         visual.layer?.masksToBounds = true
 
-        field.placeholderString = "Commande ou titre…"
+        field.placeholderString = "Command or title…"
         field.font = .systemFont(ofSize: 15)
         field.focusRingType = .none
         field.delegate = self
@@ -77,15 +77,15 @@ final class CommandPalette: NSPanel {
         tableView.delegate = self
         tableView.target = self
         tableView.action = #selector(rowClicked)
-        tableView.addTableColumn(NSTableColumn(identifier: .init("entrée")))
+        tableView.addTableColumn(NSTableColumn(identifier: .init("entry")))
 
         scrollView.documentView = tableView
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
-        // La fenêtre est en `fullSizeContentView` : sans cela, AppKit réserve de
-        // lui-même la hauteur d'une barre de titre — invisible ici — au-dessus
-        // de la liste. La première entrée se décollait du filet, et la hauteur
-        // ajustée aux résultats coupait la dernière en deux.
+        // The window is `fullSizeContentView`: without this, AppKit reserves
+        // the height of a title bar on its own — invisible here — above the
+        // list. The first entry would pull away from the divider, and the
+        // height fitted to the results would cut the last one in half.
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -95,10 +95,10 @@ final class CommandPalette: NSPanel {
         divider.fillColor = Theme.NS.separator
         divider.translatesAutoresizingMaskIntoConstraints = false
 
-        // **Une recherche sans résultat doit le dire.** La liste se vidait et
-        // la fenêtre se refermait sur son champ : une bande grise sans un mot,
-        // qui se lit comme une palette cassée plutôt que comme une recherche
-        // qui n'a rien trouvé.
+        // **A search with no results must say so.** The list used to empty
+        // out and the window would close in on its field: a gray band
+        // without a word, which reads as a broken palette rather than a
+        // search that found nothing.
         emptyLabel.font = .systemFont(ofSize: 13)
         emptyLabel.textColor = Theme.NS.labelTertiary
         emptyLabel.alignment = .center
@@ -133,11 +133,11 @@ final class CommandPalette: NSPanel {
         ])
     }
 
-    /// La hauteur laissée à « Aucun résultat » — celle de deux rangées, assez
-    /// pour que la phrase respire sans que la fenêtre paraisse vide.
+    /// The height left for "No results" — that of two rows, enough for the
+    /// sentence to breathe without the window looking empty.
     private static let emptyHeight: CGFloat = 60
 
-    // MARK: - Présentation
+    // MARK: - Presentation
 
     func present(entries: [Entry], relativeTo host: NSWindow?) {
         all = entries
@@ -145,8 +145,8 @@ final class CommandPalette: NSPanel {
         filter(with: "")
 
         if let host {
-            // Centrée horizontalement, au tiers supérieur : posée au milieu,
-            // elle masquerait précisément la ligne qu'on vient de quitter.
+            // Centered horizontally, at the upper third: placed in the
+            // middle, it would hide precisely the line just left behind.
             let frame = host.frame
             setFrameOrigin(NSPoint(x: frame.midX - self.frame.width / 2,
                                    y: frame.maxY - self.frame.height - frame.height * 0.18))
@@ -155,10 +155,10 @@ final class CommandPalette: NSPanel {
         }
         makeKeyAndOrderFront(nil)
         makeFirstResponder(field)
-        // Le point d'insertion d'un champ système est **bleu**, et c'était le
-        // dernier accent de couleur de l'app hors des Réglages. L'éditeur pose
-        // le sien ; le champ de recherche vit dans un éditeur de champ partagé,
-        // qu'on ne peut colorer qu'une fois qu'il existe — c'est-à-dire ici.
+        // A system field's insertion point is **blue**, and it was the last
+        // accent color left in the app outside of Settings. The editor sets
+        // its own; the search field lives in a shared field editor, which
+        // can only be colored once it exists — that is, here.
         (currentEditor(for: field) as? NSTextView)?.insertionPointColor = Theme.NS.label
     }
 
@@ -166,27 +166,26 @@ final class CommandPalette: NSPanel {
         control.currentEditor() ?? fieldEditor(true, for: control)
     }
 
-    /// Un `NSPanel` refuse le focus par défaut ; sans cela, le champ de
-    /// recherche ne recevrait pas la frappe.
+    /// An `NSPanel` refuses key status by default; without this, the search
+    /// field would not receive keystrokes.
     override var canBecomeKey: Bool { true }
 
-    /// **Cliquer ailleurs referme.**
+    /// **Clicking elsewhere closes it.**
     ///
-    /// `hidesOnDeactivate` ne joue que si l'*application* perd le focus.
-    /// Cliquer dans la fenêtre d'édition ne la désactive pas : la palette, au
-    /// niveau `.modalPanel`, restait posée en travers de l'écran jusqu'à ce
-    /// qu'on pense à `⎋`. Une palette de recherche se ferme dès qu'on regarde
-    /// ailleurs, comme celle de Spotlight.
+    /// `hidesOnDeactivate` only fires when the *application* loses focus.
+    /// Clicking in the editing window does not deactivate it: the palette,
+    /// at `.modalPanel` level, would stay stranded across the screen until
+    /// the user thought of `⎋`. A search palette closes as soon as the user
+    /// looks elsewhere, like Spotlight's.
     override func resignKey() {
         super.resignKey()
         dismiss()
     }
 
-    /// Referme, une seule fois.
+    /// Closes, once only.
     ///
-    /// Le garde n'est pas de la prudence gratuite : `close()` fait perdre le
-    /// focus à la fenêtre, donc rappelle `resignKey`, donc rappellerait
-    /// `dismiss`.
+    /// The guard is not gratuitous caution: `close()` makes the window lose
+    /// key status, which calls `resignKey`, which would call `dismiss` again.
     func dismiss() {
         guard isVisible, !isDismissing else { return }
         isDismissing = true
@@ -196,7 +195,7 @@ final class CommandPalette: NSPanel {
 
     private var isDismissing = false
 
-    // MARK: - Filtrage
+    // MARK: - Filtering
 
     private func filter(with query: String) {
         filtered = query.isEmpty
@@ -217,33 +216,35 @@ final class CommandPalette: NSPanel {
         resizeToFit()
     }
 
-    /// Le nombre de lignes qu'on montre avant de laisser défiler.
+    /// The number of rows shown before scrolling kicks in.
     ///
-    /// Au-delà, la palette occuperait la moitié de l'écran pour une liste qu'on
-    /// ne lit pas jusqu'en bas : on cherche, on tape deux lettres de plus.
+    /// Beyond that, the palette would take up half the screen for a list
+    /// that is not read to the bottom: the user searches, then types two
+    /// more letters.
     private static let visibleRows = 11
 
 
-    /// Ajuste la hauteur au nombre de résultats.
+    /// Fits the height to the number of results.
     ///
-    /// La palette gardait ses 380 points quoi qu'il arrive : taper « machine »
-    /// laissait un seul résultat et trois cents points de vide en dessous, ce
-    /// qui se lit comme une fenêtre cassée plutôt que comme une recherche qui a
-    /// trouvé. Elle se referme maintenant sur ce qu'elle montre.
+    /// The palette used to keep its 380 points no matter what: typing
+    /// "typewriter" would leave a single result and three hundred points of
+    /// empty space below it, which reads as a broken window rather than a
+    /// search that found something. It now closes in on what it shows.
     ///
-    /// **Le haut reste où il est.** Un `NSWindow` a son origine en bas à
-    /// gauche : redimensionner sans y penser ferait remonter le champ de
-    /// recherche à chaque frappe, sous les doigts.
+    /// **The top stays where it is.** An `NSWindow` has its origin at the
+    /// bottom left: resizing without accounting for that would make the
+    /// search field jump up on every keystroke, out from under the fingers.
     private func resizeToFit() {
         guard let visual = contentView else { return }
         visual.layoutSubtreeIfNeeded()
 
-        // Tout est **mesuré**, rien n'est recomposé à partir des constantes de
-        // contraintes. Ni le chrome — un champ de recherche ne fait pas la
-        // hauteur qu'on lui suppose —, ni les rangées : le style `.inset` d'un
-        // `NSTableView` ajoute sa propre marge, et la calculer à
-        // `rowHeight × n` coupait la dernière entrée en deux au ras de la
-        // fenêtre. Une rangée tronquée est pire que le vide qu'on enlève.
+        // Everything is **measured**, nothing is recomputed from constraint
+        // constants. Not the chrome — a search field is not as tall as one
+        // would assume — nor the rows: the `.inset` style of an
+        // `NSTableView` adds its own margin, and computing it as
+        // `rowHeight × n` used to cut the last entry in half at the edge of
+        // the window. A truncated row is worse than the empty space removed
+        // to avoid it.
         let chrome = visual.bounds.height - scrollView.frame.height
         let shown = min(filtered.count, Self.visibleRows)
         let rows = shown > 0
@@ -257,23 +258,23 @@ final class CommandPalette: NSPanel {
                  display: true)
     }
 
-    /// Score d'une correspondance par sous-séquence, ou `nil` si le texte ne
-    /// contient pas les lettres de la requête dans l'ordre.
+    /// Score of a subsequence match, or `nil` if the text does not contain
+    /// the letters of the query in order.
     ///
-    /// Les correspondances **en début de mot** valent plus : chercher « mf »
-    /// doit remonter « Mode focus » avant « Rechercher un format ».
-    /// `nonisolated` parce qu'elle est pure : elle ne touche ni à la vue ni à
-    /// AppKit, et le menu slash s'en sert depuis la couche sans interface.
-    /// Sans casse **ni accents**.
+    /// Matches **at the start of a word** are worth more: searching for "mf"
+    /// must rank "Mode focus" above "Search for a format". `nonisolated`
+    /// because it is pure: it touches neither the view nor AppKit, and the
+    /// slash menu uses it from the interface-free layer. Case- **and
+    /// accent-**insensitive.
     ///
-    /// La comparaison se faisait sur un simple `lowercased()` : « taches » ne
-    /// trouvait pas « tâches », « reunion » pas « réunion », « legales » pas
-    /// « légales ». Dans une app française, dont les titres sont accentués une
-    /// fois sur deux, la recherche de titres demandait de taper l'accent juste
-    /// — c'est-à-dire de connaître déjà ce qu'on cherche.
+    /// The comparison used to be a plain `lowercased()`: "cafe" would not
+    /// find "café", "resume" would not find "résumé". In an app whose titles
+    /// are accented as often as not, searching by title would require typing
+    /// the exact accent — that is, already knowing what is being searched
+    /// for.
     ///
-    /// Le repli est fait sans locale, donc identique partout : on ne veut pas
-    /// que le résultat dépende de la langue du système.
+    /// The fallback runs without a locale, so it is identical everywhere:
+    /// the result should not depend on the system's language.
     nonisolated static func folded(_ text: String) -> String {
         text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
     }
@@ -320,10 +321,10 @@ final class CommandPalette: NSPanel {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 53: dismiss()                                // Échap
-        case 36, 76: run(at: tableView.selectedRow)       // Entrée
-        case 125: move(by: 1)                             // Flèche bas
-        case 126: move(by: -1)                            // Flèche haut
+        case 53: dismiss()                                // Escape
+        case 36, 76: run(at: tableView.selectedRow)       // Return
+        case 125: move(by: 1)                             // Down arrow
+        case 126: move(by: -1)                            // Up arrow
         default: super.keyDown(with: event)
         }
     }
@@ -336,7 +337,7 @@ final class CommandPalette: NSPanel {
     }
 }
 
-// MARK: - Champ de recherche
+// MARK: - Search field
 
 extension CommandPalette: NSSearchFieldDelegate {
 
@@ -344,7 +345,7 @@ extension CommandPalette: NSSearchFieldDelegate {
         filter(with: field.stringValue)
     }
 
-    /// Les flèches et la touche Entrée doivent piloter la liste, pas le champ.
+    /// The arrow keys and the Return key must drive the list, not the field.
     func control(_ control: NSControl, textView: NSTextView,
                  doCommandBy selector: Selector) -> Bool {
         switch selector {
@@ -363,7 +364,7 @@ extension CommandPalette: NSTableViewDataSource, NSTableViewDelegate {
 
     func numberOfRows(in tableView: NSTableView) -> Int { filtered.count }
 
-    /// La sélection est grise, pas bleue. Voir `ListRowView`.
+    /// The selection is gray, not blue. See `ListRowView`.
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
         ListRowView()
     }
@@ -384,8 +385,8 @@ extension CommandPalette: NSTableViewDataSource, NSTableViewDelegate {
         stack.orientation = .horizontal
         stack.spacing = Theme.Space.s12
         stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.Space.s12, bottom: 0, right: Theme.Space.s12)
-        // Le raccourci en symboles — « ⌘⌥0 » — ne s'énonce pas ; le nom de la
-        // commande, si.
+        // The shortcut in symbols — "⌘⌥0" — is not spoken; the command name
+        // is.
         stack.setAccessibilityElement(true)
         stack.setAccessibilityRole(.staticText)
         stack.setAccessibilityLabel(entry.title)

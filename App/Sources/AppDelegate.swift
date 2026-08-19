@@ -1,34 +1,34 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// `@MainActor` : tout ce que fait ce delegate touche AppKit, et les
-/// sélecteurs de menu sont appelés depuis la boucle d'événements principale.
+/// `@MainActor`: everything this delegate does touches AppKit, and menu
+/// selectors are called from the main event loop.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Toucher le contrôleur de documents avant tout le reste : c'est lui
-        // qui répond à ⌘O, aux Récents et à la restauration de session, et il
-        // doit exister avant qu'AppKit ne restaure les fenêtres.
+        // Touch the document controller before everything else: it's the one
+        // that responds to ⌘O, to Recents and to session restoration, and it
+        // must exist before AppKit restores windows.
         _ = NSDocumentController.shared
 
-        // Les polices apportées par l'utilisateur (§4.7) sont enregistrées en
-        // portée `.process` : elles n'existent que pendant que Fovea tourne, ce
-        // qui impose de recommencer à chaque lancement — et avant que la
-        // première fenêtre ne réclame une fonte.
+        // Fonts brought in by the user (§4.7) are registered in `.process`
+        // scope: they only exist while Fovea is running, which requires
+        // starting over at every launch — and before the first window asks
+        // for a font.
         FontLibrary.registerAll()
 
-        // La proposition attend que l'app soit posée : affichée avant que la
-        // première fenêtre existe, l'alerte apparaîtrait devant un écran vide.
+        // The prompt waits for the app to settle: shown before the first
+        // window exists, the alert would appear in front of an empty screen.
         Task { @MainActor in DefaultHandler.offerOnceIfNeeded() }
     }
 
-    // MARK: - Commandes globales
+    // MARK: - Global commands
     //
-    // Elles vivent ici plutôt que dans le contrôleur de fenêtre : elles doivent
-    // répondre même sans document ouvert, et le delegate est le dernier maillon
-    // de la chaîne de répondeurs.
+    // They live here rather than in the window controller: they must respond
+    // even without an open document, and the delegate is the last link in
+    // the responder chain.
 
     @objc func showSettings(_ sender: Any?) {
         SettingsWindowController.shared.present()
@@ -38,22 +38,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Task { await DefaultHandler.makeDefault() }
     }
 
-    /// Sans ce réglage, relancer l'app depuis le Dock avec une fenêtre déjà
-    /// ouverte n'ouvre rien du tout — l'utilisateur clique et rien ne se passe.
+    /// Without this setting, relaunching the app from the Dock with no
+    /// window open opens nothing at all — the user clicks and nothing
+    /// happens.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         !hasVisibleWindows
     }
 
-    /// L'app survit à sa dernière fenêtre, comme TextEdit et Pages : fermer un
-    /// document n'est pas quitter, et le `⌘N` suivant doit rester immédiat.
+    /// The app survives its last window, like TextEdit and Pages: closing a
+    /// document isn't quitting, and the next `⌘N` must stay instant.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(makeDefaultMarkdownEditor(_:)) {
-            // Cochée quand c'est déjà le cas : l'entrée dit l'état plutôt que
-            // de laisser l'utilisateur cliquer pour savoir.
+            // Checked when it's already the case: the item states the
+            // condition instead of making the user click to find out.
             menuItem.state = DefaultHandler.isDefault ? .on : .off
         }
         return true

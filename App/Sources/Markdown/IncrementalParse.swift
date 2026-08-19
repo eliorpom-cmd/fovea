@@ -1,73 +1,74 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Décide **ce qu'il faut ré-analyser** après une frappe.
+/// Decides **what needs to be re-parsed** after a keystroke.
 ///
-/// # Pourquoi cette classe existe
+/// # Why this class exists
 ///
-/// Le §3.3 l'annonçait : « reparser 100 000 mots à chaque touche ne tiendra
-/// pas ». La mesure lui a donné raison. Sur un document de 10 000 mots, en
-/// Debug, un cycle complet coûtait :
+/// §3.3 warned about it: "re-parsing 100,000 words on every keystroke will
+/// not hold up." Measurement proved it right. On a 10,000-word document, in
+/// Debug, a full cycle cost:
 ///
-/// | Étape | Coût |
+/// | Step | Cost |
 /// |---|---|
-/// | Table des lignes | 1,7 ms |
-/// | Analyse (cmark + parcours + conversion) | 36,4 ms |
-/// | Pose des attributs | 48,0 ms |
-/// | **Total** | **88,5 ms** pour un budget de 8 ms |
+/// | Line table | 1.7 ms |
+/// | Parsing (cmark + traversal + conversion) | 36.4 ms |
+/// | Applying attributes | 48.0 ms |
+/// | **Total** | **88.5 ms** for a budget of 8 ms |
 ///
-/// Les deux postes lourds sont proportionnels au document entier alors qu'une
-/// frappe n'en change qu'une ligne. Toute l'optimisation tient dans une idée :
-/// **ne ré-analyser et ne re-styler que le bloc touché**.
+/// The two heavy items are proportional to the whole document even though a
+/// keystroke only changes one line. The entire optimization comes down to one
+/// idea: **only re-parse and re-style the touched block**.
 ///
-/// # Quand ça ne suffit pas
+/// # When that is not enough
 ///
-/// Un bloc ne peut être traité isolément que si son sens ne dépend pas de ce
-/// qui l'entoure. Deux cas cassent cette hypothèse, et déclenchent une analyse
-/// complète :
+/// A block can only be handled in isolation if its meaning does not depend on
+/// what surrounds it. Two cases break that assumption, and trigger a full
+/// parse:
 ///
-/// - **Une clôture de bloc de code.** Taper ` ``` ` change l'interprétation de
-///   *tout ce qui suit* : le reste du document devient du code, ou cesse de
-///   l'être. C'est le cas le plus fréquent du §6, et le plus visible.
-/// - **Une édition à l'intérieur d'un bloc de code existant.** Sa portée
-///   dépasse déjà les lignes vides, qui n'y délimitent plus rien.
+/// - **A code block fence.** Typing ` ``` ` changes the interpretation of
+///   *everything that follows*: the rest of the document either becomes code
+///   or stops being code. This is the most frequent case in §6, and the most
+///   visible.
+/// - **An edit inside an existing code block.** Its scope already extends
+///   past blank lines, which no longer delimit anything inside it.
 enum IncrementalParse {
 
-    /// La portée à ré-analyser, ou `nil` s'il faut tout reprendre.
+    /// The scope to re-parse, or `nil` if everything must be redone.
     ///
     /// - Parameters:
-    ///   - text: le texte **après** l'édition.
-    ///   - editedRange: la plage modifiée, dans le texte après édition.
-    ///   - inserted: le texte inséré, pour repérer une clôture de code.
-    ///   - existingCodeBlocks: les blocs de code connus **avant** l'édition.
+    ///   - text: the text **after** the edit.
+    ///   - editedRange: the modified range, in the text after the edit.
+    ///   - inserted: the inserted text, used to detect a code fence.
+    ///   - existingCodeBlocks: the code blocks known **before** the edit.
     static func scope(in text: NSString,
                       editedRange: NSRange,
                       inserted: String,
                       existingCodeBlocks: [NSRange]) -> NSRange? {
 
-        // Une clôture de bloc de code rebat les cartes pour tout ce qui suit.
+        // A code block fence reshuffles everything that follows.
         //
-        // **Mais elle seule.** La règle portait d'abord sur le caractère tapé :
-        // un backtick ou un tilde, n'importe où, déclenchait l'analyse complète.
-        // Or un backtick au fil d'une phrase n'ouvre qu'un `code` en ligne, dont
-        // la portée s'arrête à la ligne vide suivante — et un backtick non
-        // apparié n'est même qu'un caractère littéral. Le prix de cette
-        // approximation était lourd : sur 190 000 signes, taper « a » ré-analyse
-        // 193 signes en 6 ms, taper « ` » ré-analysait tout le document en
-        // 440 ms. Une seule touche, quarante fois le budget du §9 — et les
-        // paires automatiques en posent deux d'un coup.
+        // **But only a fence.** The rule used to be based on the typed
+        // character: a backtick or a tilde, anywhere, triggered a full parse.
+        // But a backtick in the middle of a sentence only opens inline
+        // `code`, whose scope stops at the next blank line, and an unpaired
+        // backtick is not even more than a literal character. The cost of
+        // that approximation was steep: on 190,000 characters, typing "a"
+        // re-parses 193 characters in 6 ms, typing "`" re-parsed the whole
+        // document in 440 ms. A single keystroke, forty times the §9 budget,
+        // and auto-pairs insert two of them at once.
         //
-        // Ce qui compte n'est donc pas le caractère mais **la ligne où il
-        // tombe** : seule une ligne de clôture — trois signes ou plus en tête —
-        // peut changer le sens de ce qui suit.
+        // What matters is therefore not the character but **the line it
+        // falls on**: only a closing fence line (three or more of the marker
+        // at the start) can change the meaning of what follows.
         if inserted.contains("`") || inserted.contains("~"),
            touchesAFence(in: text, editedRange: editedRange) {
             return nil
         }
 
-        // Éditer **dans** un bloc de code : les lignes vides n'y délimitent
-        // plus rien, la portée par bloc n'a pas de sens.
+        // Editing **inside** a code block: blank lines no longer delimit
+        // anything there, block-scoped re-parsing has no meaning.
         if existingCodeBlocks.contains(where: { NSIntersectionRange($0, editedRange).length > 0
                                                 || NSLocationInRange(editedRange.location, $0) }) {
             return nil
@@ -75,40 +76,40 @@ enum IncrementalParse {
 
         var block = blockRange(in: text, around: editedRange)
 
-        // Un bloc de code **voisin** ne justifie pas de tout reprendre, mais il
-        // ne peut pas être coupé en deux : un fragment qui commencerait au
-        // milieu d'un bloc de code verrait sa clôture de fin sans son ouverture,
-        // et lirait le reste comme du code.
+        // A **neighbouring** code block does not justify redoing everything,
+        // but it cannot be cut in two: a fragment starting in the middle of
+        // a code block would see its closing fence without its opening one,
+        // and read the rest as code.
         //
-        // La première version refusait ces cas et retombait sur l'analyse
-        // complète — ce qui, sur un document contenant des blocs de code tous
-        // les six paragraphes, revenait à n'avoir aucun incrémental du tout.
+        // The first version rejected these cases and fell back to a full
+        // parse, which, on a document containing a code block every six
+        // paragraphs, amounted to having no incremental parsing at all.
         for codeBlock in existingCodeBlocks where NSIntersectionRange(codeBlock, block).length > 0 {
             block = NSUnionRange(block, codeBlock)
         }
-        // Élargir a pu faire toucher un nouveau bloc de code : au-delà de la
-        // moitié du document, l'analyse complète est de toute façon moins chère
-        // que ce jeu de dominos.
+        // Widening the range may have touched a new code block: past half
+        // the document, a full parse is cheaper than this domino chain
+        // anyway.
         if block.length * 2 >= text.length { return nil }
         return block
     }
 
-    /// Le bloc contenant la plage, délimité par des lignes vides — **et le bloc
-    /// voisin de chaque côté**.
+    /// The block containing the range, delimited by blank lines, **plus the
+    /// neighbouring block on each side**.
     ///
-    /// Le voisinage n'est pas de la prudence gratuite. Un titre `setext` est
-    /// souligné par la ligne d'après ; une liste dont on supprime la ligne vide
-    /// qui la séparait de la suivante fusionne avec elle. Un bloc de marge de
-    /// chaque côté couvre ces cas pour un coût négligeable.
+    /// The neighbouring margin is not gratuitous caution. A `setext` heading
+    /// is underlined by the following line; a list whose blank line
+    /// separating it from the next one is deleted merges with it. A margin
+    /// block on each side covers these cases at negligible cost.
     static func blockRange(in text: NSString, around range: NSRange) -> NSRange {
         let start = blockBoundaryBackward(in: text, from: range.location, blocks: 2)
         let end = blockBoundaryForward(in: text, from: min(range.upperBound, text.length), blocks: 2)
         return NSRange(location: start, length: max(0, end - start))
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
-    /// Remonte jusqu'au début du n-ième bloc précédent.
+    /// Walks back to the start of the n-th preceding block.
     private static func blockBoundaryBackward(in text: NSString, from location: Int, blocks: Int) -> Int {
         var index = min(location, text.length)
         var found = 0
@@ -139,12 +140,12 @@ enum IncrementalParse {
         return text.length
     }
 
-    /// L'une des lignes touchées par l'édition est-elle une clôture de bloc ?
+    /// Is any of the lines touched by the edit a closing fence?
     ///
-    /// Le test se fait sur le texte **après** l'édition : c'est l'état dont
-    /// dépend l'interprétation de la suite. Toutes les lignes de la plage sont
-    /// examinées et non la seule première, pour qu'un collage de plusieurs
-    /// lignes contenant une clôture soit vu.
+    /// The test is run on the text **after** the edit: that is the state
+    /// that the interpretation of what follows depends on. Every line in the
+    /// range is examined, not just the first, so that pasting several lines
+    /// containing a fence is caught.
     private static func touchesAFence(in text: NSString, editedRange: NSRange) -> Bool {
         var index = min(editedRange.location, text.length)
         let end = min(editedRange.upperBound, text.length)
@@ -157,9 +158,9 @@ enum IncrementalParse {
         return false
     }
 
-    /// Une ligne de clôture : jusqu'à trois blancs, puis au moins trois
-    /// backticks ou trois tildes. C'est la définition de CommonMark, et rien
-    /// d'autre n'ouvre un bloc dont la portée dépasse le paragraphe.
+    /// A closing fence line: up to three blanks, then at least three
+    /// backticks or three tildes. This is the CommonMark definition, and
+    /// nothing else opens a block whose scope extends past the paragraph.
     private static func isFence(_ text: NSString, line: NSRange) -> Bool {
         var offset = line.location
         var blanks = 0
@@ -169,7 +170,7 @@ enum IncrementalParse {
         }
         guard blanks <= 3, offset < line.upperBound else { return false }
         let marker = text.character(at: offset)
-        guard marker == 96 || marker == 126 else { return false }   // ` ou ~
+        guard marker == 96 || marker == 126 else { return false }   // ` or ~
         var run = 0
         while offset < line.upperBound, text.character(at: offset) == marker {
             run += 1
@@ -178,7 +179,7 @@ enum IncrementalParse {
         return run >= 3
     }
 
-    /// Une ligne blanche : vide, ou uniquement des blancs.
+    /// A blank line: empty, or whitespace only.
     private static func isBlank(_ text: NSString, lineAt location: Int) -> Bool {
         let line = text.lineRange(for: NSRange(location: location, length: 0))
         for offset in line.location..<line.upperBound {
@@ -191,38 +192,37 @@ enum IncrementalParse {
 
 extension MarkdownParser {
 
-    /// Analyse un extrait et **décale ses positions** pour qu'elles désignent
-    /// le document entier.
+    /// Parses an excerpt and **shifts its positions** so they refer to the
+    /// whole document.
     ///
-    /// L'extrait est analysé comme un document à part, ce qui est exactement
-    /// l'hypothèse que `IncrementalParse.scope` a vérifiée avant de le
-    /// découper : un bloc délimité par des lignes vides se lit sans son
-    /// contexte.
+    /// The excerpt is parsed as a standalone document, which is exactly the
+    /// assumption `IncrementalParse.scope` verified before splitting it out:
+    /// a block delimited by blank lines reads correctly without its context.
     static func parse(_ text: String, offsetBy offset: Int) -> [SyntaxSpan] {
         let spans = offset == 0 ? parse(text).spans : parse(text).spans.map { $0.shifted(by: offset) }
-        // Trié par position, pour que `splice` rende une liste triée et que
-        // `SpanIndex` n'ait plus rien à trier. Le fragment est petit : ce tri
-        // remplace celui du document entier, à chaque frappe.
+        // Sorted by position, so that `splice` returns a sorted list and
+        // `SpanIndex` has nothing left to sort. The fragment is small: this
+        // sort replaces the whole-document one, on every keystroke.
         return spans.sorted { $0.range.location < $1.range.location }
     }
 
-    /// Remplace, dans une liste de constructions, celles qui tombaient dans la
-    /// portée ré-analysée — et décale celles qui suivent.
+    /// In a list of constructs, replaces the ones that fell within the
+    /// re-parsed scope, and shifts the ones that follow.
     ///
     /// - Parameters:
-    ///   - previous: les constructions d'avant l'édition.
-    ///   - scope: la portée ré-analysée, en coordonnées **après** l'édition.
-    ///   - delta: la variation de longueur du document.
+    ///   - previous: the constructs from before the edit.
+    ///   - scope: the re-parsed scope, in coordinates **after** the edit.
+    ///   - delta: the change in the document's length.
     static func splice(_ previous: [SyntaxSpan],
                        replacing scope: NSRange,
                        with fresh: [SyntaxSpan],
                        delta: Int) -> [SyntaxSpan] {
-        // La portée exprimée en coordonnées d'avant l'édition, pour trier les
-        // anciennes constructions.
+        // The scope expressed in coordinates from before the edit, to sort
+        // the old constructs.
         let oldScopeEnd = scope.upperBound - delta
 
-        // `previous` est trié par position, `fresh` aussi : la concaténation
-        // l'est donc également, ce dont `SpanIndex` tire parti.
+        // `previous` is sorted by position, and so is `fresh`: the
+        // concatenation is therefore sorted too, which `SpanIndex` relies on.
         var result = previous.filter { $0.range.upperBound <= scope.location }
         result += fresh
         result += previous

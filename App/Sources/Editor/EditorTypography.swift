@@ -1,29 +1,29 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// La typographie du **texte de l'utilisateur** — distincte de celle du chrome,
-/// qui vit dans `Theme.UIText`.
+/// The typography of the **user's text** — distinct from the chrome's,
+/// which lives in `Theme.UIText`.
 ///
-/// Elle est ici parce qu'elle est réglable (§4.7) : police, taille, interlignage
-/// et largeur de colonne changent, et tout ce qui en dépend doit être recalculé
-/// d'un seul endroit. Les fontes sont mises en cache : une pose d'attributs
-/// touche des milliers de plages, et `NSFont` n'est pas gratuit à instancier.
-/// `@MainActor` parce qu'elle résout des `NSFont` : AppKit n'est pas
-/// thread-safe, et la seule alternative serait un verrou payé à chaque
-/// caractère rendu.
+/// It lives here because it's adjustable (§4.7): font, size, line spacing
+/// and column width can change, and everything that depends on them must be
+/// recomputed from a single place. Fonts are cached: applying attributes
+/// touches thousands of ranges, and `NSFont` isn't free to instantiate.
+/// `@MainActor` because it resolves `NSFont` values: AppKit isn't
+/// thread-safe, and the only alternative would be a lock paid for on every
+/// character rendered.
 @MainActor
 struct EditorTypography: Equatable {
 
-    /// Nom de la famille, ou `nil` pour la police système (SF Pro, le défaut
-    /// du §7). L'utilisateur peut en choisir une autre, y compris une police
-    /// qu'il a lui-même déposée.
+    /// Family name, or `nil` for the system font (SF Pro, the default from
+    /// §7). The user can choose another one, including a font they imported
+    /// themselves.
     var bodyFontName: String?
     var monoFontName: String?
     var bodySize: CGFloat
     var lineHeightMultiple: CGFloat
-    /// Largeur de la colonne de texte, **en signes** et non en points : c'est
-    /// la mesure qui a du sens en lecture, et elle suit la taille de police.
+    /// Text column width, **in characters** rather than points: that's the
+    /// measure that makes sense for reading, and it follows the font size.
     var columnWidthInCharacters: Int
 
     static let `default` = EditorTypography(bodyFontName: nil,
@@ -32,22 +32,22 @@ struct EditorTypography: Equatable {
                                             lineHeightMultiple: 1.5,
                                             columnWidthInCharacters: 68)
 
-    // MARK: - Fontes
+    // MARK: - Fonts
 
     var body: NSFont { font(bodyFontName, size: bodySize, weight: .regular) }
     var bodyEmphasized: NSFont { font(bodyFontName, size: bodySize, weight: .semibold) }
     var bodyItalic: NSFont { italic(body) }
     var bodyBoldItalic: NSFont { italic(bodyEmphasized) }
 
-    /// Le code inline est très légèrement réduit : à taille égale, une chasse
-    /// fixe paraît plus grosse que la proportionnelle qui l'entoure et fait
-    /// bosseler la ligne.
+    /// Inline code is very slightly reduced: at equal size, a monospaced
+    /// font looks bigger than the proportional font around it and makes the
+    /// line bulge.
     var inlineCode: NSFont { mono(size: bodySize * 0.92) }
     var codeBlock: NSFont { mono(size: bodySize * 0.92) }
 
-    /// Échelle des titres. Six niveaux dans une app d'écriture, ce n'est pas
-    /// six tailles : au-delà du quatrième, la hiérarchie passe par la graisse,
-    /// sinon un titre 6 finirait plus petit que le corps de texte.
+    /// Heading scale. Six levels in a writing app isn't six sizes: past the
+    /// fourth, hierarchy is carried by weight instead, otherwise a heading 6
+    /// would end up smaller than body text.
     func heading(level: Int) -> NSFont {
         let scale: CGFloat = switch level {
         case 1: 1.85
@@ -60,8 +60,8 @@ struct EditorTypography: Equatable {
         return font(bodyFontName, size: (bodySize * scale).rounded(), weight: weight)
     }
 
-    /// Espace au-dessus d'un titre, proportionnel à son importance. C'est cet
-    /// espace, bien plus que la taille, qui fait lire une structure.
+    /// Space above a heading, proportional to its importance. It's this
+    /// space, far more than the size, that reads as structure.
     func spacingBefore(headingLevel level: Int) -> CGFloat {
         let scale: CGFloat = switch level {
         case 1: 1.6
@@ -72,54 +72,53 @@ struct EditorTypography: Equatable {
         return (bodySize * scale).rounded()
     }
 
-    // MARK: - Mise en page
+    // MARK: - Layout
 
     var lineHeight: CGFloat { (bodySize * lineHeightMultiple).rounded() }
 
-    /// Retrait d'un item de liste, par niveau d'imbrication.
+    /// Indentation of a list item, per nesting level.
     ///
-    /// Il doit être **plus large que la puce plus son écart**, sinon la puce se
-    /// dessinerait à une abscisse négative, donc hors de la vue — c'est
-    /// exactement ce qui est arrivé au premier essai.
+    /// It must be **wider than the bullet plus its gap**, otherwise the
+    /// bullet would draw at a negative x-coordinate, i.e. off view — which is
+    /// exactly what happened on the first attempt.
     func listIndent(level: Int) -> CGFloat {
         (bodySize * 1.6 * CGFloat(level + 1)).rounded()
     }
 
-    /// Écart entre la puce et le texte qu'elle introduit.
+    /// Gap between the bullet and the text it introduces.
     var listMarkerGap: CGFloat { (bodySize * 0.45).rounded() }
 
-    /// Retrait d'une citation : la place de sa barre verticale, plus l'air
-    /// qu'il faut entre la barre et le texte.
+    /// Indentation of a blockquote: room for its vertical bar, plus the
+    /// breathing space needed between the bar and the text.
     var quoteIndent: CGFloat { (bodySize * 1.2).rounded() }
 
     var codeBlockIndent: CGFloat { (bodySize * 0.75).rounded() }
 
-    /// **Zéro, volontairement.**
+    /// **Zero, deliberately.**
     ///
-    /// Pour TextKit, chaque `\n` ouvre un nouveau paragraphe. Or un document
-    /// markdown est presque toujours coupé à la main autour de 80 signes : un
-    /// espacement de paragraphe s'appliquerait alors entre *chaque ligne
-    /// source*, et un paragraphe de six lignes s'étalerait comme six
-    /// paragraphes.
+    /// For TextKit, every `\n` opens a new paragraph. But a markdown
+    /// document is almost always hand-wrapped around 80 characters: a
+    /// paragraph spacing would then apply between *every source line*, and a
+    /// six-line paragraph would spread out like six paragraphs.
     ///
-    /// La séparation vient donc de là où l'auteur l'a mise — la ligne vide
-    /// qu'il a tapée, qui se rend à la hauteur d'une ligne. C'est la seule
-    /// solution cohérente avec le §3.1 : l'écran montre ce que le fichier dit,
-    /// il n'ajoute pas d'espace que personne n'a écrit.
+    /// The separation therefore comes from wherever the author put it — the
+    /// blank line they typed, which renders at the height of one line. It's
+    /// the only solution consistent with §3.1: the screen shows what the
+    /// file says, it doesn't add spacing nobody wrote.
     var paragraphSpacing: CGFloat { 0 }
 
-    /// Largeur de la colonne en points, mesurée sur la fonte réelle.
+    /// Column width in points, measured on the actual font.
     ///
-    /// Le « n » est l'étalon habituel des typographes pour une largeur moyenne
-    /// de caractère ; l'espace serait trop étroit et le « m » trop large, et
-    /// tous deux donneraient une colonne fausse dès qu'on change de police.
+    /// The "n" is the typographer's usual yardstick for an average character
+    /// width; a space would be too narrow and an "m" too wide, and both
+    /// would give a wrong column width as soon as the font changes.
     var columnWidth: CGFloat {
         let reference = body
         let advance = ("n" as NSString).size(withAttributes: [.font: reference]).width
         return (advance * CGFloat(columnWidthInCharacters)).rounded()
     }
 
-    /// Style de paragraphe de base, partagé par tout le corps de texte.
+    /// Base paragraph style, shared across the whole body of text.
     func paragraphStyle() -> NSMutableParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineHeightMultiple = lineHeightMultiple
@@ -127,13 +126,13 @@ struct EditorTypography: Equatable {
         return style
     }
 
-    /// Une fonte système à taille libre, pour ce que l'éditeur **dessine**
-    /// plutôt qu'il ne met en page : cadre d'image manquante, puces, numéros.
+    /// A system font at a free size, for what the editor **draws** rather
+    /// than lays out: missing-image frame, bullets, numbers.
     func uiFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
         FontCache.shared.font(name: nil, size: size, weight: weight)
     }
 
-    // MARK: - Fabrique de fontes
+    // MARK: - Font factory
 
     private func font(_ name: String?, size: CGFloat, weight: NSFont.Weight) -> NSFont {
         FontCache.shared.font(name: name, size: size, weight: weight)
@@ -148,11 +147,11 @@ struct EditorTypography: Equatable {
     }
 }
 
-/// Cache de fontes.
+/// Font cache.
 ///
-/// Sans lui, chaque reparse instancie quelques milliers de `NSFont` identiques.
-/// La classe est `@MainActor` parce que la pose d'attributs l'est aussi : il
-/// n'y a jamais deux threads pour y accéder, donc pas de verrou à payer.
+/// Without it, every reparse instantiates a few thousand identical `NSFont`
+/// instances. The class is `@MainActor` because applying attributes is too:
+/// there are never two threads accessing it, so there's no lock to pay for.
 @MainActor
 final class FontCache {
     static let shared = FontCache()
@@ -173,9 +172,9 @@ final class FontCache {
 
         let resolved: NSFont
         if let name, let named = NSFont(name: name, size: size) {
-            // Une famille choisie par l'utilisateur n'a pas forcément la graisse
-            // demandée. Le gestionnaire de fontes s'en approche, et retombe sur
-            // la fonte de départ plutôt que d'échouer.
+            // A family chosen by the user doesn't necessarily have the
+            // requested weight. The font manager gets as close as it can,
+            // and falls back to the starting font rather than failing.
             resolved = NSFontManager.shared.convert(named, toHaveTrait: weight >= .semibold ? .boldFontMask : [])
         } else {
             resolved = NSFont.systemFont(ofSize: size, weight: weight)

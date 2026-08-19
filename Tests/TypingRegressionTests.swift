@@ -1,14 +1,15 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// Ce que l'audit UI a trouvé sous les doigts, et qui ne doit plus revenir.
+/// What the UI audit found under real fingers, and that must never come
+/// back.
 ///
-/// Deux défauts s'y déclenchaient à chaque usage, sans qu'aucun test ne les
-/// voie : la troisième touche d'une clôture de bloc de code, et le curseur
-/// après un retrait de format.
+/// Two bugs triggered on every use, with no test ever seeing them: the
+/// third keystroke of a code block fence, and the caret after removing
+/// formatting.
 @MainActor
 final class TypingRegressionTests: XCTestCase {
 
@@ -21,25 +22,26 @@ final class TypingRegressionTests: XCTestCase {
         return controller
     }
 
-    // MARK: - La clôture de bloc de code
+    // MARK: - The Code Block Fence
 
-    /// Les deux premières touches doublent, la troisième ouvre le bloc.
+    /// The first two keystrokes double up, the third opens the block.
     ///
-    /// Sans ce cas, les paires automatiques donnaient six accents graves pour
-    /// trois touches, et le geste le plus courant du markdown ne marchait pas.
+    /// Without this case, auto-pairing produced six backticks for three
+    /// keystrokes, and the most common markdown gesture did not work.
     func testTheThirdBacktickOpensABlock() {
         let edit = TypingBehaviour.codeFence(typing: "`", in: "````",
                                              selection: NSRange(location: 2, length: 0))
         XCTAssertEqual(edit?.range, NSRange(location: 0, length: 4))
         XCTAssertEqual(edit?.replacement, "```\n\n```")
-        XCTAssertEqual(edit?.caret, 4, "Le curseur va dans le bloc, pas après sa clôture")
+        XCTAssertEqual(edit?.caret, 4, "The caret goes inside the block, not after its fence")
     }
 
-    /// Le geste complet, dans un vrai éditeur : trois touches, un bloc.
+    /// The complete gesture, in a real editor: three keystrokes, one block.
     func testTypingThreeBackticksInTheEditorGivesAFence() {
         let controller = editor("")
-        // `insertText` est le point où passent le clavier, la dictée et la
-        // palette de caractères : c'est lui qui appelle les paires.
+        // `insertText` is the point through which the keyboard, dictation
+        // and character palette all pass: it is what calls the pairing
+        // logic.
         for _ in 0..<3 {
             controller.textView.insertText("`", replacementRange: NSRange(location: NSNotFound, length: 0))
         }
@@ -47,24 +49,24 @@ final class TypingRegressionTests: XCTestCase {
         XCTAssertEqual(controller.textView.selectedRange(), NSRange(location: 4, length: 0))
     }
 
-    /// Au fil d'une phrase, trois accents graves ne sont pas un bloc : la paire
-    /// garde la main.
+    /// In the middle of a sentence, three backticks are not a block: the
+    /// pair keeps control.
     func testTheFenceOnlyOpensALine() {
-        XCTAssertNil(TypingBehaviour.codeFence(typing: "`", in: "du ````",
+        XCTAssertNil(TypingBehaviour.codeFence(typing: "`", in: "my ````",
                                                selection: NSRange(location: 5, length: 0)))
     }
 
-    /// Jusqu'à trois espaces d'indentation restent une ouverture de bloc.
+    /// Up to three spaces of indentation still count as opening a block.
     func testAnIndentedFenceStillOpens() {
         XCTAssertNotNil(TypingBehaviour.codeFence(typing: "`", in: "  ````",
                                                   selection: NSRange(location: 4, length: 0)))
         XCTAssertNil(TypingBehaviour.codeFence(typing: "`", in: "     ````",
                                                selection: NSRange(location: 7, length: 0)),
-                     "Au-delà de trois espaces, ce n'est plus une clôture")
+                     "Beyond three spaces, it is no longer a fence")
     }
 
-    /// Il faut bien quatre accents graves autour du curseur : la forme exacte
-    /// que les deux premières touches produisent, et rien d'autre.
+    /// Four backticks around the caret are required: exactly the shape the
+    /// first two keystrokes produce, and nothing else.
     func testTheFenceNeedsThePairItReplaces() {
         XCTAssertNil(TypingBehaviour.codeFence(typing: "`", in: "``",
                                                selection: NSRange(location: 1, length: 0)))
@@ -72,83 +74,90 @@ final class TypingRegressionTests: XCTestCase {
                                                selection: NSRange(location: 2, length: 0)))
     }
 
-    // MARK: - Le curseur après un retrait de format
+    // MARK: - The Caret After Removing Formatting
 
-    /// `⌫` en fin de mot gras retire le format **et laisse le curseur en fin de
-    /// mot**.
+    /// `⌫` at the end of a bold word removes the formatting **and leaves
+    /// the caret at the end of the word**.
     ///
-    /// Il partait au début du contenu : on tapait `**mot**`, on effaçait le
-    /// gras, et la frappe suivante s'écrivait devant le mot.
+    /// It used to jump to the start of the content: `**word**` would be
+    /// typed, the bold removed, and the next keystroke would land in front
+    /// of the word.
     func testDeletingAFormatKeepsTheCaretWhereItWas() {
-        let controller = editor("Du **gras** ici.")
-        // `Du **gras**|` — juste après la fermeture, là où `⌫` retire le format.
+        let controller = editor("My **bold** now.")
+        // `My **bold**|`: right after the closing markers, where `⌫`
+        // removes the formatting.
         controller.textView.setSelectedRange(NSRange(location: 11, length: 0))
         controller.textView.deleteBackward(nil)
 
-        XCTAssertEqual(controller.text, "Du gras ici.")
+        XCTAssertEqual(controller.text, "My bold now.")
         XCTAssertEqual(controller.textView.selectedRange(),
                        NSRange(location: 7, length: 0),
-                       "Le curseur reste en fin de mot, moins les marqueurs effacés devant lui")
+                       "The caret stays at the end of the word, minus the markers erased in front of it")
     }
 
-    /// Le même geste **entre les deux étoiles d'une ouverture**.
+    /// The same gesture **between the two stars of an opening marker**.
     ///
-    /// La position est atteignable — le marqueur y est révélé — et `⌫` y voyait
-    /// une paire `*|*` à défaire avant de voir la construction : `**gras**`
-    /// devenait `gras**`, un marqueur de fermeture seul au milieu de la phrase.
+    /// The position is reachable (the marker is revealed there), and `⌫`
+    /// used to see a `*|*` pair to undo before seeing the construct:
+    /// `**bold**` became `bold**`, a lone closing marker in the middle of
+    /// the sentence.
     func testDeletingFromTheOpeningMarkerRemovesTheWholeConstruct() {
-        let controller = editor("Du **gras** ici.")
-        // `Du *|*gras**` — dans l'ouverture, à un signe de son début.
+        let controller = editor("My **bold** now.")
+        // `My *|*bold**`: inside the opening marker, one character from its
+        // start.
         controller.textView.setSelectedRange(NSRange(location: 4, length: 0))
         controller.textView.deleteBackward(nil)
 
-        XCTAssertEqual(controller.text, "Du gras ici.")
+        XCTAssertEqual(controller.text, "My bold now.")
         XCTAssertEqual(controller.textView.selectedRange(), NSRange(location: 3, length: 0))
     }
 
-    // MARK: - Les touches mortes
+    // MARK: - Dead Keys
 
-    /// Sur un clavier français, `` ` `` et `~` sont des touches mortes : le
-    /// caractère conclut une composition et n'arrive jamais par la porte que
-    /// surveillaient les paires automatiques. Elles ne se déclenchaient donc
-    /// **jamais** sur les deux marqueurs markdown qui en ont le plus besoin.
+    /// On a French keyboard, `` ` `` and `~` are dead keys: the character
+    /// completes a composition and never arrives through the door that
+    /// auto-pairing was watching. It therefore **never** triggered on the
+    /// two markdown markers that need it the most.
     func testTheClosingHalfIsStillPlacedAfterADeadKey() {
-        // `du |` — l'accent grave vient d'être écrit, le curseur est derrière.
-        let edit = TypingBehaviour.autoPairAfterTyping("`", in: "du `", caret: 4, insideCode: false)
+        // `my |`: the backtick has just been typed, the caret is right
+        // behind it.
+        let edit = TypingBehaviour.autoPairAfterTyping("`", in: "my `", caret: 4, insideCode: false)
         XCTAssertEqual(edit?.range, NSRange(location: 4, length: 0))
         XCTAssertEqual(edit?.replacement, "`")
-        XCTAssertEqual(edit?.caret, 4, "Le curseur reste entre les deux moitiés")
+        XCTAssertEqual(edit?.caret, 4, "The caret stays between the two halves")
     }
 
-    /// Retaper la fermeture la franchit, au lieu d'en écrire une seconde.
+    /// Retyping the closing character steps over it, instead of writing a
+    /// second one.
     func testRetypingTheClosingHalfStepsOverItAfterADeadKey() {
-        // `` `mot`|` `` — on vient de retaper l'accent grave devant celui qui
-        // fermait déjà.
-        let edit = TypingBehaviour.autoPairAfterTyping("`", in: "`mot``", caret: 5, insideCode: false)
-        XCTAssertEqual(edit?.range, NSRange(location: 4, length: 1), "On retire celui qu'on vient d'écrire")
+        // `` `box`|` ``: the backtick was just retyped in front of the one
+        // that was already closing the pair.
+        let edit = TypingBehaviour.autoPairAfterTyping("`", in: "`box``", caret: 5, insideCode: false)
+        XCTAssertEqual(edit?.range, NSRange(location: 4, length: 1), "The one just typed gets removed")
         XCTAssertEqual(edit?.replacement, "")
         XCTAssertEqual(edit?.caret, 5)
     }
 
-    /// Dans du code, un marqueur markdown ne s'apparie pas — même par cette
-    /// seconde porte.
+    /// Inside code, a markdown marker does not pair up: not even through
+    /// this second door.
     func testTheDeadKeyPathRespectsCode() {
-        XCTAssertNil(TypingBehaviour.autoPairAfterTyping("`", in: "du `", caret: 4, insideCode: true))
+        XCTAssertNil(TypingBehaviour.autoPairAfterTyping("`", in: "my `", caret: 4, insideCode: true))
     }
 
-    /// Et le troisième accent grave ouvre toujours un bloc, quel que soit le
-    /// chemin par lequel il est arrivé.
+    /// And the third backtick still opens a block, no matter which path it
+    /// arrived through.
     func testTheFenceAlsoOpensAfterADeadKey() {
-        // `` ```|`` `` — cinq accents graves, le curseur après le troisième.
+        // `` ```|`` ``: five backticks, the caret after the third one.
         let edit = TypingBehaviour.codeFenceAfterTyping("`", in: "`````", caret: 3)
         XCTAssertEqual(edit?.range, NSRange(location: 0, length: 5))
         XCTAssertEqual(edit?.replacement, "```\n\n```")
         XCTAssertEqual(edit?.caret, 4)
     }
 
-    // Le geste complet par touche morte n'est pas rejoué ici : `setMarkedText`
-    // demande une session de saisie que le harnais de test n'a pas, et
-    // l'émuler en passant la sélection comme plage de remplacement ne reproduit
-    // pas la composition. Le contrat est celui des quatre fonctions ci-dessus ;
-    // le chemin complet se vérifie dans l'app, clavier français en main.
+    // The complete dead-key gesture is not replayed here: `setMarkedText`
+    // needs an input session that the test harness does not have, and
+    // emulating it by passing the selection as the replacement range does
+    // not reproduce the composition. The contract is the one from the four
+    // functions above; the full path is verified in the app, with a French
+    // keyboard in hand.
 }

@@ -1,20 +1,20 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Les fonctions d'écriture du §4.5 : mode focus, machine à écrire,
-/// statistiques.
+/// The writing features from §4.5: focus mode, typewriter mode,
+/// statistics.
 ///
-/// Toute la partie calculable est ici, en fonctions pures : quelle est l'unité
-/// courante, combien de mots, où doit se trouver la ligne active. La partie
-/// AppKit se réduit à poser une opacité et à faire défiler.
+/// Everything computable lives here, as pure functions: what the current
+/// unit is, how many words there are, where the active line must sit. The
+/// AppKit part is reduced to setting an opacity and scrolling.
 enum WritingModes {
 
-    // MARK: - Mode focus
+    // MARK: - Focus mode
 
-    /// La plage à laisser en pleine intensité, tout le reste étant atténué.
+    /// The range to leave at full intensity, with everything else dimmed.
     ///
-    /// - Parameter unit: phrase ou paragraphe, au choix de l'utilisateur.
+    /// - Parameter unit: sentence or paragraph, at the user's choice.
     static func focusRange(in text: NSString, caret: Int, unit: AppSettings.FocusUnit) -> NSRange {
         switch unit {
         case .paragraph:
@@ -24,44 +24,43 @@ enum WritingModes {
         }
     }
 
-    /// Le paragraphe : délimité par des lignes vides, et non par un simple
-    /// saut de ligne.
+    /// The paragraph: delimited by blank lines, not by a plain line break.
     ///
-    /// Un document markdown est presque toujours coupé à la main autour de 80
-    /// signes. Prendre la ligne pour le paragraphe atténuerait la moitié de la
-    /// phrase qu'on est en train d'écrire.
+    /// A markdown document is almost always hand-wrapped around 80
+    /// characters. Taking the line as the paragraph would dim half the
+    /// sentence currently being written.
     static func paragraphRange(in text: NSString, containing caret: Int) -> NSRange {
         let position = min(max(0, caret), text.length)
         let current = text.lineRange(for: NSRange(location: position, length: 0))
 
-        // **Sur une ligne vide, l'unité est cette ligne.**
+        // **On a blank line, the unit is that line.**
         //
-        // Les deux boucles partaient sinon de part et d'autre du curseur et se
-        // rejoignaient nulle part : le paragraphe du dessus **et** celui du
-        // dessous restaient en pleine intensité. C'est l'état où l'on se trouve
-        // après chaque `⏎ ⏎`, c'est-à-dire à chaque changement de paragraphe.
+        // Otherwise the two loops started on either side of the caret and
+        // never met: the paragraph above **and** the one below both stayed
+        // at full intensity. That is the state reached after every `⏎ ⏎`,
+        // that is, at every paragraph change.
         guard !isBlank(text, current) else { return current }
 
-        // Un titre est un bloc d'**une** ligne : sans ce cas, il absorbait le
-        // paragraphe écrit juste en dessous, et le mode focus laissait les deux
-        // en pleine intensité. Un item de liste, lui, peut se continuer sur la
-        // ligne suivante — c'est la boucle du bas qui s'en charge.
+        // A heading is a **one**-line block: without this case, it
+        // absorbed the paragraph written right below it, and focus mode
+        // left both at full intensity. A list item, though, can continue
+        // onto the next line — the loop below handles that.
         if startsHeading(text, current) { return current }
 
         var start = current.location
-        // **Un item de liste et un titre sont leurs propres blocs.**
+        // **A list item and a heading are their own blocks.**
         //
-        // Une liste markdown n'a pas de ligne vide entre ses items : elle était
-        // donc **un seul paragraphe**, et comme un item n'a presque jamais de
-        // ponctuation forte, l'unité « phrase » retombait dessus. Dix items,
-        // mode focus coché, curseur au milieu : aucune atténuation. Le mode
-        // avait l'air cassé alors qu'il appliquait sa règle.
+        // A markdown list has no blank line between its items: it was
+        // therefore **a single paragraph**, and since an item almost never
+        // has strong punctuation, the "sentence" unit fell back to it. Ten
+        // items, focus mode on, caret in the middle: no dimming at all. The
+        // mode looked broken while it was correctly applying its rule.
         if !startsBlock(text, current) {
             while start > 0 {
                 let previous = text.lineRange(for: NSRange(location: start - 1, length: 0))
-                // Un titre est une frontière qu'on ne franchit pas ; l'item de
-                // liste au-dessus, lui, est la tête du bloc où l'on écrit : on
-                // le prend, puis on s'arrête.
+                // A heading is a boundary that is not crossed; the list
+                // item above, on the other hand, is the head of the block
+                // being written: it is taken, then the loop stops.
                 if isBlank(text, previous) || startsHeading(text, previous) { break }
                 start = previous.location
                 if startsListItem(text, previous) { break }
@@ -77,17 +76,16 @@ enum WritingModes {
         return NSRange(location: start, length: max(0, end - start))
     }
 
-    /// Cette ligne ouvre-t-elle un bloc à elle seule — un titre, un item de
-    /// liste ?
+    /// Does this line open a block by itself — a heading, a list item?
     ///
-    /// Lue directement sur la `NSString`, sans construire de tableau UTF-16 :
-    /// la fonction est appelée pour chaque ligne parcourue, à chaque
-    /// déplacement du curseur.
+    /// Read directly on the `NSString`, without building a UTF-16 array:
+    /// the function is called for every line scanned, on every caret
+    /// movement.
     static func startsBlock(_ text: NSString, _ line: NSRange) -> Bool {
         startsHeading(text, line) || startsListItem(text, line)
     }
 
-    /// Un titre : jusqu'à six « # », puis une espace.
+    /// A heading: up to six "#", then a space.
     static func startsHeading(_ text: NSString, _ line: NSRange) -> Bool {
         guard var index = contentStart(text, line) else { return false }
         let limit = line.upperBound
@@ -100,18 +98,18 @@ enum WritingModes {
         return hashes <= 6 && index < limit && isSpace(text.character(at: index))
     }
 
-    /// Un item de liste : une puce ou un numéro, puis une espace.
+    /// A list item: a bullet or a number, then a space.
     static func startsListItem(_ text: NSString, _ line: NSRange) -> Bool {
         guard var index = contentStart(text, line) else { return false }
         let limit = line.upperBound
 
-        // Une puce : « - », « * » ou « + », puis une espace.
+        // A bullet: "-", "*" or "+", then a space.
         let first = text.character(at: index)
         if first == 45 || first == 42 || first == 43 {
             return index + 1 < limit && isSpace(text.character(at: index + 1))
         }
 
-        // Un numéro : des chiffres, « . » ou « ) », puis une espace.
+        // A number: digits, "." or ")", then a space.
         var digits = 0
         while index < limit, text.character(at: index) >= 48, text.character(at: index) <= 57 {
             index += 1
@@ -123,9 +121,9 @@ enum WritingModes {
         return index + 1 < limit && isSpace(text.character(at: index + 1))
     }
 
-    /// Le premier signe non blanc d'une ligne, si elle en a un et qu'il n'est
-    /// pas trop en retrait — au-delà de trois espaces, ce n'est plus un
-    /// marqueur de bloc.
+    /// The first non-blank character of a line, if it has one and it is
+    /// not indented too far — beyond three spaces, it is no longer a block
+    /// marker.
     private static func contentStart(_ text: NSString, _ line: NSRange) -> Int? {
         var index = line.location
         var indent = 0
@@ -137,11 +135,11 @@ enum WritingModes {
         return index
     }
 
-    /// La phrase, bornée par son paragraphe.
+    /// The sentence, bounded by its paragraph.
     ///
-    /// La ponctuation forte fait la frontière, mais pas quand elle suit une
-    /// abréviation courante : « M. Dupont » ou « etc. » ne terminent pas une
-    /// phrase, et l'atténuation clignoterait au milieu d'un mot.
+    /// Strong punctuation makes the boundary, except when it follows a
+    /// common abbreviation: "Mr. Smith" or "etc." do not end a sentence,
+    /// and the dimming would flicker in the middle of a word.
     static func sentenceRange(in text: NSString, containing caret: Int) -> NSRange {
         let paragraph = paragraphRange(in: text, containing: caret)
         guard paragraph.length > 0 else { return paragraph }
@@ -185,39 +183,39 @@ enum WritingModes {
         return NSRange(location: start, length: max(0, end - start))
     }
 
-    // MARK: - Statistiques
+    // MARK: - Statistics
 
     struct Statistics: Equatable {
         var words: Int
         var characters: Int
-        /// Minutes, arrondies au supérieur, jamais nulles pour un texte non vide.
+        /// Minutes, rounded up, never zero for non-empty text.
         var readingMinutes: Int
     }
 
-    /// Compte les mots comme un lecteur les compterait.
+    /// Counts words the way a reader would count them.
     ///
-    /// La syntaxe markdown est exclue : les `#` d'un titre, les `**` d'un mot
-    /// gras et l'URL d'un lien ne sont pas des mots. Compter la source donnerait
-    /// un total qui n'a de sens pour personne — et qui gonflerait à chaque
-    /// formatage.
-    /// Les constructions reçues **ne sont pas garanties de tenir dans le
-    /// texte**, et c'est ce qui a fait planter l'app.
+    /// Markdown syntax is excluded: the `#` of a heading, the `**` of a
+    /// bold word and a link's URL are not words. Counting the source would
+    /// give a total that means nothing to anyone — and that would inflate
+    /// with every bit of formatting.
+    /// The constructs received **are not guaranteed to fit inside the
+    /// text**, and that is what used to crash the app.
     ///
-    /// Sur une sélection, l'appelant ramène les constructions aux coordonnées du
-    /// fragment sélectionné en les décalant de `-selection.location`. Une
-    /// construction qui *commence avant* la sélection — un `**gras**` dont on
-    /// n'a pris que la fin, un lien à cheval sur la bordure — se retrouve alors
-    /// à une position **négative**, et une qui finit après déborde de l'autre
-    /// côté.
+    /// On a selection, the caller brings the constructs back to the
+    /// coordinates of the selected fragment by shifting them by
+    /// `-selection.location`. A construct that *starts before* the
+    /// selection — a `**bold**` of which only the end was taken, a link
+    /// straddling the boundary — then ends up at a **negative** position,
+    /// and one that ends after overflows on the other side.
     ///
-    /// L'ancien bornage écrivait `max(0, début)..<min(units, fin)`. Chaque borne
-    /// prise séparément semble prudente ; ensemble, elles s'inversent dès que la
-    /// plage tombe entièrement d'un côté ou de l'autre — `0..<-3` — et Swift
-    /// arrête le programme. Sélectionner deux paragraphes suffisait à
-    /// déclencher un `Range requires lowerBound <= upperBound`, à chaque
-    /// mouvement de la souris pendant le glissement.
+    /// The old bounding wrote `max(0, start)..<min(units, end)`. Each bound
+    /// taken separately looks safe; together, they flip as soon as the
+    /// range falls entirely on one side or the other — `0..<-3` — and Swift
+    /// halts the program. Selecting two paragraphs was enough to trigger a
+    /// `Range requires lowerBound <= upperBound`, on every mouse movement
+    /// during the drag.
     ///
-    /// D'où l'intersection, qui est ce que les deux bornes voulaient dire.
+    /// Hence the intersection, which is what the two bounds meant to say.
     private static func clamped(_ range: NSRange, to units: Int) -> Range<Int>? {
         let lower = max(0, range.location)
         let upper = min(units, range.upperBound)
@@ -232,7 +230,7 @@ enum WritingModes {
                 guard let range = clamped(marker, to: units) else { continue }
                 for offset in range { isSyntax[offset] = true }
             }
-            // Une URL n'est pas du texte à lire ; le libellé du lien, si.
+            // A URL is not text to read; a link's label is.
             if case .link = span.kind {
                 let url = NSRange(location: span.content.upperBound,
                                   length: max(0, span.range.upperBound - span.content.upperBound))
@@ -255,13 +253,13 @@ enum WritingModes {
             }
         }
 
-        // 200 mots par minute : la vitesse de lecture silencieuse couramment
-        // retenue pour de la prose.
+        // 200 words per minute: the silent reading speed commonly used for
+        // prose.
         let minutes = words == 0 ? 0 : max(1, Int((Double(words) / 200).rounded(.up)))
         return Statistics(words: words, characters: characters, readingMinutes: minutes)
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
     private static func isBlank(_ text: NSString, _ line: NSRange) -> Bool {
         for offset in line.location..<line.upperBound {
@@ -280,9 +278,15 @@ enum WritingModes {
             || character == 0x00BB || character == 0x201D // » ”
     }
 
-    /// « M. », « etc. », « cf. » : une ponctuation forte qui ne termine rien.
+    /// "Mr.", "etc.", "cf.": strong punctuation that ends nothing.
+    ///
+    /// The list is English honorifics and the usual scholarly abbreviations,
+    /// matched case-sensitively against the word before the dot. It is a
+    /// heuristic, not a parser: an unlisted abbreviation splits the sentence
+    /// in two, which at worst makes the focus dimming stop one clause short.
     private static func endsWithAbbreviation(_ text: NSString, endingAt dotIndex: Int) -> Bool {
-        let abbreviations = ["M", "Mme", "Mlle", "Dr", "St", "etc", "cf", "ex", "p", "vol", "no", "n°"]
+        let abbreviations = ["Mr", "Mrs", "Ms", "Dr", "Prof", "St", "Jr", "Sr",
+                             "etc", "cf", "e.g", "i.e", "vs", "p", "pp", "vol", "no", "Fig"]
         var start = dotIndex
         while start > 0 {
             let character = text.character(at: start - 1)

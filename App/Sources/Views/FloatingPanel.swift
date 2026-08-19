@@ -1,34 +1,34 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le socle commun des panneaux ancrés au curseur.
+/// The common base of panels anchored to the caret.
 ///
-/// # Pourquoi un socle
+/// # Why a base class
 ///
-/// Le menu slash était le premier ; le sélecteur de langage et le damier de
-/// tableau sont les suivants, et il y en aura d'autres — barre de sélection,
-/// bulle de lien, outils de tableau. Écrire quatre fois le même panneau, c'est
-/// se garantir quatre comportements légèrement différents au clavier et à la
-/// fermeture. Tout ce qui suit est donc décidé **une fois**.
+/// The slash menu came first; the language picker and the table grid are
+/// next, and there will be others — a selection bar, a link bubble, table
+/// tools. Writing the same panel four times means guaranteeing four
+/// slightly different behaviors for the keyboard and for closing. Everything
+/// below is therefore decided **once**.
 ///
-/// # Le contrat, en trois règles
+/// # The contract, in three rules
 ///
-/// 1. **Il ne prend jamais le focus.** `nonactivatingPanel`, `canBecomeKey`
-///    à `false` : le curseur reste dans le texte, la frappe continue d'aller
-///    dans le tampon, et le panneau se contente de suivre. C'est ce qui permet
-///    de taper `/tab` et de voir la liste se réduire sans jamais changer de
-///    mode.
-/// 2. **Les touches lui arrivent par la vue de texte.** Puisqu'il n'est pas
-///    fenêtre clé, il ne reçoit rien du système : `EditorTextView.keyDown` lui
-///    transmet les flèches, `⏎` et `⎋`.
-/// 3. **Il s'ancre sur un rectangle en coordonnées écran** — celui du curseur,
-///    obtenu par `firstRect(forCharacterRange:)` — et bascule au-dessus de la
-///    ligne quand il n'y a plus de place en dessous.
+/// 1. **It never takes focus.** `nonactivatingPanel`, `canBecomeKey` set to
+///    `false`: the caret stays in the text, keystrokes keep going into the
+///    buffer, and the panel just follows along. This is what makes it
+///    possible to type `/tab` and watch the list narrow down without ever
+///    switching modes.
+/// 2. **Keystrokes reach it through the text view.** Since it is never the
+///    key window, it receives nothing from the system: `EditorTextView.keyDown`
+///    forwards the arrow keys, `⏎` and `⎋` to it.
+/// 3. **It anchors to a rectangle in screen coordinates** — the caret's,
+///    obtained from `firstRect(forCharacterRange:)` — and flips above the
+///    line once there is no more room below.
 @MainActor
 class FloatingPanel: NSPanel {
 
-    /// La vue floutée qui porte le contenu. Les sous-classes y ajoutent la leur.
+    /// The blurred view that carries the content. Subclasses add their own to it.
     let container = NSVisualEffectView()
 
     init(width: CGFloat) {
@@ -42,11 +42,11 @@ class FloatingPanel: NSPanel {
         backgroundColor = .clear
         isMovable = false
         hidesOnDeactivate = true
-        // Sans cela, une zone de suivi posée avec `.mouseMoved` ne reçoit
-        // rien : AppKit ne *produit* les événements de déplacement que pour
-        // les fenêtres qui les acceptent, et le défaut est `false`. Le damier
-        // s'annonce « on survole, on voit la grille se remplir, on clique » —
-        // le survol ne remplissait rien.
+        // Without this, a tracking area set up with `.mouseMoved` receives
+        // nothing: AppKit only *produces* move events for windows that
+        // accept them, and the default is `false`. The grid's whole premise
+        // is "hover, watch the grid fill in, click" — hovering used to fill
+        // in nothing.
         acceptsMouseMovedEvents = true
 
         container.material = .menu
@@ -58,42 +58,43 @@ class FloatingPanel: NSPanel {
         contentView = container
     }
 
-    /// Il ne devient jamais clé : c'est tout le principe. Sans ce `false`, le
-    /// curseur quitterait le texte à l'ouverture.
+    /// It never becomes key: that is the whole point. Without this `false`,
+    /// the caret would leave the text as soon as it opens.
     override var canBecomeKey: Bool { false }
 
     var isOpen: Bool { isVisible }
 
-    /// Pose le panneau sous le curseur, ou au-dessus s'il déborde de l'écran.
+    /// Places the panel below the caret, or above it if it would overflow
+    /// the screen.
     ///
-    /// - Parameter caretRect: la position du curseur **en coordonnées écran**.
+    /// - Parameter caretRect: the caret's position **in screen coordinates**.
     func present(size: NSSize, caretRect: NSRect, over host: NSWindow?) {
-        // Sous la ligne courante, décalé d'un cheveu : posé dessus, le panneau
-        // masquerait le mot qu'on est en train de taper.
-        // **Un rectangle nul n'est pas une position, c'est une absence de
-        // réponse.** `firstRect(forCharacterRange:)` en rend un quand aucune
-        // session de saisie n'est en cours — c'est le cas quand la commande
-        // vient de la barre de menus. Le calcul qui suit le prenait au mot :
-        // l'origine tombait à zéro, le repli vers le haut la ramenait au ras du
-        // bord, et le panneau se posait dans le coin bas-gauche de l'écran, à
-        // moitié sous le Dock. Techniquement affiché, introuvable en pratique.
+        // Below the current line, nudged by a hair: placed right on top of
+        // it, the panel would hide the word currently being typed.
+        // **A zero rectangle is not a position, it is the absence of an
+        // answer.** `firstRect(forCharacterRange:)` returns one when no
+        // input session is active — which is the case when the command
+        // comes from the menu bar. The calculation below used to take that
+        // literally: the origin landed at zero, the fallback to flip upward
+        // pulled it right to the edge, and the panel ended up in the bottom
+        // left corner of the screen, half under the Dock. Technically
+        // displayed, unfindable in practice.
         //
-        // On ne devine pas la position à sa place : on prend le tiers supérieur
-        // de la fenêtre, là où le regard est déjà.
+        // The position is not guessed in its place: the upper third of the
+        // window is used instead, where the eye already is.
         let anchor = caretRect == .zero ? fallbackAnchor(size: size, in: host) : caretRect
 
-        // **Il rétrécit avant de basculer.**
+        // **It shrinks before it flips.**
         //
-        // La règle était « pas la place en dessous, on passe au-dessus ». Le
-        // panneau se posait alors **par-dessus les lignes qu'on vient
-        // d'écrire** : dans une fenêtre de 520 points de haut, ouvrir le menu en
-        // bas de page masquait les huit lignes précédentes, c'est-à-dire la
-        // liste qu'on était en train de continuer.
+        // The rule used to be "no room below, switch to above." The panel
+        // then landed **on top of the lines just written**: in a window 520
+        // points tall, opening the menu near the bottom of the page hid the
+        // previous eight lines — that is, the list currently being continued.
         //
-        // Un menu ancré au curseur se lit sous le curseur. Quand la place
-        // manque, ce qu'il faut réduire est sa hauteur — il défile — pas le
-        // texte qu'il cache. On ne bascule que lorsqu'il ne reste même plus de
-        // quoi montrer trois entrées.
+        // A menu anchored to the caret reads below the caret. When space
+        // runs out, what should shrink is its height — it scrolls — not the
+        // text it covers. It only flips once there is not even room left to
+        // show three entries.
         var height = size.height
         var origin = NSPoint(x: anchor.minX, y: anchor.minY - height - 6)
 
@@ -123,13 +124,12 @@ class FloatingPanel: NSPanel {
         }
     }
 
-    /// En dessous de quoi rétrécir ne sert plus à rien : trois entrées.
+    /// Below this, shrinking further serves no purpose: three entries.
     private static let minimumShrunkHeight: CGFloat = 90
 
-    /// Où poser un panneau qui n'a pas de curseur où s'accrocher : au tiers
-    /// supérieur de la fenêtre, centré. Ce n'est pas la position du curseur,
-    /// mais c'est sous les yeux et dans le document — ce qu'un coin d'écran
-    /// n'est pas.
+    /// Where to place a panel with no caret to latch onto: the upper third
+    /// of the window, centered. Not the caret's position, but it is in view
+    /// and within the document — which a corner of the screen is not.
     private func fallbackAnchor(size: NSSize, in host: NSWindow?) -> NSRect {
         guard let frame = host?.frame else {
             let screen = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame

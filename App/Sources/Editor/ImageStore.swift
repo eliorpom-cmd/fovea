@@ -1,56 +1,56 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Charge les images référencées par le document (§4.4).
+/// Loads the images referenced by the document (§4.4).
 ///
-/// # Le rendu sans attachement
+/// # Rendering without an attachment
 ///
-/// Une image ne peut pas être un `NSTextAttachment` ici : un attachement
-/// remplace un caractère, et le §3.1 interdit d'en insérer un. La source
-/// `![alt](chemin)` doit rester intacte dans le tampon.
+/// An image cannot be an `NSTextAttachment` here: an attachment replaces a
+/// character, and §3.1 forbids inserting one. The `![alt](path)` source must
+/// stay intact in the buffer.
 ///
-/// La solution tient en deux morceaux déjà en place :
+/// The solution is made of two pieces already in place:
 ///
-/// 1. La ligne entière est **masquée à largeur nulle**, comme n'importe quel
-///    marqueur, et son style de paragraphe reçoit un `minimumLineHeight` égal
-///    à la hauteur d'affichage de l'image. La place est réservée sans qu'un
-///    seul caractère ait été ajouté.
-/// 2. `DecorationPainter` dessine l'image dans cette place.
+/// 1. The whole line is **hidden at zero width**, like any other marker, and
+///    its paragraph style gets a `minimumLineHeight` equal to the display
+///    height of the image. The space is reserved without a single character
+///    being added.
+/// 2. `DecorationPainter` draws the image into that space.
 ///
-/// Le curseur se comporte comme pour toute construction à portée ligne : entrer
-/// sur la ligne fait réapparaître la source, en sortir remet l'image.
+/// The caret behaves like it does for any line-scoped construct: entering the
+/// line reveals the source again, leaving it restores the image.
 @MainActor
 final class ImageStore {
 
     static let shared = ImageStore()
 
-    /// Ce qu'on sait d'une image référencée.
+    /// What is known about a referenced image.
     enum Entry {
         case loaded(NSImage, animated: Bool)
-        /// Trop lourde pour être décodée en entier : on montre une vignette et
-        /// on le dit (§6). Le fichier existe, et l'annoncer « introuvable »
-        /// serait un mensonge — c'était pourtant le comportement précédent.
+        /// Too large to decode in full: a thumbnail is shown, and this is
+        /// reported (§6). The file exists, and calling it "missing" would be
+        /// a lie, which was nonetheless the previous behaviour.
         case oversized(NSImage?, bytes: Int)
-        /// Le fichier n'existe pas, ou n'est pas une image lisible (§6).
+        /// The file does not exist, or is not a readable image (§6).
         case missing
     }
 
     private var cache: [URL: Entry] = [:]
 
-    /// Taille maximale chargée en mémoire. Au-delà, l'image est refusée plutôt
-    /// que de faire gonfler l'app de plusieurs centaines de mégaoctets pour un
-    /// document qu'on ne fait que relire (§6).
+    /// Maximum size loaded into memory. Beyond it, the image is refused
+    /// rather than letting the app balloon by several hundred megabytes for a
+    /// document that is only being read (§6).
     private static let maximumBytes = 20 * 1024 * 1024
 
-    // MARK: - Résolution
+    // MARK: - Resolution
 
-    /// Résout un lien markdown en URL de fichier.
+    /// Resolves a markdown link to a file URL.
     ///
-    /// Les liens relatifs sont résolus **à côté du document**, ce qui est tout
-    /// l'intérêt du §4.4 : le dossier peut être déplacé, commité ou envoyé sans
-    /// que rien ne casse. Les URL distantes sont ignorées — un éditeur qui va
-    /// chercher sur le réseau pendant la frappe est un éditeur qui se fige.
+    /// Relative links are resolved **next to the document**, which is the
+    /// whole point of §4.4: the folder can be moved, committed or sent
+    /// without anything breaking. Remote URLs are ignored: an editor that
+    /// hits the network while typing is an editor that freezes.
     static func resolve(_ source: String, relativeTo document: URL?) -> URL? {
         guard !source.isEmpty else { return nil }
         if let url = URL(string: source), url.scheme != nil {
@@ -62,7 +62,7 @@ final class ImageStore {
         return document.deletingLastPathComponent().appendingPathComponent(decoded).standardizedFileURL
     }
 
-    // MARK: - Chargement
+    // MARK: - Loading
 
     func entry(for source: String, relativeTo document: URL?) -> Entry {
         guard let url = Self.resolve(source, relativeTo: document) else { return .missing }
@@ -81,11 +81,11 @@ final class ImageStore {
         return entry
     }
 
-    /// Une vignette lue **sans décoder l'image entière**.
+    /// A thumbnail read **without decoding the whole image**.
     ///
-    /// `CGImageSourceCreateThumbnailAtIndex` travaille sur le flux : c'est ce
-    /// qui permet de montrer quelque chose d'une image de 200 Mo sans en payer
-    /// le prix en mémoire, qui est justement la raison de la borne.
+    /// `CGImageSourceCreateThumbnailAtIndex` works on the stream: this is
+    /// what makes it possible to show something for a 200 MB image without
+    /// paying its memory cost, which is precisely the reason for the cap.
     private static func thumbnail(of url: URL) -> NSImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -99,32 +99,32 @@ final class ImageStore {
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
-    /// Une image animée a plusieurs trames dans son fichier.
+    /// An animated image has several frames in its file.
     ///
-    /// Seule la première est dessinée : animer dans un éditeur est un coût
-    /// processeur permanent, payé pendant qu'on écrit, pour une image que
-    /// personne ne regarde (§6). Le rendu le signale plutôt que de le taire.
+    /// Only the first is drawn: animating inside an editor is a permanent CPU
+    /// cost, paid while typing, for an image nobody is looking at (§6). The
+    /// rendering reports this rather than hiding it.
     private static func isAnimated(_ url: URL) -> Bool {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
         return CGImageSourceGetCount(source) > 1
     }
 
-    /// Oublie ce qui a été chargé.
+    /// Forgets what has been loaded.
     ///
-    /// Appelé quand le document est enregistré ailleurs ou qu'une image est
-    /// remplacée sur le disque : sans cela, l'ancienne version resterait à
-    /// l'écran jusqu'à la fermeture de la fenêtre.
+    /// Called when the document is saved elsewhere, or an image is replaced
+    /// on disk: without this, the old version would stay on screen until the
+    /// window closes.
     func invalidate() {
         cache.removeAll(keepingCapacity: true)
     }
 
-    // MARK: - Mise à l'échelle
+    // MARK: - Scaling
 
-    /// Hauteur d'affichage d'une image dans une colonne donnée.
+    /// Display height of an image in a given column.
     ///
-    /// Bornée à la largeur de colonne (§6) et à une hauteur raisonnable : une
-    /// capture d'écran verticale de téléphone, laissée à ses proportions,
-    /// occuperait trois écrans et rendrait le document impraticable.
+    /// Bounded to the column width (§6) and to a reasonable height: a
+    /// vertical phone screenshot, left at its natural proportions, would
+    /// occupy three screens and make the document unusable.
     static func displaySize(of image: NSImage, columnWidth: CGFloat) -> NSSize {
         let natural = image.size
         guard natural.width > 0, natural.height > 0 else { return .zero }
@@ -139,7 +139,7 @@ final class ImageStore {
         return NSSize(width: width.rounded(), height: height.rounded())
     }
 
-    /// Hauteur réservée pour une image manquante : de quoi dessiner un cadre
-    /// lisible avec son chemin, pas plus.
+    /// Height reserved for a missing image: enough to draw a readable frame
+    /// with its path, nothing more.
     static let missingPlaceholderHeight: CGFloat = 56
 }

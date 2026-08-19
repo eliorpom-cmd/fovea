@@ -1,27 +1,26 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Les réglages d'accessibilité du système, en **un seul point d'entrée** (§8).
+/// The system's accessibility settings, behind **a single entry point** (§8).
 ///
-/// Un seul point d'entrée, et pas un `NSWorkspace.shared.accessibilityDisplay…`
-/// disséminé : c'est la convention de FreePark, et elle tient pour la même
-/// raison. Un réglage lu à dix endroits finit toujours par être oublié au
-/// onzième, et le onzième est celui qui casse.
+/// A single entry point, not an `NSWorkspace.shared.accessibilityDisplay…`
+/// scattered around: that's FreePark's convention, and it holds for the same
+/// reason. A setting read in ten places always ends up forgotten at the
+/// eleventh, and the eleventh is the one that breaks.
 @MainActor
 enum Accessibility {
 
-    /// « Réduire les animations ».
+    /// "Reduce Motion".
     ///
-    /// Rend `nil` quand le réglage est actif : le changement d'état s'applique
-    /// quand même, seul le mouvement disparaît. C'est la distinction qui
-    /// compte — une animation coupée ne doit jamais devenir une fonction
-    /// coupée.
+    /// Returns `nil` when the setting is on: the state change still applies,
+    /// only the movement disappears. That's the distinction that matters: a
+    /// disabled animation must never become a disabled feature.
     static func duration(_ normal: TimeInterval) -> TimeInterval? {
         NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : normal
     }
 
-    /// Anime, ou applique directement si les animations sont réduites.
+    /// Animates, or applies directly if motion is reduced.
     static func animate(_ normal: TimeInterval,
                         changes: () -> Void,
                         completion: (@Sendable () -> Void)? = nil) {
@@ -35,60 +34,61 @@ enum Accessibility {
         }
     }
 
-    /// « Augmenter le contraste ».
+    /// "Increase Contrast".
     static var prefersIncreasedContrast: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
     }
 
-    /// La couleur des marqueurs révélés (§2.1).
+    /// The color of revealed markers (§2.1).
     ///
-    /// `label/tertiary` est **sous le seuil AA**, et c'est assumé : ce sont des
-    /// éléments de repérage, pas du contenu — le mot reste gras pendant que ses
-    /// `**` réapparaissent, et c'est le mot qui porte le sens. Mais quand
-    /// « Augmenter le contraste » est actif, l'utilisateur a dit qu'il ne
-    /// voulait pas de ce compromis : on passe à `label/secondary`.
+    /// `label/tertiary` is **below the AA threshold**, and that's a
+    /// deliberate choice: these are wayfinding elements, not content — the
+    /// word stays bold while its `**` reappear, and it's the word that
+    /// carries the meaning. But when "Increase Contrast" is on, the user has
+    /// said they don't want that compromise: it falls back to
+    /// `label/secondary`.
     static var markerColor: NSColor {
         prefersIncreasedContrast ? Theme.NS.labelSecondary : Theme.NS.labelTertiary
     }
 
-    /// Le voile du mode focus (§4.5).
+    /// The focus mode veil (§4.5).
     ///
-    /// Plus il est opaque, moins le texte inactif se lit. À contraste renforcé
-    /// on l'allège : atténuer est une aide à la concentration, pas un moyen de
-    /// rendre le reste du document illisible.
+    /// The more opaque it is, the less readable the inactive text becomes. At
+    /// increased contrast it's lightened: dimming is an aid to concentration,
+    /// not a way to make the rest of the document unreadable.
     static var focusVeilOpacity: CGFloat {
         prefersIncreasedContrast ? 0.55 : 0.74
     }
 
-    // MARK: - Rôles lus par VoiceOver (§8)
+    // MARK: - Roles read by VoiceOver (§8)
 
-    /// Ce qu'une construction **est**, en une phrase lisible à voix haute.
+    /// What a construct **is**, in one sentence readable aloud.
     ///
-    /// Le §8 pose le problème que la plupart des éditeurs WYSIWYG ignorent : si
-    /// les `##` sont invisibles à l'écran, ils n'en sont pas moins lus. « dièse
-    /// dièse espace Architecture » n'a aucun sens à l'oral, et c'est pourtant
-    /// exactement ce que produit un tampon où la syntaxe est restée.
+    /// §8 states the problem most WYSIWYG editors ignore: if the `##` are
+    /// invisible on screen, they're still read aloud. "hash hash space
+    /// Architecture" makes no sense spoken, and yet that's exactly what a
+    /// buffer where the syntax was left in produces.
     ///
-    /// La sortie est donc « Titre, niveau 2 » posé sur le **contenu**, pendant
-    /// que les marqueurs, eux, portent un libellé vide.
+    /// The output is therefore "Heading, level 2" placed on the **content**,
+    /// while the markers themselves carry an empty label.
     static func roleDescription(of kind: SyntaxSpan.Kind) -> String? {
         switch kind {
-        case .heading(let level): "Titre, niveau \(level)"
-        case .strong: "Gras"
-        case .emphasis: "Italique"
-        case .strikethrough: "Barré"
+        case .heading(let level): "Heading, level \(level)"
+        case .strong: "Bold"
+        case .emphasis: "Italic"
+        case .strikethrough: "Strikethrough"
         case .inlineCode: "Code"
-        case .link(let destination): "Lien vers \(destination)"
+        case .link(let destination): "Link to \(destination)"
         case .image(_, let alt): alt.isEmpty ? "Image" : "Image, \(alt)"
-        case .blockQuote: "Citation"
-        case .listItem: "Élément de liste"
-        case .taskItem(_, let checked): checked ? "Tâche faite" : "Tâche à faire"
-        case .thematicBreak: "Séparateur"
-        case .codeBlock(let language): language.map { "Bloc de code, \($0)" } ?? "Bloc de code"
-        case .table: "Tableau"
-        case .frontMatter: "Métadonnées"
-        case .footnoteReference(let identifier): "Note \(identifier)"
-        case .footnoteDefinition(let identifier): "Texte de la note \(identifier)"
+        case .blockQuote: "Blockquote"
+        case .listItem: "List item"
+        case .taskItem(_, let checked): checked ? "Task done" : "Task to do"
+        case .thematicBreak: "Horizontal rule"
+        case .codeBlock(let language): language.map { "Code block, \($0)" } ?? "Code block"
+        case .table: "Table"
+        case .frontMatter: "Metadata"
+        case .footnoteReference(let identifier): "Footnote \(identifier)"
+        case .footnoteDefinition(let identifier): "Footnote text \(identifier)"
         }
     }
 }

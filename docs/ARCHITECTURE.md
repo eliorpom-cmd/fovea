@@ -1,59 +1,62 @@
 # Architecture
 
-Ce document explique **pourquoi** le code est fait comme il est. Le *quoi* se
-lit dans les sources ; ce qui ne s'y lit pas, ce sont les impasses évitées.
+This document explains **why** the code is built the way it is. The *what*
+is readable in the sources; what doesn't show up there are the dead ends
+that were avoided.
 
-Le cahier des charges ([`CAHIER-DES-CHARGES.md`](../CAHIER-DES-CHARGES.md))
-reste la référence pour les décisions produit. Les renvois `§n` pointent vers
-lui.
+The spec remains the reference for product decisions. `§n` references
+throughout this document point to it.
 
-## Plan du dépôt
+## Repository layout
 
 ```
 App/
-  Info.plist              types de documents markdown, UTI importé
-  Fovea.entitlements      vide : l'app n'est pas sandboxée (§10)
+  Info.plist              markdown document types, imported UTI
+  Fovea.entitlements      empty: the app is not sandboxed (§10)
   Sources/
-    main.swift            point d'entrée, sans xib et sans @main
+    main.swift            entry point, no xib, no @main
     AppDelegate.swift
-    MainMenu.swift        la barre de menus, en code
-    AppConfig.swift       noms et identifiants, en un seul endroit
-    AppSettings.swift     préférences observables, adossées à UserDefaults
-    Theme.swift           jetons de design (§7)
-    Document/             NSDocument, lecture/écriture, fidélité au fichier
-    Markdown/             analyse — aucun import AppKit, donc testable
-    Editor/               NSTextView, masquage, rendu, décorations, frappe
-Tests/                    108 tests, dont les budgets du §9
-scripts/fidelity-check.sh vérification de fidélité de bout en bout
-project.yml               manifeste XcodeGen — source de vérité du projet
+    MainMenu.swift        the menu bar, in code
+    AppConfig.swift       names and identifiers, in one place
+    AppSettings.swift     observable preferences, backed by UserDefaults
+    Theme.swift            design tokens (§7)
+    Document/             NSDocument, read/write, file fidelity
+    Markdown/              parsing — no AppKit import, so it's testable
+    Editor/                NSTextView, masking, rendering, decorations, typing
+Tests/                    108 tests, including the §9 budgets
+scripts/fidelity-check.sh end-to-end fidelity check
+project.yml               XcodeGen manifest — source of truth for the project
 ```
 
-`Fovea.xcodeproj` est **généré et git-ignoré**. On modifie `project.yml`, jamais
-le fichier de projet. Après avoir ajouté un fichier Swift, relancer
-`xcodegen generate`, sinon la compilation échoue sur « cannot find X in scope ».
+`Fovea.xcodeproj` is **generated and git-ignored**. `project.yml` is what
+gets edited, never the project file. After adding a Swift file, rerun
+`xcodegen generate`, or the build fails with "cannot find X in scope".
 
-**`Markdown/` ne contient aucun `import AppKit`.** C'est la couche où vit la
-conversion de plages, et elle doit se tester sans lancer d'interface.
+**`Markdown/` contains no `import AppKit`.** That's the layer where range
+conversion lives, and it has to be testable without launching the interface.
 
-## Le principe qui commande tout
+## The principle that governs everything
 
-> Le texte markdown est la seule source de vérité. Il vit dans le
-> `NSTextContentStorage`. Le rendu n'est **qu'une couche d'attributs**.
+> The markdown text is the sole source of truth. It lives in the
+> `NSTextContentStorage`. Rendering is **only a layer of attributes**.
 
-L'app ne construit jamais un document riche intermédiaire qu'elle
-re-sérialiserait. Quatre conséquences, et elles portent tout le reste :
+The app never builds an intermediate rich document that it would then
+re-serialize. Four consequences follow, and they carry the rest of the
+design:
 
-- **Fidélité au fichier.** Ce que l'utilisateur n'a pas touché ressort octet
-  pour octet, parce qu'il n'y a aucun chemin de code capable de le réécrire.
-  C'est structurel, pas disciplinaire.
-- **L'annulation native fonctionne**, sans couche maison.
-- **Le mode source est trivial** : le même tampon, sans la couche de style.
-- **La reconnaissance à la frappe n'a demandé aucun code.** Taper `# ` suffit :
-  le marqueur est dans le texte, le parseur le voit, le rendu suit.
+- **File fidelity.** Whatever the user hasn't touched comes back byte for
+  byte, because there is no code path capable of rewriting it. It's
+  structural, not a matter of discipline.
+- **Native undo works**, with no custom layer.
+- **Source mode is trivial**: the same buffer, without the styling layer.
+- **Recognizing constructs while typing needed no code at all.** Typing
+  `# ` is enough: the marker is in the text, the parser sees it, rendering
+  follows.
 
-## Le masquage des marqueurs
+## Masking the markers
 
-C'est la fonction clé (§2), et son mécanisme tient en trois attributs :
+This is the key feature (§2), and its mechanism comes down to three
+attributes:
 
 ```swift
 storage.addAttributes([
@@ -63,265 +66,269 @@ storage.addAttributes([
 ], range: marker)
 ```
 
-**Pas zéro pour la taille** : `NSFont` l'accepte, mais TextKit produit alors des
-métriques dégénérées et une largeur `NaN` se propage jusqu'au rect du curseur.
-**Le crénage doit être remis explicitement à zéro** : hérité du texte porteur,
-il rendrait la plage large de quelques dixièmes de point — assez pour décaler
-visiblement une ligne de titre.
+**Not zero for the size**: `NSFont` accepts it, but TextKit then produces
+degenerate metrics and a `NaN` width propagates all the way to the caret
+rect. **Kerning must be explicitly reset to zero**: inherited from the
+surrounding text, it would make the range a few tenths of a point wide —
+enough to visibly shift a heading line.
 
-L'autre mécanisme envisagé (§3.4) — renvoyer un `NSTextParagraph` plus court
-depuis `NSTextContentStorageDelegate` — **n'a pas été implémenté**. Il
-n'apportait qu'une chose, supprimer les positions de curseur invisibles, et
-celles-ci n'existent pas (voir ci-dessous). Il ne restait que ses coûts : faire
-diverger `NSTextLocation` et les offsets de stockage dans la sélection, le clic,
-la recherche et l'accessibilité à la fois.
+The other mechanism considered (§3.4) — returning a shorter
+`NSTextParagraph` from `NSTextContentStorageDelegate` — **was not
+implemented**. It offered only one thing, removing invisible caret
+positions, and those don't exist (see below). All that was left was its
+cost: making `NSTextLocation` and storage offsets diverge across selection,
+clicking, search and accessibility all at once.
 
-### Pourquoi il n'y a rien à intercepter au clavier
+### Why there's nothing to intercept on the keyboard
 
-Le cahier des charges promettait d'intercepter toutes les commandes de
-déplacement de `NSTextView` pour sauter les marqueurs invisibles. C'était
-inutile, et la raison mérite d'être comprise avant de « corriger » quoi que ce
-soit ici.
+The spec promised to intercept every `NSTextView` movement command to jump
+over invisible markers. That turned out to be unnecessary, and the reason
+is worth understanding before "fixing" anything here.
 
-Une construction se révèle quand le curseur touche `[début, fin]`, **bornes
-comprises** (`RevealPolicy`). Or toute position située dans un marqueur
-appartient, par construction, à l'intervalle de sa propre construction. Donc
-cette construction est révélée, donc ses marqueurs sont visibles :
+A construct is revealed when the caret touches `[start, end]`, **inclusive**
+(`RevealPolicy`). Now, any position inside a marker belongs, by
+construction, to the range of its own construct. So that construct is
+revealed, so its markers are visible:
 
-> **Quand un marqueur est masqué, le curseur ne peut pas s'y trouver.**
+> **When a marker is hidden, the caret cannot be inside it.**
 
-Le choix de bornes inclusives rend aussi la navigation réversible : une flèche
-droite suivie d'une flèche gauche ramène exactement à l'état de départ, ce qui
-serait faux avec un intervalle ouvert.
+The choice of inclusive bounds also makes navigation reversible: an arrow
+right followed by an arrow left returns exactly to the starting state, which
+would not hold with an open interval.
 
-**Le raisonnement est juste et il ne suffisait pas.** « Par construction »
-supposait qu'une seule construction puisse gagner, et la règle « la plus
-intérieure gagne » en désignait parfois une qui n'était pas celle du marqueur —
-sur `***gras***`, où l'emphase enveloppante n'a aucun marqueur mais la même
-longueur, et sur `[lien **gras**](url)`, où le curseur touche la fin du gras et
-le début du `](…)` en même temps. Dans les deux cas le curseur se retrouvait
-dans un marqueur masqué. `RevealPolicy` pose donc l'invariant en premier — un
-marqueur qui contient le curseur est révélé, quoi qu'il arrive — et
-`FidelityTests.testNoCaretPositionFallsInsideAHiddenMarker` le vérifie sur
-chaque position de chaque document du corpus, ce que le test d'origine, limité à
-un seul `**gras**`, ne pouvait pas faire.
+**The reasoning is sound, and it wasn't enough.** "By construction" assumed
+that only one construct could win, and the "innermost wins" rule sometimes
+picked one that wasn't the marker's — on `***bold***`, where the enclosing
+emphasis has no marker of its own but the same length, and on
+`[link **bold**](url)`, where the caret touches both the end of the bold run
+and the start of `](…)` at once. In both cases the caret ended up inside a
+hidden marker. `RevealPolicy` therefore states the invariant first — a
+marker that contains the caret is revealed, no matter what — and
+`FidelityTests.testNoCaretPositionFallsInsideAHiddenMarker` checks it at
+every position of every document in the corpus, which the original test,
+limited to a single `**bold**`, could not do.
 
-## `swift-markdown` : trois faits vérifiés
+## `swift-markdown`: three verified facts
 
-Mesurés sur la bibliothèque, pas supposés :
+Measured against the library, not assumed:
 
 | | |
 |---|---|
-| Les colonnes sont des **octets UTF-8** | `NSTextStorage` indexe en UTF-16 → `SourcePositionMap` |
-| La borne haute est **exclusive** | elle se transpose telle quelle en `NSRange` |
-| Les **notes de bas de page ne sont pas parsées** | `[^1]` ressort en `Text` → passe maison (`Footnotes`) |
+| Columns are **UTF-8 bytes** | `NSTextStorage` indexes in UTF-16 → `SourcePositionMap` |
+| The upper bound is **exclusive** | it transposes as-is into `NSRange` |
+| **Footnotes are not parsed** | `[^1]` comes out as `Text` → handled by our own pass (`Footnotes`) |
 
-Le premier point est le piège du §3.3. Une conversion naïve désaligne tous les
-attributs dès la première lettre accentuée, c'est-à-dire dès la première phrase
-écrite en français. `SourcePositionMapTests` couvre l'accentué, l'emoji, le CJK
-et les accents combinants.
+The first point is the pitfall in §3.3. A naive conversion misaligns every
+attribute from the first accented letter onward — in other words, from the
+first sentence written in a language that uses accents. `SourcePositionMapTests`
+covers accented characters, emoji, CJK and combining accents.
 
-Tables GFM, listes de tâches et texte barré, en revanche, sont bien exposés.
+GFM tables, task lists and strikethrough text, by contrast, are exposed
+correctly.
 
-## Ce qui est dessiné plutôt qu'écrit
+## What's drawn instead of written
 
-Masquer `- ` fait disparaître le tiret mais ne fait apparaître aucune puce. Or
-le principe ci-dessus interdit d'insérer le moindre caractère : un `•` ajouté au
-texte se retrouverait dans le fichier.
+Masking `- ` makes the dash disappear but doesn't make any bullet appear.
+The principle above forbids inserting a single character: a `•` added to the
+text would end up in the file.
 
-`EditorDecorations` dessine donc **derrière le texte** ce que les marqueurs
-représentent : puces et numéros, cases à cocher, barre de citation, filet
-horizontal, fond des blocs de code. Ces marques n'existent nulle part dans le
-document, au même titre qu'un curseur.
+`EditorDecorations` therefore draws **behind the text** what the markers
+represent: bullets and numbers, checkboxes, the blockquote bar, the
+horizontal rule, code block backgrounds. These marks exist nowhere in the
+document, the same way a caret doesn't.
 
-**Une marque dessinée remplace une source masquée**, donc elle s'efface dès que
-cette source revient. C'est la règle, et elle manquait : sous le curseur, un
-item de liste affichait `• - Un item`, la puce de l'éditeur juste à côté du
-tiret du fichier, et le filet horizontal barrait ses `---` redevenus visibles.
-Seules la barre de citation et le fond des blocs de code y échappent — ils ne
-remplacent rien, ils cadrent un bloc, et ce bloc existe aussi sous le curseur.
+**A drawn mark replaces a masked source**, so it disappears as soon as that
+source comes back. That's the rule, and it was missing at first: under the
+caret, a list item showed `• - An item`, the editor's bullet right next to
+the file's dash, and the horizontal rule struck through its `---` once they
+became visible again. Only the blockquote bar and the code block background
+are exempt — they don't replace anything, they frame a block, and that block
+also exists under the caret.
 
-Trois pièges y ont coûté du temps :
+Three pitfalls cost time here:
 
-- **Un retrait est nécessaire.** `headIndent` seul ne décale que les lignes de
-  continuation ; la première restait à la marge et la puce, dessinée à sa
-  gauche, tombait à une abscisse négative — donc hors de la vue.
-- **`NSTextView` est une vue retournée.** Un tracé lu « vers le haut » y dessine
-  à l'envers : la première coche était un chevron.
-- **Deux repères de coordonnées se mélangent.** `boundingFrame` rend des
-  coordonnées du **conteneur**, qu'on décale de `textContainerOrigin` pour
-  peindre dans la **vue** ; mais la largeur de colonne, elle, reste celle du
-  conteneur. Tout ce qui s'étend sur la colonne — filet horizontal, filets de
-  tableau, fond des blocs de code — se calculait `columnWidth - frame.minX * 2`
-  en mélangeant les deux, donc en comptant deux fois la marge de centrage. Dans
-  une fenêtre de 1512 points avec une colonne de 612, cette largeur valait
-  **−288** : les filets et les fonds se dessinaient à l'envers, entièrement dans
-  la marge gauche. Le défaut restait invisible dans la fenêtre par défaut, assez
-  étroite pour que le compte reste positif — c'est le genre de bug qu'on ne voit
-  qu'en plein écran. `DecorationPainter` reçoit maintenant le bord gauche de la
-  colonne et calcule le retrait par rapport à lui.
+- **An indent is required.** `headIndent` alone only shifts continuation
+  lines; the first line stayed at the margin, and the bullet, drawn to its
+  left, landed at a negative x-coordinate — off the visible view.
+- **`NSTextView` is a flipped view.** A path drawn "upward" ends up drawn
+  upside down: the first checkmark was a chevron.
+- **Two coordinate spaces get mixed up.** `boundingFrame` returns
+  **container** coordinates, which are offset by `textContainerOrigin` to
+  paint in the **view**; but the column width stays in container
+  coordinates. Anything that spans the column — horizontal rule, table
+  rules, code block backgrounds — was computed as
+  `columnWidth - frame.minX * 2`, mixing the two and so counting the
+  centering margin twice. In a 1512-point window with a 612-point column,
+  that width came out to **−288**: rules and backgrounds were drawn
+  reversed, entirely inside the left margin. The bug stayed invisible in the
+  default window, narrow enough that the count stayed positive — the kind
+  of bug you only see in full screen. `DecorationPainter` now receives the
+  column's left edge and computes the indent relative to it.
 
-Le filet horizontal est le seul marqueur masqué **sans** réduction de largeur
-(`MarkerMask.hideKeepingMetrics`) : toute la ligne étant syntaxe, la masquer
-normalement ferait s'effondrer sa hauteur, et le filet n'aurait plus où se
-dessiner.
+The horizontal rule is the only marker masked **without** width reduction
+(`MarkerMask.hideKeepingMetrics`): since the whole line is syntax, masking
+it normally would collapse its height, leaving the rule with nowhere to
+draw.
 
-## Les tableaux : une grille faite de crénage
+## Tables: a grid built out of kerning
 
-Le cahier des charges (§2.6) visait une grille réellement éditable, avec un
-`firstResponder` par cellule, et armait d'avance un repli. **C'est le repli qui
-est en place, et il s'est révélé meilleur que la cible.** Un éditeur dans
-l'éditeur aurait imposé deux piles d'annulation à tenir synchrones, une
-sélection qui s'arrête aux bords du tableau et un `⌘F` qui n'y entre pas. Ici
-il n'y a toujours qu'un seul tampon.
+The spec (§2.6) called for a genuinely editable grid, with a
+`firstResponder` per cell, and planned a fallback in advance. **The fallback
+is what shipped, and it turned out better than the original target.** An
+editor inside the editor would have required keeping two undo stacks in
+sync, a selection that stops at the table's edges, and a `⌘F` that can't
+enter it. Here there is still only ever one buffer.
 
-Le mécanisme est celui du masquage, poussé d'un cran. Chaque `|` est masqué,
-mais reçoit **une avance calculée** — le crénage qu'il faut pour que la cellule
-suivante tombe sur sa colonne (`MarkerMask.hide(in:range:advance:)`). Les
-blancs de remplissage de la source passent à zéro : c'est la grille qui espace,
-plus l'auteur. La ligne `|---|` est masquée entière et sa hauteur réduite à la
-place d'un filet, que `DecorationPainter` y trace.
+The mechanism is the masking mechanism, pushed one step further. Each `|` is
+masked, but is given **a computed advance** — the kerning needed for the
+next cell to land on its column (`MarkerMask.hide(in:range:advance:)`). The
+source's padding spaces are reduced to zero: it's the grid that spaces
+things out, not the author. The `|---|` line is masked entirely and its
+height reduced to the space of a rule, which `DecorationPainter` draws
+there.
 
-**Puis le repli est tombé, et c'est l'usage qui l'a fait tomber.** « Source à
-l'édition » veut dire : pour changer une cellule, il faut savoir écrire un
-tableau markdown. C'est exactement ce que l'app promet d'éviter, et personne
-n'écrit un tableau à la main. La grille **ne se replie plus** : on écrit dedans,
-les `|` ne réapparaissent jamais.
+**Then the fallback was dropped, and usage is what dropped it.** "Source
+while editing" means: to change a cell, you have to know how to write a
+markdown table. That's exactly what the app promises to spare people from,
+and nobody writes a table by hand. The grid **no longer falls back**: you
+write directly into it, the `|` never reappear.
 
-Ce que ça coûte est précis, et c'est `TableEditing` qui le paie. Le §2.3 démontre
-que le curseur ne peut jamais tomber dans un marqueur masqué — mais la
-démonstration repose sur le fait qu'une construction se révèle quand on la
-touche. Une grille qui ne se replie jamais sort de ce raisonnement : le tampon
-contient des `|`, des blancs de remplissage et une ligne `|---|` que plus rien
-ne montrera.
+What that costs is precise, and `TableEditing` is what pays it. §2.3
+demonstrates that the caret can never land inside a masked marker — but the
+proof relies on the fact that a construct reveals itself as soon as it's
+touched. A grid that never falls back to source falls outside that
+reasoning: the buffer still contains `|`, padding spaces and a `|---|` line
+that nothing will ever show again.
 
-La réponse n'est pas d'intercepter les commandes de déplacement — il y en a une
-trentaine avec leurs variantes de sélection, et un jour l'une manquerait. C'est
-de **corriger le curseur après coup**, en un seul point
-(`textViewDidChangeSelection`) : quel que soit le geste — flèche, clic, `⌘↓`,
-dictée, recherche —, s'il atterrit hors d'une cellule il est ramené dans la plus
-proche, dans le sens où il allait. Une sélection, elle, n'est jamais corrigée :
-c'est un geste en cours.
+The answer isn't to intercept movement commands — there are about thirty of
+them with their selection variants, and one day one would be missed. It's
+to **correct the caret after the fact**, at a single point
+(`textViewDidChangeSelection`): whatever the gesture — arrow key, click,
+`⌘↓`, dictation, search — if it lands outside a cell, the caret is pulled
+back into the nearest one, in the direction it was heading. A selection, by
+contrast, is never corrected: it's a gesture still in progress.
 
-Deux détails qui font la différence à l'usage :
+Two details that matter in practice:
 
-- **La ligne `|---|` garde la colonne.** Elle est invisible mais reste une
-  ligne, donc une flèche vers le bas y tombe. `MarkdownTable` retient la plage
-  de chaque `---` pour savoir dans quelle colonne on est entré et ressortir dans
-  la même, une ligne plus bas — sinon la colonne qu'on suivait des yeux serait
-  perdue à chaque traversée.
-- **`⌫` au début d'une cellule ne supprime rien**, il recule d'une cellule. Le
-  caractère qui précède est un `|` que personne ne voit ; l'effacer fusionnerait
-  deux colonnes et réécrirait le tableau entier sous les yeux de l'utilisateur.
+- **The `|---|` line keeps its column.** It's invisible but still a line,
+  so an arrow down lands on it. `MarkdownTable` keeps the range of each
+  `---` to know which column was entered and to exit into the same one, one
+  row down — otherwise the column being followed visually would be lost at
+  every crossing.
+- **`⌫` at the start of a cell deletes nothing**, it moves back one cell.
+  The character before it is a `|` that nobody sees; deleting it would
+  merge two columns and rewrite the whole table in front of the user.
 
-`TableEditingTests` vérifie l'invariant sur **toutes** les positions d'un tableau
-réel, ce qu'aucune interception ne saurait démontrer.
+`TableEditingTests` checks the invariant on **every** position of a real
+table, which no interception scheme could demonstrate.
 
-Trois choses valent d'être sues :
+Three things worth knowing:
 
-- **Les largeurs sont mesurées, pas comptées.** `**Titre**` rend six signes de
-  moins que sa source ; une colonne calculée sur les signes serait large de six
-  de trop. `applyTable` tourne donc **après** le masquage des marqueurs inline,
-  et mesure le rendu réel.
-- **La géométrie est lue dans la source, pas dans l'arbre.** cmark ne rend ni
-  les `|` ni la ligne de délimitation — qu'il consomme — et ce sont exactement
-  les caractères à masquer. `MarkdownTable.scan` les relève à la main, en
-  appliquant la règle de GFM : la découpe en cellules a lieu **avant** l'analyse
-  inline, donc un `|` dans un `code span` coupe quand même.
-- **Deux cas renoncent à la grille** : un tableau malformé, et un tableau plus
-  large que la colonne. Dans les deux, la source reste affichée telle quelle.
-  Le garde-fou (`fitsAsGrid`) est lu au même endroit par le rendu et par les
-  décorations, sans quoi les filets se dessineraient autour d'un tableau qui
-  n'a pas de grille.
+- **Widths are measured, not counted.** `**Heading**` renders six characters
+  shorter than its source; a column sized on character count would be six
+  too wide. `applyTable` therefore runs **after** inline marker masking, and
+  measures the actual rendered width.
+- **Geometry is read from the source, not from the tree.** cmark renders
+  neither the `|` nor the delimiter row — it consumes them — and those are
+  exactly the characters that need masking. `MarkdownTable.scan` picks them
+  out by hand, applying the GFM rule: cell splitting happens **before**
+  inline parsing, so a `|` inside a code span still splits the row.
+- **Two cases fall back to source**: a malformed table, and a table wider
+  than the column. In both, the source is shown as-is. The guard
+  (`fitsAsGrid`) is read at the same place by rendering and by decorations,
+  or rules would be drawn around a table that has no grid.
 
-## Performance : ce qui a été mesuré
+## Performance: what was measured
 
-Les budgets du §9 étaient **tous** dépassés à la première mesure. `PerformanceTests`
-les tient maintenant, en **Debug** — la configuration la plus défavorable.
+The §9 budgets were **all** exceeded on the first measurement.
+`PerformanceTests` now holds them, in **Debug** — the least favorable
+configuration.
 
-| Mesure | Avant | Après | Budget |
+| Measurement | Before | After | Budget |
 |---|---|---|---|
-| Cycle de frappe, 10 000 mots | 88,5 ms | 3,5 ms | 8 ms |
-| Cycle de frappe, 100 000 mots | 1 129 ms | 12 ms | 16 ms |
-| Déplacement du curseur, 100 000 mots | 3,3 ms | 0,1 ms | 1 ms |
-| Premier affichage, 100 000 mots | 1 052 ms | 190 ms | 500 ms |
+| Typing cycle, 10,000 words | 88.5 ms | 3.5 ms | 8 ms |
+| Typing cycle, 100,000 words | 1,129 ms | 12 ms | 16 ms |
+| Caret movement, 100,000 words | 3.3 ms | 0.1 ms | 1 ms |
+| First render, 100,000 words | 1,052 ms | 190 ms | 500 ms |
 
-Quatre causes, trouvées en mesurant :
+Four causes, found by measuring:
 
-**1. Analyse et rendu portaient sur le document entier à chaque touche.**
-`IncrementalParse` ne reprend que le bloc édité, avec un bloc de marge de chaque
-côté — un titre `setext` est souligné par la ligne d'après, une liste dont on
-retire la ligne vide fusionne avec la suivante. `IncrementalParseTests` vérifie
-la seule propriété qui compte : *incrémental == complet*.
+**1. Parsing and rendering covered the entire document on every keystroke.**
+`IncrementalParse` now reparses only the edited block, with a margin block
+on each side — a `setext` heading is underlined by the line after it, a
+list that loses a blank line merges with the next one. `IncrementalParseTests`
+checks the one property that matters: *incremental == full*.
 
-**2. La première règle de découpage ne servait jamais.** Elle retombait sur
-l'analyse complète dès qu'un bloc de code voisinait la portée ; sur un document
-en contenant tous les six paragraphes, l'incrémental ne s'appliquait pas une
-seule fois. Ce qui compte est que l'édition soit **dans** un bloc de code, pas à
-côté. Un bloc voisin est simplement absorbé dans la portée, jamais coupé en deux.
+**2. The first splitting rule never actually applied.** It fell back to a
+full parse as soon as a code block neighbored the edited range; on a
+document containing one every six paragraphs, the incremental path never
+triggered once. What matters is whether the edit is **inside** a code
+block, not next to it. A neighboring block is simply absorbed into the
+range, never split in two.
 
-**3. Chaque flèche du clavier balayait toutes les constructions.** `SpanIndex`
-les cherche par dichotomie, en séparant les **courtes** — inline et portée
-ligne, nombreuses mais bornées — des **longues** — blocs de code et tableaux,
-rares, balayés. La liste est maintenue triée par `splice` pour que l'index
-n'ait rien à trier.
+**3. Every arrow key press scanned every construct.** `SpanIndex` looks them
+up by binary search, separating the **short** ones — inline and
+line-scoped, numerous but bounded — from the **long** ones — code blocks and
+tables, rare, scanned linearly. The list is kept sorted via `splice` so the
+index never has to sort anything itself.
 
-**4. L'ouverture analysait 600 pages avant de peindre.** `setText` en fait juste
-assez pour le premier écran et termine au tour de boucle suivant.
+**4. Opening a file parsed 600 pages before painting anything.** `setText`
+now does just enough for the first screen and finishes on the next run loop
+turn.
 
-Un piège vaut d'être connu : **ne jamais appeler `applyColumnLayout()` depuis le
-cycle de frappe.** Réécrire `textContainerInset` invalide la mise en page de tout
-le document.
+One pitfall is worth knowing: **never call `applyColumnLayout()` from the
+typing cycle.** Rewriting `textContainerInset` invalidates the layout of the
+entire document.
 
-## Accessibilité : ce que le SDK interdit
+## Accessibility: what the SDK forbids
 
-Le §8 du cahier des charges promettait que les plages masquées porteraient un
-`accessibilityLabel` vide, pour que VoiceOver ne lise pas « dièse dièse espace
-Architecture ». **C'est impossible**, et l'en-tête du SDK le dit :
+§8 of the spec promised that masked ranges would carry an empty
+`accessibilityLabel`, so VoiceOver wouldn't read "hash hash space
+Architecture". **That's impossible**, and the SDK header says so:
 
 ```c
-// NSAccessibilityConstants.h, ligne 133
+// NSAccessibilityConstants.h, line 133
 NSAccessibilityAttributedStringForRangeParameterizedAttribute;
 //(NSAttributedString *) - does _not_ use attributes from Appkit/AttributedString.h
 ```
 
-Les attributs posés dans `NSTextStorage` — dont `foveaMasked` — ne sont jamais
-consultés par la couche d'accessibilité : elle interroge la vue, pas la chaîne.
+The attributes set on `NSTextStorage` — including `foveaMasked` — are never
+consulted by the accessibility layer: it queries the view, not the string.
 
-Le seul contournement serait de redéfinir `accessibilityAttributedString(for:)`
-pour rendre une chaîne **plus courte** que la plage demandée. On retomberait
-exactement sur le mécanisme B écarté au jalon 0 : dès que les longueurs
-divergent, la correspondance entre position lue et position réelle est rompue,
-et c'est le curseur de VoiceOver qui se met à mentir.
+The only workaround would be to override `accessibilityAttributedString(for:)`
+to return a string **shorter** than the requested range. That lands right
+back on mechanism B, ruled out at milestone 0: as soon as lengths diverge,
+the correspondence between the position read and the actual position
+breaks, and VoiceOver's cursor starts lying.
 
-Ce qui est fait, et testé : `Accessibility` est le point d'entrée unique des
-réglages système ; les rôles sémantiques ne contiennent jamais de syntaxe ; le
-plan, la palette et le menu slash les portent réellement, là où
-`accessibilityLabel` fonctionne ; la mise en page tient de 11 à 32 points.
+What is done, and tested: `Accessibility` is the single entry point for
+system settings; semantic roles never contain syntax; the outline, the
+palette and the slash menu carry them properly, where `accessibilityLabel`
+actually works; the layout holds from 11 to 32 points.
 
-## Contraintes à garder en tête
+## Constraints to keep in mind
 
-- **macOS 15** minimum. Pas macOS 13 comme TBD : le cœur de cette app *est*
-  TextKit 2, et Ventura y traîne des défauts de fragments et d'attachements
-  qu'il faudrait contourner à la main.
-- **Swift 6, concurrence stricte**, avertissements traités en erreurs.
-  `EditorTypography` et `FontCache` sont `@MainActor` parce qu'ils résolvent des
-  `NSFont` ; AppKit n'est pas thread-safe et un verrou se paierait à chaque
-  caractère rendu.
-- `NSDocument.read(from:ofType:)` et `data(ofType:)` sont déclarés `nonisolated`
-  par AppKit. Fovea garde `canConcurrentlyReadDocuments` et
-  `canAsynchronouslyWrite` à `false`, ce qui garantit le thread principal :
-  `MainActor.assumeIsolated` y est l'affirmation exacte de ce qui est vrai, et
-  lèvera une erreur bruyante si quelqu'un active l'un des deux drapeaux.
-- **Non sandboxée** (§10) : lire les images relatives à côté du document et
-  enregistrer des polices l'exigent.
-- **arm64 uniquement.**
+- **macOS 15** minimum. Not macOS 13 like TBD: the core of this app *is*
+  TextKit 2, and Ventura carries fragment and attachment bugs that would
+  need manual workarounds.
+- **Swift 6, strict concurrency**, warnings treated as errors.
+  `EditorTypography` and `FontCache` are `@MainActor` because they resolve
+  `NSFont` values; AppKit isn't thread-safe and a lock would cost something
+  on every character rendered.
+- `NSDocument.read(from:ofType:)` and `data(ofType:)` are declared
+  `nonisolated` by AppKit. Fovea keeps `canConcurrentlyReadDocuments` and
+  `canAsynchronouslyWrite` at `false`, which guarantees the main thread:
+  `MainActor.assumeIsolated` is there the exact assertion of what's true,
+  and will raise a loud error if either flag ever gets turned on.
+- **Not sandboxed** (§10): reading images relative to the document and
+  saving fonts both require it.
+- **arm64 only.**
 
-## Un piège des tests
+## A testing pitfall
 
-Un test qui parcourt `~/Documents` avec `FileManager` **bloque indéfiniment**
-dans un bundle de test : le dossier est protégé par TCC, l'hôte de test attend
-une autorisation qui ne peut pas s'afficher, et `xcodebuild` ne rend jamais la
-main. La vérification de fidélité sur de vrais documents passe donc par
-[`scripts/fidelity-check.sh`](../scripts/fidelity-check.sh), qui pilote l'app
-elle-même et juge sur un `git diff`.
+A test that walks `~/Documents` with `FileManager` **hangs indefinitely**
+inside a test bundle: the folder is protected by TCC, the test host waits
+for a permission prompt that cannot appear, and `xcodebuild` never gets
+control back. Fidelity checks on real documents therefore go through
+[`scripts/fidelity-check.sh`](../scripts/fidelity-check.sh), which drives
+the app itself and judges the result on a `git diff`.

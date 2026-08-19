@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Hors App Store : app NON sandboxée (§10 du cahier des charges).
-	     Fovea doit lire les images référencées en chemin relatif à côté du
-	     document, écrire dans son dossier d'assets, et enregistrer des polices
-	     déposées par l'utilisateur. Le sandbox imposerait des signets à portée
-	     de sécurité pour chacun de ces cas, sans bénéfice hors App Store. -->
+	<!-- Distributed outside the App Store, so the app is NOT sandboxed (§10 of
+	     the spec). Fovea has to read images referenced by relative path next to
+	     the document, write into its asset folder, and save fonts dropped in by
+	     the user. The sandbox would demand a security-scoped bookmark for each
+	     of those, with no benefit outside the App Store. -->
 </dict>
 </plist>

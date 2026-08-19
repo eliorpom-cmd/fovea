@@ -1,30 +1,30 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 import CoreText
 import UniformTypeIdentifiers
 
-/// Les polices que l'utilisateur apporte lui-même (§4.7).
+/// Fonts the user brings in themselves (§4.7).
 ///
-/// # Pourquoi la portée `.process`
+/// # Why the `.process` scope
 ///
-/// Enregistrer une police en portée `.user` l'installerait dans le système :
-/// elle apparaîtrait dans Pages, dans Mail, partout, et son retrait passerait
-/// par le Livre des polices. Ce n'est pas ce qu'on demande à un éditeur de
-/// texte. En portée `.process`, la police n'existe que pendant que Fovea
-/// tourne, **et le retrait est la suppression du fichier**. Rien à défaire,
-/// rien à nettoyer si l'app disparaît.
+/// Registering a font in `.user` scope would install it system-wide: it
+/// would show up in Pages, in Mail, everywhere, and removing it would go
+/// through Font Book. That's not what's expected of a text editor. In
+/// `.process` scope, the font only exists while Fovea is running, **and
+/// removal is just deleting the file**. Nothing to undo, nothing to clean up
+/// if the app disappears.
 ///
-/// Le prix à payer est qu'il faut ré-enregistrer à chaque lancement. C'est une
-/// boucle sur quelques fichiers, faite avant la première fenêtre.
+/// The price to pay is that it must be re-registered at every launch. That's
+/// a loop over a handful of files, done before the first window.
 @MainActor
 enum FontLibrary {
 
-    /// Où vivent les fichiers déposés.
+    /// Where the dropped files live.
     ///
-    /// `Application Support` et pas le bac à sable : l'app n'est pas
-    /// sandboxée (§10), et ce dossier est celui que l'utilisateur peut ouvrir
-    /// dans le Finder pour retirer une police à la main.
+    /// `Application Support`, not the sandbox: the app isn't sandboxed (§10),
+    /// and this folder is the one the user can open in the Finder to remove a
+    /// font by hand.
     static var folder: URL {
         if let folderOverride { return folderOverride }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -32,35 +32,35 @@ enum FontLibrary {
             .appendingPathComponent("Fonts", isDirectory: true)
     }
 
-    /// Détourne la bibliothèque, pour les tests seulement.
+    /// Redirects the library, for tests only.
     ///
-    /// Sans cela, la suite écrirait de vraies polices dans le dossier de
-    /// l'utilisateur et les y laisserait. Un test qui salit la machine sur
-    /// laquelle il tourne finit toujours par ne plus être lancé.
+    /// Without this, the suite would write real fonts into the user's folder
+    /// and leave them there. A test that dirties the machine it runs on
+    /// always ends up not being run anymore.
     static var folderOverride: URL?
 
     static let acceptedExtensions = ["otf", "ttf", "ttc", "otc"]
 
-    /// Les mêmes, pour le sélecteur de fichiers. `.font` couvre les deux
-    /// familles et leurs collections, et laisse macOS reconnaître un fichier
-    /// dont l'extension serait absente.
+    /// The same, for the file picker. `.font` covers both families and their
+    /// collections, and lets macOS recognize a file whose extension might be
+    /// missing.
     static let acceptedContentTypes: [UTType] = [.font]
 
-    // MARK: - Lancement
+    // MARK: - Launch
 
-    /// Enregistre toutes les polices déposées. À appeler une fois, au démarrage,
-    /// **avant** que la première fenêtre ne demande une fonte.
+    /// Registers every dropped font. To be called once, at startup,
+    /// **before** the first window asks for a font.
     static func registerAll() {
         for url in files() {
             register(url)
         }
     }
 
-    /// Les familles apportées par l'utilisateur, triées.
+    /// The families brought in by the user, sorted.
     ///
-    /// Recalculées depuis les fichiers plutôt que mémorisées : le dossier est
-    /// ouvert à l'utilisateur, et une liste en cache mentirait dès qu'il y
-    /// supprime un fichier.
+    /// Recomputed from the files rather than cached: the folder is open to
+    /// the user, and a cached list would lie as soon as they delete a file
+    /// in it.
     static func importedFamilies() -> [String] {
         Set(files().flatMap(familyNames(in:))).sorted()
     }
@@ -73,16 +73,16 @@ enum FontLibrary {
 
         var errorDescription: String? {
             switch self {
-            case .unreadable(let name): "« \(name) » n'a pas pu être lu comme une police."
-            case .alreadyPresent(let name): "« \(name) » est déjà dans votre bibliothèque."
+            case .unreadable(let name): "\"\(name)\" couldn't be read as a font."
+            case .alreadyPresent(let name): "\"\(name)\" is already in your library."
             }
         }
     }
 
-    /// Copie un fichier de police et l'enregistre immédiatement.
+    /// Copies a font file and registers it immediately.
     ///
-    /// - Returns: les familles ajoutées, pour que les réglages puissent
-    ///   sélectionner la nouvelle tout de suite.
+    /// - Returns: the families added, so settings can select the new one
+    ///   right away.
     @discardableResult
     static func importFont(at source: URL) throws -> [String] {
         let names = familyNames(in: source)
@@ -96,14 +96,13 @@ enum FontLibrary {
 
         try FileManager.default.copyItem(at: source, to: destination)
         register(destination)
-        // Le cache est indexé par (famille, taille) : sans purge, la nouvelle
-        // famille ne serait vue qu'au prochain lancement.
+        // The cache is indexed by (family, size): without a purge, the new
+        // family wouldn't be seen until the next launch.
         FontCache.shared.clear()
         return names
     }
 
-    /// Retire une famille : on désenregistre, puis on supprime les fichiers qui
-    /// la portent.
+    /// Removes a family: unregister, then delete the files that carry it.
     static func remove(family: String) {
         for url in files() where familyNames(in: url).contains(family) {
             CTFontManagerUnregisterFontsForURL(url as CFURL, .process, nil)
@@ -112,7 +111,7 @@ enum FontLibrary {
         FontCache.shared.clear()
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
     private static func files() -> [URL] {
         let contents = (try? FileManager.default.contentsOfDirectory(
@@ -122,14 +121,14 @@ enum FontLibrary {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// L'échec est silencieux, et c'est voulu : une police devenue illisible ne
-    /// doit pas empêcher l'app de démarrer. Elle disparaît simplement de la
-    /// liste, et le texte retombe sur la police système.
+    /// Failure is silent, and that's deliberate: a font that has become
+    /// unreadable must not prevent the app from starting. It simply
+    /// disappears from the list, and text falls back to the system font.
     private static func register(_ url: URL) {
         CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
     }
 
-    /// Les familles contenues dans un fichier. Un `.ttc` en contient plusieurs.
+    /// The families contained in a file. A `.ttc` contains several.
     private static func familyNames(in url: URL) -> [String] {
         guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL)
                 as? [CTFontDescriptor] else { return [] }

@@ -1,44 +1,44 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// **Le jalon 0 : le pari technique du §3.4.**
+/// **Milestone 0: the technical bet from §3.4.**
 ///
-/// Ces tests ne vérifient pas une intention, ils **mesurent la mise en page
-/// réelle de TextKit 2**. Un marqueur masqué doit occuper une largeur nulle à
-/// l'écran, sinon toute l'app est fausse — un `**` large d'un demi-point
-/// suffirait à faire vibrer chaque mot gras d'un texte.
+/// These tests do not verify an intention, they **measure the actual
+/// layout produced by TextKit 2**. A hidden marker must occupy zero width
+/// on screen, otherwise the whole app is a lie: a `**` half a point wide
+/// would be enough to make every bold word in a text shimmer.
 ///
-/// La mesure est prise là où elle compte : la position du curseur. Si le
-/// curseur placé avant `**important**` et celui placé avant `important` sont
-/// au même endroit, c'est que les deux étoiles ne prennent pas de place.
+/// The measurement is taken where it matters: the caret position. If the
+/// caret placed before `**essential**` and the one placed before
+/// `essential` land at the same spot, the two stars are taking up no space.
 @MainActor
 final class MarkerMaskTests: XCTestCase {
 
-    /// Tolérance en points. Elle n'est pas nulle parce que TextKit arrondit ses
-    /// positions au sous-pixel ; elle est très en dessous de ce qu'un œil peut
-    /// distinguer, et très en dessous de la largeur du plus fin des caractères.
+    /// Tolerance in points. It is not zero because TextKit rounds its
+    /// positions to the sub-pixel; it stays far below what an eye can
+    /// distinguish, and far below the width of the thinnest character.
     private let tolerance: CGFloat = 0.1
 
-    // MARK: - La mesure décisive
+    // MARK: - The Decisive Measurement
 
     func testHiddenMarkersOccupyNoHorizontalSpace() throws {
-        let withMarkers = try measureCaretX(in: "Un mot **important** ici", atUTF16: 9)
-        let withoutMarkers = try measureCaretX(in: "Un mot important ici", atUTF16: 7)
+        let withMarkers = try measureCaretX(in: "My box **essential** now", atUTF16: 9)
+        let withoutMarkers = try measureCaretX(in: "My box essential now", atUTF16: 7)
 
         XCTAssertEqual(withMarkers, withoutMarkers, accuracy: tolerance,
                        """
-                       Le curseur devant « important » n'est pas au même endroit selon que \
-                       les ** sont là ou non : le masquage ne rend pas la plage de largeur nulle.
+                       The caret before "essential" is not at the same spot depending on whether \
+                       the ** are there or not: masking does not make the range zero-width.
                        """)
     }
 
     func testCaretPositionsCollapseAcrossAHiddenMarker() throws {
-        // Les positions 7, 8 et 9 encadrent les deux étoiles. Masquées, elles
-        // doivent toutes trois se rendre au même x.
-        let text = "Un mot **important** ici"
+        // Positions 7, 8 and 9 straddle the two stars. Hidden, all three
+        // must render at the same x.
+        let text = "My box **essential** now"
         let seven = try measureCaretX(in: text, atUTF16: 7, revealing: false)
         let eight = try measureCaretX(in: text, atUTF16: 8, revealing: false)
         let nine = try measureCaretX(in: text, atUTF16: 9, revealing: false)
@@ -48,142 +48,143 @@ final class MarkerMaskTests: XCTestCase {
     }
 
     func testRevealedMarkersDoTakeSpaceAgain() throws {
-        // Le pendant du test précédent : une fois révélés, les marqueurs
-        // doivent redevenir de vrais caractères. Sans ça, on ne pourrait pas
-        // les sélectionner ni les modifier.
-        let text = "Un mot **important** ici"
+        // The counterpart of the previous test: once revealed, the markers
+        // must become real characters again. Without that, they could not
+        // be selected or edited.
+        let text = "My box **essential** now"
         let hidden = try measureCaretX(in: text, atUTF16: 9, revealing: false)
         let shown = try measureCaretX(in: text, atUTF16: 9, revealing: true)
 
         XCTAssertGreaterThan(shown - hidden, 1.0,
-                             "Un marqueur révélé doit occuper une largeur visible")
+                             "A revealed marker must occupy a visible width")
     }
 
-    // MARK: - Ce que le masquage ne doit pas casser
+    // MARK: - What Masking Must Not Break
 
     func testMaskingDoesNotChangeLineHeight() throws {
-        // Une fonte à 0,01 pt pourrait faire s'effondrer la hauteur de ligne.
-        // Elle ne le fait pas tant qu'un autre caractère de la ligne porte la
-        // fonte normale — mais il fallait le vérifier, pas le supposer.
-        let plain = try measureLineHeight(in: "Un mot important ici")
-        let masked = try measureLineHeight(in: "Un mot **important** ici")
+        // A 0.01 pt font could collapse the line height. It does not, as
+        // long as another character on the line carries the normal font:
+        // but this needed to be verified, not assumed.
+        let plain = try measureLineHeight(in: "My box essential now")
+        let masked = try measureLineHeight(in: "My box **essential** now")
         XCTAssertEqual(plain, masked, accuracy: 0.5)
     }
 
     func testMaskingLeavesTheBufferUntouched() throws {
-        // La promesse du §3.1 : le rendu n'est qu'une couche d'attributs. Le
-        // texte doit ressortir identique au caractère près.
-        let source = "# Titre\n\nUn mot **important** et `du code`.\n"
+        // The promise from §3.1: rendering is only a layer of attributes.
+        // The text must come back out identical down to the last character.
+        let source = "# Title\n\nSome **important** text and `some code`.\n"
         let view = try renderedView(source)
         XCTAssertEqual(view.string, source)
     }
 
     func testFindStillMatchesAcrossHiddenMarkers() throws {
-        // `NSTextFinder` cherche dans le tampon, pas dans ce qui est affiché.
-        // Chercher « important » doit donc trouver, et c'est justement le
-        // bénéfice du mécanisme A sur le mécanisme B du §3.4 : aucune
-        // correspondance de plages à maintenir.
-        let view = try renderedView("Un mot **important** ici")
-        let found = (view.string as NSString).range(of: "important")
+        // `NSTextFinder` searches the buffer, not what is displayed.
+        // Searching for "essential" must therefore find it, and that is
+        // exactly the benefit of mechanism A over mechanism B from §3.4: no
+        // range correspondence to maintain.
+        let view = try renderedView("My box **essential** now")
+        let found = (view.string as NSString).range(of: "essential")
         XCTAssertEqual(found, NSRange(location: 9, length: 9))
     }
 
     func testMaskedRangesAreQueryable() throws {
-        let view = try renderedView("Un mot **important** ici")
+        let view = try renderedView("My box **essential** now")
         let storage = try XCTUnwrap(view.textStorage)
 
-        XCTAssertTrue(MarkerMask.isMasked(storage, at: 7), "L'étoile ouvrante doit être marquée masquée")
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: 7), "The opening star must be marked hidden")
         XCTAssertTrue(MarkerMask.isMasked(storage, at: 18))
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 9), "Le contenu n'est jamais masqué")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 9), "The content is never hidden")
         XCTAssertEqual(MarkerMask.maskedRange(in: storage, at: 7), NSRange(location: 7, length: 2))
     }
 
     func testAccentedTextKeepsMarkersAligned() throws {
-        // Le croisement des deux pièges : un accent avant le gras décale les
-        // colonnes cmark, et une erreur de conversion masquerait le mauvais
-        // caractère — ici, un « é » deviendrait invisible.
-        let view = try renderedView("Été **crucial** ici")
+        // The crossing of the two traps: an accent before the bold shifts
+        // the cmark columns, and a conversion bug would mask the wrong
+        // character: here, an "ë" would become invisible.
+        let view = try renderedView("Zoë **crucial** now")
         let storage = try XCTUnwrap(view.textStorage)
 
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 0), "Le « É » ne doit pas être masqué")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 0), "\"Zoë\" must not be masked")
         XCTAssertFalse(MarkerMask.isMasked(storage, at: 1))
-        XCTAssertTrue(MarkerMask.isMasked(storage, at: 4), "Les ** sont aux offsets 4 et 5")
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: 4), "The ** are at offsets 4 and 5")
         XCTAssertTrue(MarkerMask.isMasked(storage, at: 5))
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 6), "« crucial » commence à l'offset 6")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 6), "\"crucial\" starts at offset 6")
     }
 
-    // MARK: - Une marque dessinée remplace une source masquée
+    // MARK: - A Drawn Mark Replaces a Hidden Source
 
-    /// Le défaut le plus visible de l'éditeur : sous le curseur, un item de
-    /// liste affichait `• - Un item` — la puce dessinée par l'éditeur **et** le
-    /// tiret du fichier, l'un à côté de l'autre.
+    /// The most visible bug in the editor: under the caret, a list item
+    /// displayed `• - My item` — the bullet drawn by the editor **and**
+    /// the dash from the file, side by side.
     ///
-    /// La puce n'existe que parce que le tiret est caché. Dès que le tiret
-    /// revient, elle doit partir.
+    /// The bullet exists only because the dash is hidden. As soon as the
+    /// dash comes back, it must go.
     func testTheDrawnBulletDisappearsWhenItsDashComesBack() throws {
-        let source = "- Un item de liste"
+        let source = "- A list item"
         let parsed = MarkdownParser.parse(source)
         let line = NSRange(location: 0, length: (source as NSString).length)
 
         let atPrefix = RevealPolicy.revealedIndices(spans: parsed.spans,
                                                     selection: NSRange(location: 1, length: 0),
                                                     lineRange: line)
-        XCTAssertFalse(atPrefix.isEmpty, "Le curseur est dans le `- ` : il doit se montrer")
+        XCTAssertFalse(atPrefix.isEmpty, "The caret is inside the `- `: it must show")
         XCTAssertTrue(marks(parsed.spans, source, revealed: atPrefix).isEmpty,
-                      "La puce dessinée doit s'effacer pendant que le tiret est visible")
+                      "The drawn bullet must disappear while the dash is visible")
 
         let inTheText = RevealPolicy.revealedIndices(spans: parsed.spans,
                                                      selection: NSRange(location: 8, length: 0),
                                                      lineRange: line)
-        XCTAssertTrue(inTheText.isEmpty, "Au milieu du texte, le tiret reste caché")
+        XCTAssertTrue(inTheText.isEmpty, "In the middle of the text, the dash stays hidden")
         XCTAssertEqual(marks(parsed.spans, source, revealed: inTheText).count, 1,
-                       "…et c'est la puce qui le remplace")
+                       "…and the bullet is what replaces it")
     }
 
-    /// Le pendant pour un filet horizontal, dont le trait barrait ses `---`
-    /// revenus, et pour une case à cocher.
+    /// The counterpart for a horizontal rule, whose drawn line used to
+    /// strike through its `---` once it came back, and for a checkbox.
     func testDrawnMarksYieldToTheirSourceEverywhere() throws {
-        for source in ["---", "- [x] Une tâche faite"] {
+        for source in ["---", "- [x] A task done"] {
             let parsed = MarkdownParser.parse(source)
             let line = NSRange(location: 0, length: (source as NSString).length)
             let revealed = RevealPolicy.revealedIndices(spans: parsed.spans,
                                                         selection: NSRange(location: 1, length: 0),
                                                         lineRange: line)
             XCTAssertTrue(marks(parsed.spans, source, revealed: revealed).isEmpty,
-                          "« \(source) » : la marque dessinée doublonne avec sa source")
+                          "\"\(source)\": the drawn mark duplicates its source")
             XCTAssertFalse(marks(parsed.spans, source, revealed: []).isEmpty,
-                           "« \(source) » : sans curseur, la marque doit être là")
+                           "\"\(source)\": without a caret, the mark must be there")
         }
     }
 
-    /// Une image au fil d'une phrase n'est pas un bloc : lui réserver une
-    /// hauteur écartait la ligne, et le dessin passait **par-dessus les mots**
-    /// qui l'entouraient.
+    /// An image in the middle of a sentence is not a block: reserving
+    /// height for it pushed the line apart, and the drawing was painted
+    /// **over the words** around it.
     func testAnImageInsideASentenceIsNotDrawnAsABlock() throws {
-        let inline = "Du texte ![une image](a.png) et la suite."
-        let alone = "![une image](a.png)"
+        let inline = "Some text ![an image](a.png) and more."
+        let alone = "![an image](a.png)"
 
         for (source, expected) in [(inline, 0), (alone, 1)] {
             let parsed = MarkdownParser.parse(source)
             let images = marks(parsed.spans, source, revealed: []).filter {
                 if case .image = $0.kind { return true } else { return false }
             }
-            XCTAssertEqual(images.count, expected, "« \(source) »")
+            XCTAssertEqual(images.count, expected, "\"\(source)\"")
         }
     }
 
     private func marks(_ spans: [SyntaxSpan], _ text: String, revealed: Set<Int>) -> [EditorDecoration] {
         let storage = NSTextStorage(string: text)
-        // La barre de citation et le fond des blocs de code ne remplacent rien :
-        // ils cadrent un bloc, et ce bloc existe aussi sous le curseur.
+        // The quote bar and the code block background do not replace
+        // anything: they frame a block, and that block still exists under
+        // the caret.
         return EditorDecoration.build(from: spans, in: storage,
                                       typography: .default, revealed: revealed)
             .filter { $0.kind != .quoteBar && $0.kind != .codeBackground }
     }
 
-    // MARK: - Instruments de mesure
+    // MARK: - Measurement Tools
 
-    /// Construit une vue rendue, hors écran mais avec une vraie mise en page.
+    /// Builds a rendered view, off-screen but with a real layout.
     private func renderedView(_ source: String,
                               caret: Int? = nil,
                               revealing: Bool = false) throws -> EditorTextView {
@@ -214,7 +215,7 @@ final class MarkerMaskTests: XCTestCase {
         return view
     }
 
-    /// Abscisse du curseur à un offset UTF-16 donné, en coordonnées du conteneur.
+    /// Caret x-position at a given UTF-16 offset, in container coordinates.
     private func measureCaretX(in source: String, atUTF16 offset: Int, revealing: Bool = false) throws -> CGFloat {
         let view = try renderedView(source, caret: offset, revealing: revealing)
         let layout = try XCTUnwrap(view.textLayoutManager)
@@ -227,7 +228,7 @@ final class MarkerMaskTests: XCTestCase {
             x = frame.origin.x
             return false
         }
-        return try XCTUnwrap(x, "Aucun segment de texte à l'offset \(offset)")
+        return try XCTUnwrap(x, "No text segment at offset \(offset)")
     }
 
     private func measureLineHeight(in source: String) throws -> CGFloat {

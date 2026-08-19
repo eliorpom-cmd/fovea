@@ -1,78 +1,79 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
-/// L'analyse incrémentale existe pour la vitesse. Elle ne vaut rien si elle ne
-/// donne pas **exactement** le même résultat que l'analyse complète : un
-/// éditeur qui rend juste au repos mais faux pendant la frappe est pire qu'un
-/// éditeur lent.
+/// Incremental parsing exists for speed. It's worthless unless it produces
+/// **exactly** the same result as a full parse: an editor that renders
+/// correctly at rest but wrong while typing is worse than a slow editor.
 ///
-/// Ces tests sont donc écrits comme une propriété : pour une édition donnée,
-/// `incrémental == complet`.
+/// These tests are therefore written as a property: for any given edit,
+/// `incremental == full`.
 final class IncrementalParseTests: XCTestCase {
 
-    // MARK: - La propriété
+    // MARK: - The property
 
     func testIncrementalMatchesFullParseOnOrdinaryEdits() {
         let base = """
-        # Titre
+        # Heading
 
-        Un paragraphe avec du **gras** et de l'*italique*.
+        A paragraph with **bold** and *italic*.
 
-        - un item
-        - un autre
+        - one item
+        - another
 
-        > une citation
+        > a quote
 
-        Un dernier paragraphe.
+        One last paragraph.
         """
-        // Une insertion dans chaque bloc, pour couvrir chaque cas de portée.
+        // An insertion in each block, to cover each scoping case.
         for insertionPoint in [10, 30, 60, 78, 95] where insertionPoint < base.utf16.count {
-            assertIncrementalMatchesFull(base: base, insert: "texte ", at: insertionPoint)
+            assertIncrementalMatchesFull(base: base, insert: "text ", at: insertionPoint)
         }
     }
 
     func testIncrementalMatchesFullParseWithAccents() {
-        // Le croisement des deux risques : découpage par bloc et conversion de
-        // plages UTF-8 → UTF-16.
-        let base = "Été **crucial**.\n\nDéjà vu : é à ù ç.\n\n- Un élément accentué\n"
+        // The intersection of two risks: block splitting and UTF-8 -> UTF-16
+        // range conversion. Accented text: exercises the offset conversion
+        // on purpose.
+        let base = "Café **crucial**.\n\nDéjà vu: café, naïve, résumé.\n\n- An accented café item\n"
         for insertionPoint in stride(from: 0, to: base.utf16.count, by: 5) {
             assertIncrementalMatchesFull(base: base, insert: "é", at: insertionPoint)
         }
     }
 
-    // MARK: - Les cas où le découpage ne suffit pas
+    // MARK: - Cases where splitting isn't enough
 
     func testTypingAFenceForcesAFullReparse() {
-        // Taper ``` change l'interprétation de **tout ce qui suit** : le reste
-        // du document devient du code, ou cesse de l'être. C'est le cas du §6,
-        // et le seul que le découpage par bloc ne peut pas voir.
-        let text = "Un paragraphe.\n\n```\n" as NSString
+        // Typing ``` changes the interpretation of **everything that
+        // follows**: the rest of the document becomes code, or stops being
+        // code. This is the §6 case, and the only one block splitting
+        // cannot see.
+        let text = "One paragraph.\n\n```\n" as NSString
         let scope = IncrementalParse.scope(in: text,
                                            editedRange: NSRange(location: 16, length: 3),
                                            inserted: "```",
                                            existingCodeBlocks: [])
-        XCTAssertNil(scope, "Une clôture de bloc de code doit forcer l'analyse complète")
+        XCTAssertNil(scope, "A code block fence must force a full re-parse")
     }
 
     func testEditingInsideACodeBlockForcesAFullReparse() {
-        // Dans un bloc de code, les lignes vides ne délimitent plus rien : la
-        // portée par bloc n'a pas de sens.
-        let text = "```\nligne un\n\nligne deux\n```\n" as NSString
+        // Inside a code block, blank lines no longer delimit anything:
+        // block scoping makes no sense.
+        let text = "```\nfirst line\n\nsecond line\n```\n" as NSString
         let scope = IncrementalParse.scope(in: text,
-                                           editedRange: NSRange(location: 15, length: 1),
+                                           editedRange: NSRange(location: 18, length: 1),
                                            inserted: "x",
-                                           existingCodeBlocks: [NSRange(location: 0, length: 28)])
+                                           existingCodeBlocks: [NSRange(location: 0, length: 31)])
         XCTAssertNil(scope)
     }
 
     func testAnOrdinaryEditStaysLocal() throws {
-        // Un document assez long pour que l'incrémental ait un sens. Sur un
-        // document de trois lignes, `scope` renvoie délibérément `nil` : tout
-        // reprendre y coûte moins cher que découper, et c'est exactement ce que
-        // dit la règle de la moitié.
-        let blocks = (1...60).map { "Bloc numéro \($0), avec du texte pour lui donner du corps.\n" }
+        // A document long enough for incremental parsing to make sense. On
+        // a three-line document, `scope` deliberately returns `nil`:
+        // reparsing everything costs less than splitting it, which is
+        // exactly what the half rule says.
+        let blocks = (1...60).map { "Block number \($0), with some text to give it some body.\n" }
         let text = blocks.joined(separator: "\n") as NSString
 
         let scope = try XCTUnwrap(IncrementalParse.scope(in: text,
@@ -80,32 +81,32 @@ final class IncrementalParseTests: XCTestCase {
                                                          inserted: "x",
                                                          existingCodeBlocks: []))
         XCTAssertLessThan(scope.length, text.length / 4,
-                          "Une frappe ordinaire ne doit ré-analyser qu'un voisinage")
+                          "Ordinary typing must only re-parse a neighbourhood")
     }
 
     func testAShortDocumentIsReparsedWhole() {
-        // La règle de la moitié : découper un document de trois lignes coûte
-        // plus que le reprendre en entier.
-        let text = "Bloc un.\n\nBloc deux.\n\nBloc trois.\n" as NSString
+        // The half rule: splitting a three-line document costs more than
+        // reparsing it whole.
+        let text = "Block one.\n\nBlock two.\n\nBlock three.\n" as NSString
         XCTAssertNil(IncrementalParse.scope(in: text,
-                                            editedRange: NSRange(location: 12, length: 1),
+                                            editedRange: NSRange(location: 16, length: 1),
                                             inserted: "x",
                                             existingCodeBlocks: []))
     }
 
-    // MARK: - La marge de voisinage
+    // MARK: - The neighbourhood margin
 
     func testScopeIncludesTheNeighbouringBlocks() {
-        // Un titre `setext` est souligné par la ligne d'après ; une liste dont
-        // on retire la ligne vide fusionne avec la suivante. Un bloc de marge
-        // de chaque côté couvre ces cas.
-        let text = "Un.\n\nDeux.\n\nTrois.\n\nQuatre.\n\nCinq.\n" as NSString
+        // A `setext` heading is underlined by the line after it; a list that
+        // has its blank line removed merges with the next one. A margin
+        // block on each side covers these cases.
+        let text = "One.\n\nTwo.\n\nThree.\n\nFour.\n\nFive.\n" as NSString
         let scope = IncrementalParse.blockRange(in: text, around: NSRange(location: 13, length: 0))
-        XCTAssertLessThan(scope.location, 12, "La portée doit remonter avant le bloc édité")
-        XCTAssertGreaterThan(scope.upperBound, 18, "Et descendre après lui")
+        XCTAssertLessThan(scope.location, 12, "The scope must reach back before the edited block")
+        XCTAssertGreaterThan(scope.upperBound, 18, "And forward past it")
     }
 
-    // MARK: - Le raccord
+    // MARK: - The splice
 
     func testSpliceShiftsWhatComesAfterTheScope() {
         let previous = [
@@ -119,12 +120,12 @@ final class IncrementalParseTests: XCTestCase {
                                            with: fresh,
                                            delta: 3)
         XCTAssertEqual(result.count, 3)
-        XCTAssertEqual(result[0].range, NSRange(location: 0, length: 5), "Avant la portée : inchangé")
-        XCTAssertEqual(result[1].range, NSRange(location: 10, length: 8), "Dans la portée : remplacé")
-        XCTAssertEqual(result[2].range, NSRange(location: 33, length: 5), "Après la portée : décalé de delta")
+        XCTAssertEqual(result[0].range, NSRange(location: 0, length: 5), "Before the scope: unchanged")
+        XCTAssertEqual(result[1].range, NSRange(location: 10, length: 8), "Inside the scope: replaced")
+        XCTAssertEqual(result[2].range, NSRange(location: 33, length: 5), "After the scope: shifted by delta")
     }
 
-    // MARK: - Outils
+    // MARK: - Helpers
 
     private func assertIncrementalMatchesFull(base: String, insert: String, at location: Int,
                                               file: StaticString = #filePath, line: UInt = #line) {
@@ -143,19 +144,20 @@ final class IncrementalParseTests: XCTestCase {
                                                  editedRange: editedRange,
                                                  inserted: insert,
                                                  existingCodeBlocks: codeBlocks) else {
-            return // Analyse complète demandée : rien à comparer.
+            return // Full re-parse requested: nothing to compare.
         }
         let fragment = (edited as NSString).substring(with: scope)
         let fresh = MarkdownParser.parse(fragment, offsetBy: scope.location)
         let incremental = MarkdownParser.splice(before, replacing: scope, with: fresh, delta: delta)
 
         XCTAssertEqual(normalise(incremental), normalise(full),
-                       "Insertion de \(insert.debugDescription) en \(location)",
+                       "Inserting \(insert.debugDescription) at \(location)",
                        file: file, line: line)
     }
 
-    /// Compare ce qui compte pour le rendu : le type et les plages. L'ordre de
-    /// la liste, lui, dépend du parcours de l'AST et n'a pas de sens propre.
+    /// Compares what matters for rendering: the kind and the ranges. The
+    /// order of the list depends on the AST traversal and carries no
+    /// meaning of its own.
     private func normalise(_ spans: [SyntaxSpan]) -> [String] {
         spans
             .map { "\($0.kind) \($0.range) \($0.markers) \($0.content)" }

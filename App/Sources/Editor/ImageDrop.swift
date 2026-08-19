@@ -1,34 +1,35 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 import UniformTypeIdentifiers
 
-/// Déposer ou coller une image (§4.4).
+/// Drops or pastes an image (§4.4).
 ///
-/// Le fichier est **copié à côté du document**, dans un sous-dossier dont le
-/// nom est réglable, et le lien markdown écrit en **chemin relatif**. Relatif
-/// et non absolu : c'est ce qui permet de déplacer le dossier, de le commiter
-/// ou de l'envoyer sans que rien ne casse.
+/// The file is **copied next to the document**, into a subfolder whose name
+/// is configurable, and the markdown link is written as a **relative path**.
+/// Relative, not absolute: this is what lets the folder be moved, committed
+/// or sent without anything breaking.
 @MainActor
 enum ImageDrop {
 
-    /// Ce qu'il y a à insérer après un dépôt, ou `nil` si rien d'exploitable.
+    /// What there is to insert after a drop, or `nil` if nothing usable came
+    /// out of it.
     struct Result {
         var markdown: String
     }
 
     static let acceptedTypes: [UTType] = [.fileURL, .png, .jpeg, .tiff, .gif, .heic, .webP, .image]
 
-    // MARK: - Dépôt
+    // MARK: - Drop
 
-    /// Traite un presse-papier de dépôt et renvoie le markdown à insérer.
+    /// Processes a drop pasteboard and returns the markdown to insert.
     ///
-    /// - Parameter document: l'emplacement du document ; sans lui, il n'y a pas
-    ///   de « à côté » où copier, et le lien serait absolu ou cassé.
+    /// - Parameter document: the document's location; without it there is no
+    ///   "next to" to copy into, and the link would be absolute or broken.
     static func handle(_ pasteboard: NSPasteboard, document: URL?) -> Result? {
         guard let document else { return unsavedDocumentWarning() }
 
-        // 1. Des fichiers déposés depuis le Finder.
+        // 1. Files dropped from the Finder.
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL], !urls.isEmpty {
             let images = urls.filter { isImage($0) }
             guard !images.isEmpty else { return nil }
@@ -37,17 +38,17 @@ enum ImageDrop {
             return Result(markdown: links.joined(separator: "\n\n"))
         }
 
-        // 2. Une image brute, collée depuis un autre logiciel : il n'y a pas de
-        //    fichier, donc pas de nom. On en fabrique un daté.
+        // 2. A raw image, pasted from another app: there is no file, so no
+        //    name. One is made up with a timestamp.
         if let image = NSImage(pasteboard: pasteboard), let link = write(image, nextTo: document) {
             return Result(markdown: link)
         }
         return nil
     }
 
-    // MARK: - Écriture
+    // MARK: - Writing
 
-    /// Copie un fichier image et renvoie son lien markdown relatif.
+    /// Copies an image file and returns its relative markdown link.
     private static func copy(_ source: URL, nextTo document: URL) -> String? {
         let folder = assetsFolder(for: document)
         guard ensure(folder) else { return nil }
@@ -61,10 +62,10 @@ enum ImageDrop {
         return link(to: destination, from: document, alt: source.deletingPathExtension().lastPathComponent)
     }
 
-    /// Écrit une image sans fichier d'origine, en PNG.
+    /// Writes an image with no source file, as PNG.
     ///
-    /// PNG et non JPEG : ce qu'on colle dans un éditeur de texte est presque
-    /// toujours une capture d'écran ou un schéma, que le JPEG abîmerait.
+    /// PNG, not JPEG: what gets pasted into a text editor is almost always a
+    /// screenshot or a diagram, which JPEG would degrade.
     private static func write(_ image: NSImage, nextTo document: URL) -> String? {
         guard let tiff = image.tiffRepresentation,
               let bitmap = NSBitmapImageRep(data: tiff),
@@ -79,7 +80,7 @@ enum ImageDrop {
         return link(to: destination, from: document, alt: "")
     }
 
-    // MARK: - Détails
+    // MARK: - Details
 
     private static func assetsFolder(for document: URL) -> URL {
         document.deletingLastPathComponent()
@@ -91,8 +92,8 @@ enum ImageDrop {
             || FileManager.default.fileExists(atPath: folder.path)
     }
 
-    /// Un nom libre dans le dossier : déposer deux fois « capture.png » ne doit
-    /// pas écraser la première.
+    /// A free name in the folder: dropping "capture.png" twice must not
+    /// overwrite the first one.
     private static func uniqueURL(in folder: URL, preferredName: String) -> URL {
         let base = (preferredName as NSString).deletingPathExtension
         let ext = (preferredName as NSString).pathExtension
@@ -105,12 +106,12 @@ enum ImageDrop {
         return candidate
     }
 
-    /// Le lien markdown, en chemin **relatif** au document.
+    /// The markdown link, as a path **relative** to the document.
     private static func link(to file: URL, from document: URL, alt: String) -> String {
         let folder = AppSettings.shared.assetsFolderName
         let relative = "\(folder)/\(file.lastPathComponent)"
-        // Les espaces d'un nom de fichier casseraient le lien : markdown y
-        // verrait la fin de la destination et le début d'un titre.
+        // Spaces in a filename would break the link: markdown would read
+        // them as the end of the destination and the start of a title.
         let encoded = relative.addingPercentEncoding(
             withAllowedCharacters: .urlPathAllowed) ?? relative
         return "![\(alt)](\(encoded))"
@@ -127,19 +128,20 @@ enum ImageDrop {
         return formatter
     }()
 
-    /// Un document jamais enregistré n'a pas de « à côté ».
+    /// A document that has never been saved has no "next to".
     ///
-    /// Plutôt que d'écrire dans un dossier temporaire — que macOS balaie, et
-    /// qui laisserait un lien cassé au prochain lancement — on le dit.
+    /// Rather than writing into a temporary folder (which macOS sweeps, and
+    /// which would leave a broken link on the next launch), this is reported
+    /// instead.
     private static func unsavedDocumentWarning() -> Result? {
         let alert = NSAlert()
-        alert.messageText = "Enregistrez le document d'abord"
+        alert.messageText = "Save the document first"
         alert.informativeText = """
-            Les images sont copiées à côté du fichier et référencées en chemin \
-            relatif. Tant que le document n'a pas d'emplacement, il n'y a pas \
-            de « à côté ».
+            Images are copied next to the file and referenced by relative \
+            path. Until the document has a location, there is no "next to" \
+            for it.
             """
-        alert.addButton(withTitle: "D'accord")
+        alert.addButton(withTitle: "OK")
         alert.runModal()
         return nil
     }

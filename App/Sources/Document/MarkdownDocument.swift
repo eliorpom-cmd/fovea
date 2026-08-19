@@ -1,37 +1,35 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Le document.
+/// The document.
 ///
-/// `NSDocument` fournit gratuitement ⌘O, ⌘S, les Récents, l'enregistrement
-/// automatique en place, les versions Time Machine, la restauration de session
-/// et iCloud Drive. Rien de tout cela n'est réécrit ici : ce fichier ne
-/// s'occupe que de ce qui est propre au markdown, c'est-à-dire la fidélité au
-/// fichier promise au §5.
+/// `NSDocument` provides ⌘O, ⌘S, Recents, in-place autosave, Time Machine
+/// versions, session restoration and iCloud Drive for free. None of that is
+/// rewritten here: this file only deals with what's specific to markdown,
+/// namely the fidelity to the file promised in §5.
 final class MarkdownDocument: NSDocument {
 
-    /// Le texte, en LF en mémoire. C'est la seule source de vérité (§3.1).
+    /// The text, as LF in memory. This is the sole source of truth (§3.1).
     private(set) var text: String = ""
 
-    /// Le style de fin de ligne trouvé à l'ouverture, restitué tel quel à
-    /// l'enregistrement.
+    /// The line-ending style found on open, restored as-is on save.
     private var lineEnding: TextFile.LineEnding = .default
 
-    /// L'encodage lu. Fovea écrit toujours en UTF-8 ; ce champ ne sert qu'à
-    /// prévenir quand une conversion aura lieu (§6).
+    /// The encoding read. Fovea always writes UTF-8; this field only serves
+    /// to warn when a conversion will take place (§6).
     private(set) var sourceEncoding: String.Encoding = .utf8
 
     private weak var editor: EditorController?
 
     override class var autosavesInPlace: Bool { true }
 
-    /// « Enregistrer sous » déplace le document : les images en chemin relatif
-    /// se résolvent alors ailleurs, et l'éditeur doit le savoir.
+    /// "Save As" moves the document: images with a relative path then
+    /// resolve elsewhere, and the editor needs to know.
     ///
-    /// `fileURL` est déclaré `nonisolated` par AppKit et peut changer depuis la
-    /// coordination de fichiers ; on repasse donc explicitement sur le thread
-    /// principal plutôt que d'affirmer qu'on y est déjà.
+    /// `fileURL` is declared `nonisolated` by AppKit and can change from
+    /// file coordination, so this hops back to the main thread explicitly
+    /// rather than asserting it's already there.
     override var fileURL: URL? {
         didSet {
             let url = fileURL
@@ -39,15 +37,15 @@ final class MarkdownDocument: NSDocument {
         }
     }
 
-    // MARK: - Lecture et écriture
+    // MARK: - Reading and writing
 
-    // `read` et `data` sont déclarés `nonisolated` par AppKit, parce qu'un
-    // document *peut* être lu ou écrit hors du thread principal. Fovea ne le
-    // demande jamais : `canConcurrentlyReadDocuments(ofType:)` et
-    // `canAsynchronouslyWrite(to:ofType:for:)` gardent leur valeur par défaut,
-    // `false`, et AppKit garantit alors le thread principal. `assumeIsolated`
-    // est donc l'affirmation exacte de ce qui est vrai — et il lèvera une
-    // erreur bruyante le jour où quelqu'un activera l'un des deux drapeaux.
+    // `read` and `data` are declared `nonisolated` by AppKit, because a
+    // document *can* be read or written off the main thread. Fovea never
+    // asks for that: `canConcurrentlyReadDocuments(ofType:)` and
+    // `canAsynchronouslyWrite(to:ofType:for:)` keep their default value,
+    // `false`, and AppKit then guarantees the main thread. `assumeIsolated`
+    // is therefore an exact statement of what's true, and it will raise a
+    // loud error the day someone flips either flag on.
 
     override func read(from data: Data, ofType typeName: String) throws {
         let contents = try TextFile.read(data)
@@ -61,14 +59,15 @@ final class MarkdownDocument: NSDocument {
 
     override func data(ofType typeName: String) throws -> Data {
         MainActor.assumeIsolated {
-            // Le tampon de l'éditeur fait foi s'il existe : c'est lui que
-            // l'utilisateur voit, et `text` ne le suit qu'au moment d'enregistrer.
+            // The editor's buffer is authoritative when it exists: it's
+            // what the user sees, and `text` only catches up with it at
+            // save time.
             if let editor { text = editor.text }
             return TextFile.write(text: text, lineEnding: lineEnding)
         }
     }
 
-    // MARK: - Fenêtre
+    // MARK: - Window
 
     override func makeWindowControllers() {
         let controller = DocumentWindowController()
@@ -76,46 +75,46 @@ final class MarkdownDocument: NSDocument {
         editor = controller.editor
         controller.editor.documentURL = fileURL
         controller.editor.setText(text)
-        // Les états du §6 se disent à l'ouverture, une fois, sans interrompre.
+        // The §6 states are communicated once, on open, without interrupting.
         controller.banner.show(DocumentBanner.messages(byteCount: text.utf8.count,
                                                        encoding: sourceEncoding,
                                                        isWritable: isWritable))
 
         controller.editor.onTextChanged = { [weak self, weak controller] in
-            // `updateChangeCount` est ce qui allume la pastille du bouton de
-            // fermeture et déclenche l'enregistrement automatique.
+            // `updateChangeCount` is what lights up the close button's dot
+            // and triggers autosave.
             self?.updateChangeCount(.changeDone)
             controller?.refreshStatistics()
         }
     }
 
-    /// Le fichier peut-il être réécrit ?
+    /// Can the file be rewritten?
     ///
-    /// Un nouveau document sans emplacement l'est par définition : il n'y a
-    /// encore rien à écraser, et « Enregistrer » ouvrira un sélecteur.
+    /// A new document with no location is, by definition: there's nothing
+    /// to overwrite yet, and "Save" will open a picker.
     private var isWritable: Bool {
         guard let fileURL else { return true }
         return FileManager.default.isWritableFile(atPath: fileURL.path)
     }
 
-    // MARK: - Le fichier change sous nos pieds (§5)
+    // MARK: - The file changes under our feet (§5)
 
-    /// Un `.md` est rarement seul : un `git checkout`, un dossier synchronisé,
-    /// un autre éditeur ouvert en parallèle, et le fichier bouge pendant qu'on
-    /// le regarde. Sans cette veille, la fenêtre continue d'afficher une
-    /// version morte — et le prochain enregistrement l'écrase en silence.
+    /// A `.md` file is rarely alone: a `git checkout`, a synced folder,
+    /// another editor open alongside it, and the file moves while it's
+    /// being looked at. Without this watch, the window keeps showing a
+    /// stale version, and the next save silently overwrites it.
     ///
-    /// `NSDocument` est déjà un `NSFilePresenter` : la coordination de fichiers
-    /// nous prévient toute seule, il ne manquait que la réaction.
+    /// `NSDocument` is already an `NSFilePresenter`: file coordination
+    /// notifies us on its own, all that was missing was the reaction.
     ///
-    /// Deux cas, et un seul est automatique :
+    /// Two cases, and only one is automatic:
     ///
-    /// - **rien de modifié ici** → on recharge sans rien demander. C'est le cas
-    ///   courant, et une alerte n'y apporterait qu'un clic ;
-    /// - **des modifications non enregistrées** → on ne touche à rien, on le
-    ///   dit. Écraser le travail de quelqu'un pour afficher celui d'un autre
-    ///   outil serait le pire des deux mondes ; `NSDocument` posera de son côté
-    ///   la question au moment d'enregistrer.
+    /// - **nothing changed here**: reload without asking. This is the
+    ///   common case, and an alert would only add a click;
+    /// - **unsaved changes**: leave everything untouched, just say so.
+    ///   Overwriting someone's work to display another tool's would be the
+    ///   worst of both worlds; `NSDocument` will ask the question on its
+    ///   own at save time.
     override nonisolated func presentedItemDidChange() {
         super.presentedItemDidChange()
         Task { @MainActor [weak self] in self?.fileChangedOnDisk() }
@@ -124,22 +123,23 @@ final class MarkdownDocument: NSDocument {
     @MainActor private func fileChangedOnDisk() {
         guard let url = fileURL, let type = fileType else { return }
 
-        // Notre propre écriture repasse par ici : la date connue est alors
-        // déjà la bonne, et il n'y a rien à recharger.
+        // Our own writes pass through here too: the known date is then
+        // already up to date, and there's nothing to reload.
         let modified = try? url.resourceValues(forKeys: [.contentModificationDateKey])
             .contentModificationDate
         guard let modified, let known = fileModificationDate, modified > known else { return }
 
         guard !isDocumentEdited else {
             windowControllers.compactMap { ($0 as? DocumentWindowController)?.banner }.forEach {
-                $0.show(["Le fichier a changé sur le disque. Vos modifications en cours sont "
-                         + "conservées : elles seront proposées à l'enregistrement."])
+                $0.show(["The file changed on disk. Your changes in progress are "
+                         + "kept: they'll be offered at save time."])
             }
             return
         }
 
-        // Le curseur est rendu à sa place. Le document a changé ailleurs, pas
-        // sous les doigts : le renvoyer en tête serait une perte gratuite.
+        // The caret is restored to its place. The document changed
+        // elsewhere, not under the user's fingers: sending it back to the
+        // top would be a gratuitous loss.
         let caret = editor?.textView.selectedRange()
         try? revert(toContentsOf: url, ofType: type)
         if let caret, let editor {
@@ -148,12 +148,11 @@ final class MarkdownDocument: NSDocument {
         }
     }
 
-    // MARK: - Type de fichier
+    // MARK: - File type
 
-    /// Fovea écrit toujours du markdown, même quand elle a ouvert un `.txt`
-    /// (§5). Sans cette redirection, « Enregistrer sous » proposerait de
-    /// réenregistrer en texte brut le document que l'utilisateur vient
-    /// d'écrire en markdown.
+    /// Fovea always writes markdown, even when it opened a `.txt` file
+    /// (§5). Without this redirection, "Save As" would offer to re-save as
+    /// plain text the document the user just wrote in markdown.
     override func fileNameExtension(forType typeName: String,
                                     saveOperation: NSDocument.SaveOperationType) -> String? {
         AppConfig.defaultExtension

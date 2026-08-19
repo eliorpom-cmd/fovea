@@ -1,19 +1,19 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Les blocs qu'on peut insérer au clavier, sans connaître leur syntaxe (§4.5).
+/// The blocks that can be inserted from the keyboard, without knowing their syntax (§4.5).
 ///
-/// # Pourquoi ce menu n'est pas un confort
+/// # Why this menu is not just a convenience
 ///
-/// C'est la contrepartie directe du §2.1. Une app qui **masque** les marqueurs
-/// doit offrir un autre chemin pour les poser : sans lui, insérer un tableau
-/// demanderait de connaître par cœur une syntaxe que l'éditeur vient justement
-/// de faire disparaître de l'écran.
+/// It is the direct counterpart to §2.1. An app that **hides** markers must
+/// offer another way to place them: without it, inserting a table would
+/// require knowing by heart a syntax the editor has just made disappear from
+/// the screen.
 ///
-/// Tout est ici plutôt que dans la vue, et sans AppKit : ce qu'insère chaque
-/// entrée est une décision de produit, pas un détail d'interface, et un test
-/// doit pouvoir la lire.
+/// Everything lives here rather than in the view, and without AppKit: what
+/// each entry inserts is a product decision, not an interface detail, and a
+/// test should be able to read it.
 enum SlashCommand: String, CaseIterable, Sendable {
     case heading1, heading2, heading3
     case bulletList, numberedList, taskList
@@ -21,21 +21,21 @@ enum SlashCommand: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .heading1: "Titre 1"
-        case .heading2: "Titre 2"
-        case .heading3: "Titre 3"
-        case .bulletList: "Liste à puces"
-        case .numberedList: "Liste numérotée"
-        case .taskList: "Liste de tâches"
-        case .quote: "Citation"
-        case .codeBlock: "Bloc de code"
-        case .table: "Tableau"
-        case .rule: "Filet horizontal"
+        case .heading1: "Heading 1"
+        case .heading2: "Heading 2"
+        case .heading3: "Heading 3"
+        case .bulletList: "Bulleted List"
+        case .numberedList: "Numbered List"
+        case .taskList: "Task List"
+        case .quote: "Blockquote"
+        case .codeBlock: "Code Block"
+        case .table: "Table"
+        case .rule: "Horizontal Rule"
         }
     }
 
-    /// Ce qui s'affiche à droite : la syntaxe posée. Le menu apprend donc le
-    /// markdown à qui veut le savoir, au lieu de le cacher pour toujours.
+    /// What's shown on the right: the syntax it places. The menu teaches
+    /// markdown to anyone who wants to learn it, instead of hiding it forever.
     var hint: String {
         switch self {
         case .heading1: "#"
@@ -51,35 +51,35 @@ enum SlashCommand: String, CaseIterable, Sendable {
         }
     }
 
-    /// Ce qu'on peut taper pour la trouver, en plus du titre.
+    /// What can be typed to find it, in addition to the title.
     ///
-    /// Les mots anglais sont là parce que la moitié des gens qui écrivent du
-    /// markdown tapent `/code` ou `/table` sans réfléchir, quelle que soit la
-    /// langue de l'interface.
+    /// Aliases, not synonyms of the title: someone who knows markdown reaches
+    /// for `/hr`, `/todo` or `/pre` without ever thinking of the word the menu
+    /// displays.
     var keywords: [String] {
         switch self {
-        case .heading1: ["titre", "heading", "h1"]
-        case .heading2: ["titre", "heading", "h2"]
-        case .heading3: ["titre", "heading", "h3"]
-        case .bulletList: ["liste", "puce", "list", "bullet"]
-        case .numberedList: ["liste", "numero", "ordonnee", "list", "ordered"]
-        case .taskList: ["tache", "case", "cocher", "task", "todo", "checkbox"]
-        case .quote: ["citation", "quote"]
-        case .codeBlock: ["code", "bloc", "block", "pre"]
-        case .table: ["tableau", "grille", "table"]
-        case .rule: ["filet", "trait", "separateur", "rule", "hr", "separator"]
+        case .heading1: ["title", "heading", "h1"]
+        case .heading2: ["title", "heading", "h2"]
+        case .heading3: ["title", "heading", "h3"]
+        case .bulletList: ["list", "bullet"]
+        case .numberedList: ["list", "number", "ordered"]
+        case .taskList: ["task", "todo", "check", "checkbox", "box"]
+        case .quote: ["quote", "citation", "blockquote"]
+        case .codeBlock: ["code", "block", "pre"]
+        case .table: ["table", "grid"]
+        case .rule: ["rule", "hr", "line", "separator", "divider"]
         }
     }
 }
 
 extension SlashCommand {
 
-    /// Les entrées qui correspondent à ce qui a été tapé après le `/`.
+    /// The entries that match what was typed after the `/`.
     ///
-    /// Le score est celui de la palette `⌘K` : même geste, même règle. Taper
-    /// `/tb` doit trouver « Tableau », comme `⌘K` trouve « Mode focus » avec
-    /// `mdf` — deux filtrages différents dans la même app seraient deux choses
-    /// à apprendre au lieu d'une.
+    /// The score is the same as the `⌘K` palette: same gesture, same rule.
+    /// Typing `/tb` should find "Table", just as `⌘K` finds "Focus Mode" with
+    /// `mdf` — two different filtering mechanisms in the same app would be
+    /// two things to learn instead of one.
     static func matching(_ query: String) -> [SlashCommand] {
         guard !query.isEmpty else { return allCases }
         return allCases
@@ -97,45 +97,46 @@ extension SlashCommand {
 
 extension TypingBehaviour {
 
-    /// Ce que le curseur vient de taper pour ouvrir le menu.
+    /// What the caret just typed to open the menu.
     struct SlashTrigger: Equatable {
-        /// La plage à remplacer : le `/` et ce qui a été tapé derrière.
+        /// The range to replace: the `/` and whatever was typed after it.
         var range: NSRange
-        /// Ce qui suit le `/`, pour filtrer la liste.
+        /// What follows the `/`, to filter the list.
         var query: String
-        /// Vrai quand du texte précède le `/` sur la ligne : le bloc inséré doit
-        /// alors commencer par un retour, sinon il se collerait à la phrase en
-        /// cours et ne serait pas un bloc du tout.
+        /// True when text precedes the `/` on the line: the inserted block
+        /// must then start with a newline, otherwise it would stick to the
+        /// sentence in progress and would not be a block at all.
         var startsNewLine = false
     }
 
-    /// Le menu doit-il être ouvert, vu la ligne courante et le curseur ?
+    /// Should the menu be open, given the current line and the caret?
     ///
-    /// # Ce qui décide, c'est ce qui précède le `/`
+    /// # What decides is what precedes the `/`
     ///
-    /// La première version n'ouvrait le menu que sur une **ligne vide**, par
-    /// crainte qu'un `/` au milieu d'une phrase — `https://`, `/Users/`,
-    /// `12/03`, `et/ou` — rende la touche inutilisable. La crainte est fondée,
-    /// mais la condition était trop large : elle privait du menu exactement les
-    /// gens à qui il sert, ceux qui ne connaissent pas la syntaxe qu'on leur a
-    /// masquée et qui ne devineront jamais qu'il faut d'abord une ligne vide.
+    /// The first version only opened the menu on a **blank line**, out of
+    /// concern that a `/` in the middle of a sentence — `https://`, `/Users/`,
+    /// `12/03`, `and/or` — would make the key unusable. The concern is well
+    /// founded, but the condition was too broad: it denied the menu to
+    /// exactly the people it serves, those who don't know the syntax that
+    /// was hidden from them and who will never guess that a blank line is
+    /// required first.
     ///
-    /// Le bon discriminant est plus étroit : **le `/` doit ouvrir un mot**,
-    /// c'est-à-dire être en début de ligne ou précédé d'un blanc. Les quatre cas
-    /// redoutés ont tous un caractère collé devant le `/` et sont donc écartés
-    /// par la même règle, sans rien coûter au reste.
+    /// The right discriminant is narrower: **the `/` must open a word**,
+    /// that is, be at the start of the line or preceded by whitespace. All
+    /// four feared cases have a character glued in front of the `/`, so they
+    /// are all ruled out by the same rule, at no cost to the rest.
     ///
-    /// La fonction prend **la ligne**, pas le document. C'est délibéré : elle
-    /// est appelée à chaque frappe et à chaque déplacement du curseur, et la
-    /// première version, qui construisait le tableau UTF-16 du document entier,
-    /// aurait à elle seule replacé le cycle de frappe au-dessus du budget du §9
-    /// sur un texte long.
+    /// The function takes **the line**, not the document. This is
+    /// deliberate: it is called on every keystroke and every caret move, and
+    /// the first version, which built the UTF-16 array of the whole
+    /// document, would on its own have pushed the typing cycle above the §9
+    /// budget on a long text.
     ///
     /// - Parameters:
-    ///   - line: la ligne du curseur, terminateur exclu.
-    ///   - lineStart: son offset dans le document, pour rendre une plage absolue.
-    ///   - caret: le curseur, en offset absolu.
-    ///   - scope: le réglage §4.7 — jamais, en début de ligne seulement, partout.
+    ///   - line: the caret's line, terminator excluded.
+    ///   - lineStart: its offset in the document, to produce an absolute range.
+    ///   - caret: the caret, as an absolute offset.
+    ///   - scope: the §4.7 setting — never, line start only, or everywhere.
     static func slashTrigger(inLine line: String, lineStart: Int, caret: Int,
                              scope: AppSettings.SlashMenuScope) -> SlashTrigger? {
         guard scope != .off else { return nil }
@@ -143,21 +144,21 @@ extension TypingBehaviour {
         let offset = caret - lineStart
         guard offset > 0, offset <= units.count else { return nil }
 
-        // Le curseur doit être en bout de ligne. Le menu accompagne la frappe ;
-        // s'ouvrir au milieu d'un texte déjà écrit laisserait la fin de la
-        // phrase derrière le bloc inséré, dans la dernière cellule d'un tableau
-        // ou après une clôture de code.
+        // The caret must be at the end of the line. The menu accompanies
+        // typing; opening in the middle of already-written text would leave
+        // the end of the sentence behind the inserted block, in the last
+        // cell of a table or after a code fence.
         guard offset == units.count else { return nil }
 
-        // Le `/` qui a ouvert : le dernier avant le curseur, sans blanc entre
-        // les deux — ce qu'il y a derrière est la recherche en cours.
+        // The `/` that opened it: the last one before the caret, with no
+        // whitespace between them — what follows it is the search in progress.
         let slash = UInt16(UnicodeScalar("/").value)
         var start = offset - 1
         while start >= 0, !isBlank(units[start]), units[start] != slash { start -= 1 }
         guard start >= 0, units[start] == slash else { return nil }
 
-        // La règle qui rend la touche `/` de nouveau utilisable pour ce qu'elle
-        // est : collée à un caractère, elle n'ouvre rien.
+        // The rule that makes the `/` key usable again for what it is: glued
+        // to a character, it opens nothing.
         if start > 0, !isBlank(units[start - 1]) { return nil }
         if scope == .lineStart, start != 0 { return nil }
 
@@ -171,25 +172,25 @@ extension TypingBehaviour {
         unit == UInt16(UnicodeScalar(" ").value) || unit == UInt16(UnicodeScalar("\t").value)
     }
 
-    /// L'édition qui remplace le `/query` par le bloc choisi.
+    /// The edit that replaces `/query` with the chosen block.
     static func insertion(of command: SlashCommand, replacing trigger: SlashTrigger) -> Edit {
         let (body, caretOffset) = template(for: command)
-        // Un bloc posé à la suite d'une phrase commence à la ligne. Le blanc
-        // laissé devant le retour est sans effet en markdown, et le retirer
-        // toucherait à un texte que l'utilisateur n'a pas demandé qu'on touche.
+        // A block placed after a sentence starts on its own line. The
+        // whitespace left before the newline has no effect in markdown, and
+        // removing it would touch text the user didn't ask to have touched.
         let lead = trigger.startsNewLine ? "\n" : ""
         return Edit(range: trigger.range,
                     replacement: lead + body,
                     caret: trigger.range.location + lead.utf16.count + caretOffset,
-                    undoName: "Insérer : \(command.title)")
+                    undoName: "Insert: \(command.title)")
     }
 
-    /// Le texte posé, et où le curseur atterrit dedans.
+    /// The text placed, and where the caret lands inside it.
     ///
-    /// Le curseur va **là où on écrit ensuite** : dans le bloc de code et pas
-    /// après sa clôture, dans la première cellule du tableau et pas à la ligne
-    /// suivante. C'est ce qui fait la différence entre un menu qui aide et un
-    /// menu qui laisse du travail.
+    /// The caret goes **where you write next**: inside the code block and
+    /// not after its closing fence, in the table's first cell and not on the
+    /// next line. That's what makes the difference between a menu that helps
+    /// and a menu that leaves work behind.
     private static func template(for command: SlashCommand) -> (String, Int) {
         switch command {
         case .heading1: ("# ", 2)

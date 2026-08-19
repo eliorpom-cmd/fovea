@@ -1,13 +1,13 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// Le plan du document (§4.5).
+/// The document outline (§4.5).
 ///
-/// C'est une liste de titres, donc du texte lu par-dessus l'épaule : elle doit
-/// se lire comme le document, pas comme sa source.
+/// It's a list of headings, so text read over someone's shoulder: it must
+/// read like the document, not like its source.
 @MainActor
 final class OutlinePanelTests: XCTestCase {
 
@@ -18,48 +18,49 @@ final class OutlinePanelTests: XCTestCase {
         return OutlinePanel.plainText(of: heading.content, spans: spans, text: source as NSString)
     }
 
-    /// Le plan montrait la source : les `**` d'un titre s'y lisaient tels
-    /// quels, dans le seul endroit de l'app qui les laissait voir — et dans un
-    /// panneau étroit, ils mangent la place du texte qu'on cherche.
+    /// The outline used to show the source: a heading's `**` read verbatim
+    /// there, the one place in the app that let them show — and in a narrow
+    /// panel, they eat into the space of the text being searched for.
     func testAHeadingLosesItsInlineMarkers() {
-        XCTAssertEqual(title(of: "## 2. Les tâches — dans **2 — Notes de réunion**\n"),
-                       "2. Les tâches — dans 2 — Notes de réunion")
-        XCTAssertEqual(title(of: "### Les tableaux — dans **3 — Doc** ou **6 — Tableaux**\n"),
-                       "Les tableaux — dans 3 — Doc ou 6 — Tableaux")
-        XCTAssertEqual(title(of: "# Du *italique* et du `code`\n"), "Du italique et du code")
+        XCTAssertEqual(title(of: "## 2. Tasks — see **2 — Meeting Notes**\n"),
+                       "2. Tasks — see 2 — Meeting Notes")
+        XCTAssertEqual(title(of: "### Tables — see **3 — Docs** or **6 — Tables**\n"),
+                       "Tables — see 3 — Docs or 6 — Tables")
+        XCTAssertEqual(title(of: "# Some *italic* and some `code`\n"), "Some italic and some code")
     }
 
-    /// Un lien garde son libellé, pas son adresse : c'est ce qu'on lit à
-    /// l'écran.
+    /// A link keeps only its label, not its address: that's what's read on
+    /// screen.
     func testALinkKeepsOnlyItsLabel() {
-        XCTAssertEqual(title(of: "## Voir [le guide](https://exemple.fr) ici\n"),
-                       "Voir le guide ici")
+        XCTAssertEqual(title(of: "## See [the guide](https://example.com) here\n"),
+                       "See the guide here")
     }
 
-    /// Un titre sans rien à retirer ne doit pas être abîmé au passage.
+    /// A heading with nothing to strip must not be damaged along the way.
     func testAPlainHeadingIsUntouched() {
-        XCTAssertEqual(title(of: "# Ce qu'il y a à tester\n"), "Ce qu'il y a à tester")
-        XCTAssertEqual(title(of: "## 4. Les liens\n"), "4. Les liens")
+        XCTAssertEqual(title(of: "# What there is to test\n"), "What there is to test")
+        XCTAssertEqual(title(of: "## 4. Links\n"), "4. Links")
     }
 
-    /// La liste des marqueurs, sortie de la fonction pour n'être calculée
-    /// qu'une fois par document, doit donner **exactement** le même texte.
+    /// The marker list, pulled out of the function so it's computed only
+    /// once per document, must produce **exactly** the same text.
     ///
-    /// C'est le seul enjeu de l'optimisation : le plan se reconstruit à chaque
-    /// frappe, et refiltrer toutes les constructions par titre était
-    /// quadratique. Un titre en bas d'un long document passe désormais par une
-    /// dichotomie ; s'il en sortait un mot de moins, ça se verrait ici.
+    /// That's the whole point of the optimization: the outline rebuilds on
+    /// every keystroke, and refiltering every construct by heading was
+    /// quadratic. A heading near the bottom of a long document now goes
+    /// through a binary search; if it came out one word short, it would
+    /// show up here.
     func testThePrecomputedMarkersGiveTheSameTitles() {
         let source = """
-        # Un *premier* titre
+        # A *first* heading
 
-        Du texte avec du **gras** et un [lien](https://exemple.fr) au milieu.
+        Some text with **bold** and a [link](https://example.com) in the middle.
 
-        ## Le **deuxième**, plus bas
+        ## The **second**, further down
 
-        Encore du texte, du `code` et de l'*italique* pour intercaler.
+        More text, some `code` and some *italics* to interleave.
 
-        ### Un `troisième` tout en bas
+        ### A `third` one at the bottom
         """
         let text = source as NSString
         let spans = MarkdownParser.parse(source).spans

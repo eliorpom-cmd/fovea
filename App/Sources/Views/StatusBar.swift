@@ -1,13 +1,13 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// La barre d'état : mots, signes, temps de lecture (§4.5).
+/// The status bar: words, characters, reading time (§4.5).
 ///
-/// Elle occupe le coin bas-droit et **s'efface quand la souris n'est pas
-/// dessus**. Le §7 demande que l'app disparaisse ; un compteur permanent dans
-/// le champ de vision est exactement le genre de chrome qui empêche d'oublier
-/// qu'on écrit dans un logiciel.
+/// It sits in the bottom-right corner and **fades out when the mouse is not
+/// over it**. §7 asks that the app disappear; a permanent counter in the
+/// field of view is exactly the kind of chrome that keeps reminding the
+/// user they are writing inside a piece of software.
 final class StatusBar: NSView {
 
     private let label = NSTextField(labelWithString: "")
@@ -18,12 +18,12 @@ final class StatusBar: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
 
-        // **Le fond de la page, pas une capsule.** La barre flotte au-dessus de
-        // la colonne : dans une fenêtre étroite, une ligne longue passait
-        // dessous et les deux textes se superposaient, illisibles. Peindre le
-        // fond de la page rend la barre opaque là où elle recouvre quelque
-        // chose, et parfaitement invisible partout ailleurs — c'est-à-dire
-        // presque toujours.
+        // **The page's background, not a capsule.** The bar floats above the
+        // column: in a narrow window, a long line used to pass underneath
+        // and the two pieces of text overlapped, illegible. Painting the
+        // page's background makes the bar opaque wherever it covers
+        // something, and perfectly invisible everywhere else — which is
+        // almost always.
         applyLayerBackground(Theme.NS.window)
         layer?.cornerRadius = Theme.Radius.control
 
@@ -45,51 +45,53 @@ final class StatusBar: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) n'est pas utilisé : aucune vue ne vient d'un xib") }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used: no view comes from a xib") }
 
-    /// **Transparente aux événements.**
+    /// **Transparent to events.**
     ///
-    /// La barre flotte au-dessus de la colonne, et elle est ajoutée après la
-    /// vue de défilement : elle recevait donc les clics et la molette avant le
-    /// texte. Dans la fenêtre par défaut — 820 points, colonne de 612 — elle
-    /// recouvre la partie droite de la colonne : cliquer en bas à droite du
-    /// document ne posait pas le curseur, et la molette n'y faisait rien.
+    /// The bar floats above the column, and it is added after the scroll
+    /// view: it used to receive clicks and scroll-wheel events before the
+    /// text did. In the default window — 820 points, a 612-point column —
+    /// it covers the right part of the column: clicking at the bottom right
+    /// of the document did not place the caret, and the scroll wheel did
+    /// nothing there.
     ///
-    /// Un compteur est décoratif : il n'a aucune raison d'intercepter quoi que
-    /// ce soit. Les zones de suivi, elles, sont géométriques et continuent de
-    /// donner l'entrée et la sortie du pointeur.
+    /// A counter is decorative: it has no reason to intercept anything.
+    /// Tracking areas, by contrast, are geometric and keep reporting the
+    /// pointer's entry and exit.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    // MARK: - Contenu
+    // MARK: - Content
 
     func update(_ statistics: WritingModes.Statistics, goal: Int, isSelection: Bool) {
         let words = statistics.words
         var parts: [String] = []
 
         if goal > 0 {
-            parts.append("\(words) / \(goal) mots")
+            parts.append("\(words) / \(goal) words")
             goalProgress = min(1, Double(words) / Double(goal))
         } else {
-            parts.append(words == 1 ? "1 mot" : "\(words) mots")
+            parts.append(words == 1 ? "1 word" : "\(words) words")
             goalProgress = 0
         }
-        parts.append(statistics.characters == 1 ? "1 signe" : "\(statistics.characters) signes")
+        parts.append(statistics.characters == 1 ? "1 character" : "\(statistics.characters) characters")
         if statistics.readingMinutes > 0 {
-            parts.append("\(statistics.readingMinutes) min de lecture")
+            parts.append("\(statistics.readingMinutes) min read")
         }
-        // Une sélection change le sens des chiffres : le dire évite de croire
-        // que le document a rétréci.
-        if isSelection { parts.append("sélection") }
+        // A selection changes the meaning of the numbers: saying so avoids
+        // making it look like the document shrank.
+        if isSelection { parts.append("selection") }
 
         label.stringValue = parts.joined(separator: "  ·  ")
         needsDisplay = true
     }
 
-    // MARK: - Apparence
+    // MARK: - Appearance
 
-    /// Le fond est résolu à la pose : voir `applyLayerBackground(_:)`. Une
-    /// fenêtre ouverte alors que le thème de l'app diffère de celui du système
-    /// donnait ici une **capsule gris foncé** posée sur une page blanche.
+    /// The background is resolved at layout time: see
+    /// `applyLayerBackground(_:)`. A window opened while the app's theme
+    /// differs from the system's used to produce a **dark gray capsule**
+    /// sitting on a white page here.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyLayerBackground(Theme.NS.window)
@@ -103,8 +105,9 @@ final class StatusBar: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard goalProgress > 0 else { return }
-        // L'objectif de session se rend par un simple filet sous le texte.
-        // Sans célébration ni confettis (§4.5) : on écrit, on ne joue pas.
+        // The session goal is rendered as a simple rule under the text.
+        // No celebration, no confetti (§4.5): the user is writing, not
+        // playing.
         let width = bounds.width * goalProgress
         let rule = NSRect(x: 0, y: 0, width: width, height: 1.5)
         Theme.NS.labelTertiary.setFill()
@@ -123,8 +126,8 @@ final class StatusBar: NSView {
 
     private func animateAlpha() {
         let target = isHovered ? 1.0 : 0.55
-        // « Réduire les animations » est un besoin, pas une préférence (§8) :
-        // l'état change, seul le mouvement disparaît.
+        // "Reduce motion" is a need, not a preference (§8): the state
+        // changes, only the motion disappears.
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             alphaValue = target
             return

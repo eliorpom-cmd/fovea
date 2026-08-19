@@ -1,28 +1,26 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Coloration syntaxique des blocs de code.
+/// Syntax highlighting for code blocks.
 ///
-/// # Pourquoi rien n'est embarqué
+/// # Why nothing is bundled
 ///
-/// Le §4.3 tranche : **aucune dépendance**. Ni Highlightr, qui embarque
-/// JavaScriptCore pour faire tourner highlight.js dans une app d'écriture, ni
-/// tree-sitter, qui impose de compiler des grammaires C et d'en suivre les
-/// versions. Dans un éditeur de prose un bloc de code fait dix lignes ; la
-/// précision d'un vrai analyseur n'y apporte rien de perceptible, et son coût
-/// est permanent.
+/// §4.3 settles it: **no dependency**. Not Highlightr, which bundles
+/// JavaScriptCore to run highlight.js inside a writing app; not tree-sitter,
+/// which requires compiling C grammars and tracking their versions. In a
+/// prose editor a code block runs ten lines; the precision of a real parser
+/// adds nothing perceptible to that, and its cost is permanent.
 ///
-/// # Quatre catégories, pas quarante
+/// # Four categories, not forty
 ///
-/// En monochrome — le défaut — la coloration ne dispose que de la graisse et de
-/// l'opacité. Quatre catégories sont donc tout ce qu'on peut distinguer, et
-/// c'est tout ce dont on a besoin pour rendre un extrait lisible : ce qui est
-/// structurel (mot-clé), ce qui est une donnée (chaîne, nombre), et ce qui est
-/// du commentaire.
+/// In monochrome — the default — highlighting has only weight and opacity to
+/// work with. Four categories are therefore all that can be distinguished,
+/// and that's all it takes to make a snippet readable: what is structural
+/// (keyword), what is data (string, number), and what is a comment.
 ///
-/// Un langage inconnu se rend en chasse fixe sans coloration. Jamais d'erreur,
-/// jamais de bloc vide (§4.3).
+/// An unknown language renders in monospaced type with no highlighting.
+/// Never an error, never an empty block (§4.3).
 enum CodeHighlighter {
 
     enum Category {
@@ -32,8 +30,8 @@ enum CodeHighlighter {
         case number
     }
 
-    /// La palette **par défaut** : monochrome (§7). Le sens passe par la
-    /// graisse et l'opacité, jamais par la teinte.
+    /// The **default** palette: monochrome (§7). Meaning is carried by
+    /// weight and opacity, never by hue.
     static func monochromeAttributes(for category: Category, font: NSFont) -> [NSAttributedString.Key: Any] {
         switch category {
         case .keyword:
@@ -49,12 +47,11 @@ enum CodeHighlighter {
         }
     }
 
-    /// La palette **en couleurs**, activable dans les réglages.
+    /// The **color** palette, enabled from settings.
     ///
-    /// C'est le seul endroit de l'app où la couleur est autorisée, et seulement
-    /// sur demande explicite de l'utilisateur (§4.3). Les teintes sont
-    /// délibérément sourdes : un bloc de code ne doit pas devenir le point le
-    /// plus vif d'une page de prose.
+    /// It's the only place in the app where color is allowed, and only on
+    /// the user's explicit request (§4.3). The hues are deliberately muted:
+    /// a code block should not become the brightest spot on a page of prose.
     static func colorAttributes(for category: Category, font: NSFont) -> [NSAttributedString.Key: Any] {
         switch category {
         case .keyword:
@@ -69,12 +66,12 @@ enum CodeHighlighter {
         }
     }
 
-    // MARK: - Analyse
+    // MARK: - Parsing
 
-    /// Découpe un extrait en catégories, dans l'ordre où elles apparaissent.
+    /// Splits a snippet into categories, in the order they appear.
     ///
-    /// - Parameter offset: position du bloc dans le tampon, pour que les plages
-    ///   renvoyées soient directement utilisables sur `NSTextStorage`.
+    /// - Parameter offset: the block's position in the buffer, so the
+    ///   returned ranges are directly usable on `NSTextStorage`.
     static func categorize(_ code: String, language: String?, offset: Int) -> [(NSRange, Category)] {
         guard let grammar = Grammar.named(language) else { return [] }
         var result: [(NSRange, Category)] = []
@@ -82,8 +79,8 @@ enum CodeHighlighter {
 
         var index = 0
         while index < units.count {
-            // Les commentaires et les chaînes d'abord : ce qui est dedans n'est
-            // plus du code, et un `//` dans une chaîne ne commente rien.
+            // Comments and strings first: what's inside them is no longer
+            // code, and a `//` inside a string comments out nothing.
             if let (length, category) = grammar.matchVerbatim(units, at: index) {
                 result.append((NSRange(location: offset + index, length: length), category))
                 index += length
@@ -113,17 +110,16 @@ enum CodeHighlighter {
         return result
     }
 
-    // MARK: - Grammaires
+    // MARK: - Grammars
 
-    /// Une grammaire est une liste de mots-clés et une manière de reconnaître
-    /// les commentaires et les chaînes. C'est tout ce que quatre catégories
-    /// demandent.
+    /// A grammar is a list of keywords and a way to recognize comments and
+    /// strings. That's all four categories require.
     struct Grammar {
         var keywords: Set<String>
         var lineComment: String?
         var blockComment: (open: String, close: String)?
         var stringDelimiters: [Character]
-        /// Le caractère d'échappement à l'intérieur d'une chaîne.
+        /// The escape character inside a string.
         var escape: Character? = "\\"
 
         static func named(_ language: String?) -> Grammar? {
@@ -131,7 +127,7 @@ enum CodeHighlighter {
             return all[language.lowercased()]
         }
 
-        /// Reconnaît un commentaire ou une chaîne commençant à cet index.
+        /// Recognizes a comment or a string starting at this index.
         func matchVerbatim(_ units: [UInt16], at index: Int) -> (length: Int, category: Category)? {
             if let lineComment, matches(units, at: index, text: lineComment) {
                 var end = index
@@ -149,9 +145,9 @@ enum CodeHighlighter {
                 guard units[index] == unit else { continue }
                 var end = index + 1
                 while end < units.count {
-                    // Une chaîne non fermée s'arrête en fin de ligne plutôt que
-                    // d'avaler le reste du bloc : c'est le cas normal pendant
-                    // la frappe.
+                    // An unclosed string stops at the end of the line rather
+                    // than swallowing the rest of the block: that's the
+                    // normal case while typing.
                     if units[end] == newline { break }
                     if let escape, units[end] == Array(String(escape).utf16)[0] {
                         end += 2
@@ -174,8 +170,8 @@ enum CodeHighlighter {
             return true
         }
 
-        /// Le jeu fermé du §4.3. Assez pour la documentation technique qu'on
-        /// écrit dans un éditeur de prose, et rien de plus.
+        /// The closed set from §4.3. Enough for the technical documentation
+        /// written in a prose editor, and nothing more.
         static let all: [String: Grammar] = {
             let cLike = Grammar(keywords: [], lineComment: "//",
                                 blockComment: ("/*", "*/"), stringDelimiters: ["\"", "'"])
@@ -258,7 +254,7 @@ enum CodeHighlighter {
         }()
     }
 
-    // MARK: - Caractères
+    // MARK: - Characters
 
     private static let newline = UInt16(UnicodeScalar("\n").value)
     private static let dot = UInt16(UnicodeScalar(".").value)

@@ -1,66 +1,67 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
-/// Où tombe chaque colonne d'un tableau, en points.
+/// Where each column of a table falls, in points.
 ///
-/// # Pourquoi une structure à part
+/// # Why a separate structure
 ///
-/// La géométrie a **deux lecteurs** : le rendu, qui la traduit en crénage sur
-/// les `|` masqués, et la couche de décoration, qui y trace les filets. Tant
-/// qu'il n'y avait que trois filets — en haut, sous l'en-tête, en bas — la
-/// décoration n'avait besoin de rien savoir. Une vraie grille, elle, doit
-/// dessiner **entre** les colonnes, donc connaître leurs abscisses au point
-/// près, et deux calculs séparés auraient divergé au premier changement de
-/// police.
+/// The geometry has **two readers**: the rendering, which translates it into
+/// kerning on the hidden `|`, and the decoration layer, which draws the rules
+/// with it. As long as there were only three rules (top, under the header row,
+/// bottom), the decoration layer needed to know nothing. A real grid, though,
+/// has to draw **between** columns, so it has to know their x-coordinates to
+/// the point, and two separate calculations would have diverged the moment
+/// the font changed.
 ///
-/// # Ce qu'elle mesure, et pourquoi ce n'est pas ce qu'on croit
+/// # What it measures, and why it isn't what it looks like
 ///
-/// Les largeurs sont **mesurées sur le rendu**, pas comptées en signes :
-/// `**Titre**` rend six signes de moins que sa source, et une colonne calculée
-/// sur les signes serait large de six de trop. C'est aussi ce qui permet à un
-/// tableau d'être rendu dans la police du corps plutôt qu'en chasse fixe — la
-/// chasse fixe garantissait l'alignement gratuitement, mais faisait ressembler
-/// chaque tableau à un bloc de code.
+/// Widths are **measured on the rendering**, not counted in characters:
+/// `**Title**` renders six characters shorter than its source, and a column
+/// sized on character count would be six too wide. This is also what lets a
+/// table render in the body font instead of a monospaced one: the monospaced
+/// font guaranteed alignment for free, but made every table look like a code
+/// block.
 @MainActor
 struct TableLayout {
 
-    /// Abscisse du bord gauche de chaque colonne, depuis le début de la ligne.
+    /// X-coordinate of the left edge of each column, from the start of the row.
     var columnOrigins: [CGFloat]
-    /// Largeur du contenu le plus large de chaque colonne.
+    /// Width of the widest content in each column.
     var columnWidths: [CGFloat]
-    /// Gouttière entre deux colonnes — l'air de part et d'autre d'un filet.
+    /// Gutter between two columns: the air on either side of a rule.
     var gutter: CGFloat
-    /// Largeur totale de la grille, bords compris.
+    /// Total width of the grid, edges included.
     var width: CGFloat
 
-    /// Abscisse du filet qui sépare la colonne `index` de la précédente.
+    /// X-coordinate of the rule separating column `index` from the previous
+    /// one.
     ///
-    /// Au **milieu** de la gouttière : posé contre le texte, il ferait un cadre
-    /// serré au lieu d'une grille aérée.
+    /// At the **middle** of the gutter: set against the text, it would make a
+    /// tight frame instead of an airy grid.
     func separatorX(before index: Int) -> CGFloat? {
         guard index > 0, index < columnOrigins.count else { return nil }
         return (columnOrigins[index] - gutter / 2).rounded()
     }
 
-    /// La géométrie d'un tableau, ou `nil` s'il ne tient pas dans la colonne.
+    /// The geometry of a table, or `nil` if it does not fit in the column.
     ///
-    /// Renvoyer `nil` est un cas normal et non une erreur : c'est le §6. Une
-    /// grille plus large que la colonne se replierait rangée par rangée et ne se
-    /// lirait plus du tout ; on affiche alors la source, qui reste lisible.
+    /// Returning `nil` is a normal case, not an error: see §6. A grid wider
+    /// than the column would wrap row by row and become unreadable, so the
+    /// source is shown instead, which stays readable.
     ///
-    /// La décision se prend sur les largeurs **mesurées**, donc sur ce qui sera
-    /// réellement dessiné. L'ancienne estimation comptait les signes de la
-    /// source en chasse fixe, ce qui la rendait fausse dans les deux sens dès
-    /// qu'on quittait cette police.
+    /// The decision is made on the **measured** widths, so on what will
+    /// actually be drawn. The old estimate counted the source characters in a
+    /// monospaced font, which made it wrong in both directions as soon as a
+    /// different font was in use.
     static func measure(_ table: MarkdownTable,
                         in storage: NSTextStorage,
                         typography: EditorTypography,
                         available: CGFloat) -> TableLayout? {
         guard !table.alignments.isEmpty else { return nil }
 
-        // La gouttière suit le corps du texte : c'est elle qui donne l'air, et
-        // elle doit grandir avec la police comme tout le reste.
+        // The gutter follows the body text: it is what gives the air, and it
+        // has to grow with the font like everything else.
         let gutter = (typography.bodySize * 1.6).rounded()
 
         var widths = [CGFloat](repeating: 0, count: table.columnCount)
@@ -69,19 +70,19 @@ struct TableLayout {
                 widths[column] = max(widths[column], measure(storage, cell.content))
             }
         }
-        // Une colonne vide garde une largeur minimale.
+        // An empty column keeps a minimum width.
         //
-        // Elle valait 1,5 corps — de quoi empêcher deux filets de se toucher,
-        // rien de plus. Un tableau qu'on vient d'insérer n'a que des cellules
-        // vides : il sortait en filet de 168 points au milieu d'une colonne de
-        // texte trois fois plus large, illisible et presque impossible à viser.
-        // Or c'est **l'état initial de tout tableau** : celui qu'on voit avant
-        // d'avoir écrit quoi que ce soit. Une cellule vide est un endroit où
-        // l'on va écrire ; elle doit en avoir la taille.
+        // It used to be 1.5 body sizes: just enough to keep two rules from
+        // touching, nothing more. A table that was just inserted has only
+        // empty cells: it came out as a 168-point rule in the middle of a
+        // text column three times as wide, unreadable and nearly impossible
+        // to click. Yet this is **the initial state of every table**: the one
+        // seen before anything has been written. An empty cell is a place
+        // that is about to be written into; it must have the size for it.
         let minimum = (typography.bodySize * 4.5).rounded()
         widths = widths.map { max($0, minimum) }
 
-        /// Les abscisses qui découlent des largeurs, et la largeur totale.
+        /// The x-coordinates that follow from the widths, and the total width.
         func lay(_ widths: [CGFloat]) -> (origins: [CGFloat], total: CGFloat) {
             var origins: [CGFloat] = []
             var cursor = gutter / 2
@@ -94,17 +95,18 @@ struct TableLayout {
 
         var (origins, total) = lay(widths)
 
-        // Trop large pour la colonne : on ne replie pas, on montre la source.
-        // Ce test se fait sur la largeur **naturelle**, avant tout étirement.
+        // Too wide for the column: it does not wrap, the source is shown
+        // instead. This check is made on the **natural** width, before any
+        // stretching.
         guard total <= available else { return nil }
 
-        // Le tableau occupe toute la colonne de texte.
+        // The table occupies the whole text column.
         //
-        // À la taille de son contenu, son bord droit tombait n'importe où, et
-        // surtout un tableau qu'on venait d'insérer — toutes cellules vides —
-        // se réduisait à un filet perdu au milieu de la page. Le surplus se
-        // partage à parts égales : les écarts de largeur entre colonnes sont
-        // conservés, ce qui garde à la colonne large son emphase.
+        // At its content size, its right edge fell wherever it happened to,
+        // and in particular a table that had just been inserted (all empty
+        // cells) shrank down to a rule lost in the middle of the page. The
+        // extra space is shared out equally: the width differences between
+        // columns are preserved, which keeps the wide column its emphasis.
         if total < available, !widths.isEmpty {
             let share = ((available - total) / CGFloat(widths.count)).rounded(.down)
             if share > 0 {
@@ -117,7 +119,7 @@ struct TableLayout {
                            gutter: gutter, width: total)
     }
 
-    /// Largeur réellement rendue d'une plage, attributs compris.
+    /// Width actually rendered for a range, attributes included.
     private static func measure(_ storage: NSTextStorage, _ range: NSRange) -> CGFloat {
         guard range.length > 0, range.upperBound <= storage.length else { return 0 }
         return storage.attributedSubstring(from: range).size().width

@@ -1,32 +1,31 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 import UniformTypeIdentifiers
 
-/// La vue d'édition.
+/// The editing view.
 ///
-/// Elle reste volontairement mince : tout ce qui touche au markdown vit dans
-/// `EditorController`. Ce fichier ne s'occupe que de ce qu'une `NSTextView`
-/// fait mal par défaut pour un éditeur de markdown.
+/// It stays deliberately thin: everything that touches markdown lives in
+/// `EditorController`. This file only handles what an `NSTextView` gets
+/// wrong by default for a markdown editor.
 final class EditorTextView: NSTextView {
 
-    /// Appelé quand `⌫` doit supprimer une construction entière plutôt qu'un
-    /// caractère de marqueur isolé (§2.5). Renvoie `true` si la suppression a
-    /// été prise en charge.
+    /// Called when `⌫` must delete an entire construct rather than a single
+    /// marker character (§2.5). Returns `true` if the deletion was handled.
     var handlesDeleteBackward: ((NSRange) -> Bool)?
 
-    /// Les marques dessinées derrière le texte : puces, barres de citation,
-    /// filets, fonds de blocs de code. Voir `EditorDecoration`.
+    /// The marks drawn behind the text: bullets, blockquote bars, horizontal
+    /// rules, code block backgrounds. See `EditorDecoration`.
     var decorations: [EditorDecoration] = [] {
         didSet {
             needsDisplay = true
-            // Les cases à cocher posent des zones de pointeur : elles bougent
-            // dès que le texte change, donc AppKit doit les redemander.
+            // Checkboxes set up pointer areas: they move as soon as the text
+            // changes, so AppKit has to be asked to recompute them.
             //
-            // Mais elles seules. Le rappel partait à chaque frappe, y compris
-            // dans un document qui ne contient pas une seule tâche — et
-            // `resetCursorRects` interroge la mise en page pour chaque case
-            // visible.
+            // But only checkboxes. The callback used to fire on every
+            // keystroke, even in a document that doesn't contain a single
+            // task, and `resetCursorRects` queries the layout for every
+            // visible checkbox.
             if Self.hasCheckbox(oldValue) || Self.hasCheckbox(decorations) {
                 window?.invalidateCursorRects(for: self)
             }
@@ -43,8 +42,8 @@ final class EditorTextView: NSTextView {
     var typography: EditorTypography = .default
     var documentURL: URL?
 
-    /// La plage laissée en pleine intensité par le mode focus (§4.5).
-    /// `nil` quand le mode est éteint.
+    /// The range left at full intensity by focus mode (§4.5).
+    /// `nil` when the mode is off.
     var focusRange: NSRange? {
         didSet {
             guard focusRange != oldValue else { return }
@@ -54,12 +53,12 @@ final class EditorTextView: NSTextView {
         }
     }
 
-    /// Le voile du mode focus, **au-dessus** du texte.
+    /// The focus mode veil, **above** the text.
     ///
-    /// Il ne peut pas être peint dans `draw(_:)` : avec TextKit 2, les
-    /// fragments de texte sont rendus dans des couches posées par-dessus le
-    /// dessin de la vue, et le voile passait dessous — invisible. Une sous-vue,
-    /// elle, se compose au-dessus.
+    /// It cannot be painted in `draw(_:)`: with TextKit 2, text fragments are
+    /// rendered in layers placed above the view's own drawing, and the veil
+    /// ended up underneath them, invisible. A subview, by contrast, composites
+    /// above them.
     private lazy var focusOverlay: FocusOverlayView = {
         let overlay = FocusOverlayView(owner: self)
         overlay.isHidden = true
@@ -68,42 +67,41 @@ final class EditorTextView: NSTextView {
         return overlay
     }()
 
-    /// Rappels vers `EditorController` pour les touches dont le comportement
-    /// dépend du markdown. Chacun renvoie `true` s'il a pris la main.
+    /// Callbacks into `EditorController` for keys whose behavior depends on
+    /// markdown. Each one returns `true` if it took over.
     var handlesNewline: (() -> Bool)?
     var handlesIndent: ((_ outdent: Bool) -> Bool)?
 
-    /// Appelé pour chaque caractère tapé, avant son insertion. Sert aux paires
-    /// automatiques. Renvoie `true` si le caractère a été traité autrement.
+    /// Called for every character typed, before it is inserted. Used for
+    /// auto-pairing. Returns `true` if the character was handled another way.
     var handlesTyping: ((Character) -> Bool)?
 
-    /// Appelé pour un caractère qui vient d'être écrit et qu'on **n'a pas pu**
-    /// intercepter avant — la sortie d'une touche morte. Voir `insertText`.
+    /// Called for a character that was just written and that could **not**
+    /// be intercepted beforehand: the output of a dead key. See `insertText`.
     var handlesTypedCharacter: ((Character) -> Void)?
 
-    /// Appelé sur `⌘`+clic à une position donnée : une note de bas de page y
-    /// répond en sautant vers son autre moitié.
+    /// Called on `⌘`+click at a given position: a footnote responds to it by
+    /// jumping to its other half.
     var handlesFootnoteJump: ((Int) -> Bool)?
 
-    /// Appelé quand on clique la case à cocher d'une tâche. Reçoit la plage du
-    /// contenu de l'item, celle que porte la décoration.
+    /// Called when a task's checkbox is clicked. Receives the range of the
+    /// item's content, the one the decoration carries.
     var handlesTaskToggle: ((NSRange) -> Bool)?
 
-    /// Les touches que le menu slash intercepte quand il est ouvert (§4.5).
+    /// The keys the slash menu intercepts while it is open (§4.5).
     enum MenuKey { case up, down, left, right, confirm, cancel }
 
-    /// Renvoie `true` si le menu slash a pris la touche. Il ne devient jamais
-    /// fenêtre clé — c'est ce qui permet de continuer à taper dans le texte
-    /// pendant qu'il filtre — donc c'est la vue de texte qui reçoit les flèches
-    /// et les lui transmet.
+    /// Returns `true` if the slash menu took the key. It never becomes key
+    /// window: that's what lets typing continue in the text while it filters,
+    /// so it's the text view that receives the arrow keys and forwards them.
     var handlesMenuKey: ((MenuKey) -> Bool)?
 
-    // MARK: - Construction
+    // MARK: - Setup
 
     static func make() -> EditorTextView {
-        // TextKit 2 explicitement. La `NSTextView` par défaut peut encore
-        // basculer en TextKit 1 dès qu'une API de compatibilité est touchée, et
-        // toute l'app dépend de la mise en page par viewport.
+        // TextKit 2 explicitly. The default `NSTextView` can still fall back
+        // to TextKit 1 as soon as a compatibility API is touched, and the
+        // whole app depends on viewport-based layout.
         let view = EditorTextView(usingTextLayoutManager: true)
         view.configure()
         return view
@@ -115,47 +113,49 @@ final class EditorTextView: NSTextView {
         isEditable = true
         isSelectable = true
         usesFindBar = true
-        // **La recherche incrémentale reste éteinte.**
+        // **Incremental search stays off.**
         //
-        // Elle n'apporte pas que le surlignage au fil de la frappe : elle pose
-        // aussi le voile de `NSTextFinder`, qui assombrit **tout** le document
-        // en gris opaque pour n'y laisser que des trous blancs sur les
-        // résultats, et peint le résultat courant en jaune système. Sur une
-        // page blanche, le texte de l'utilisateur devient gris moyen — le seul
-        // écran de l'app où il cesse d'être lisible — et c'est la seule couleur
-        // saturée qui ait jamais traversé le §7.
+        // It doesn't only add highlighting as you type: it also draws
+        // `NSTextFinder`'s veil, which dims the **entire** document to opaque
+        // gray and leaves only white holes over the results, and paints the
+        // current result in system yellow. On a white page, the user's text
+        // turns medium gray, the only screen in the app where it stops being
+        // readable, and the only saturated color that has ever made it
+        // through §7.
         //
-        // `NSTextView` ne donne pas accès à son `NSTextFinder`, donc pas à
-        // `incrementalSearchingShouldDimContentView` : la seule prise est
-        // l'interrupteur. On la coupe. `⌘F`, `⌘G` et l'indicateur de résultat
-        // continuent de marcher, et le document reste lisible pendant qu'on
-        // cherche dedans.
+        // `NSTextView` doesn't expose its `NSTextFinder`, so
+        // `incrementalSearchingShouldDimContentView` isn't reachable either:
+        // the only lever is the switch. It gets turned off. `⌘F`, `⌘G` and
+        // the result indicator keep working, and the document stays readable
+        // while searching through it.
         isIncrementalSearchingEnabled = false
 
         registerForDraggedTypes([.fileURL, .png, .tiff])
 
-        // §2.5 : aucune substitution typographique, y compris celles de macOS.
-        // Dans un fichier destiné à git ou à un générateur de site, une
-        // transformation invisible est un bug, pas un service.
+        // §2.5: no typographic substitution, including macOS's own. In a
+        // file destined for git or a site generator, an invisible
+        // transformation is a bug, not a service.
         isAutomaticQuoteSubstitutionEnabled = false
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
         isAutomaticSpellingCorrectionEnabled = false
         isAutomaticDataDetectionEnabled = false
         isAutomaticLinkDetectionEnabled = false
-        // La correction orthographique, elle, reste : elle souligne sans rien
-        // réécrire, et c'est précisément ce qu'on attend dans un éditeur de prose.
+        // Spell checking, by contrast, stays on: it underlines without
+        // rewriting anything, which is exactly what's expected in a prose
+        // editor.
         isContinuousSpellCheckingEnabled = true
         isGrammarCheckingEnabled = false
 
-        // La sélection système est bleue. Dans un éditeur monochrome où seule
-        // l'image de l'utilisateur a droit à la couleur, on la neutralise (§7).
+        // The system selection is blue. In a monochrome editor where only
+        // the user's own content earns color, it gets neutralized (§7).
         selectedTextAttributes = [.backgroundColor: Theme.NS.selection]
 
-        // Même raison pour les liens : dès qu'une plage porte un `.link`,
-        // `NSTextView` lui applique **ses** attributs — bleu système et
-        // soulignement — par-dessus ceux que le rendu a posés. On les remplace
-        // par rien : le lien est déjà souligné en gris par `MarkdownRenderer`.
+        // Same reason for links: as soon as a range carries a `.link`,
+        // `NSTextView` applies **its own** attributes, system blue and
+        // underline, on top of whatever the renderer already set. They're
+        // replaced with nothing: the link is already underlined in gray by
+        // `MarkdownRenderer`.
         linkTextAttributes = [:]
 
         drawsBackground = true
@@ -168,23 +168,22 @@ final class EditorTextView: NSTextView {
         textContainerInset = NSSize(width: 0, height: Theme.Space.s40)
     }
 
-    /// Remet le voile à la taille de la vue.
+    /// Resizes the veil to match the view.
     ///
-    /// La vue de texte grandit à mesure que la mise en page progresse ; sans
-    /// ce rappel, le voile garderait la hauteur qu'elle avait à l'ouverture et
-    /// laisserait le bas du document en pleine intensité.
+    /// The text view grows as layout progresses; without this callback, the
+    /// veil would keep the height it had at open and would leave the bottom
+    /// of the document at full intensity.
     func refreshFocusOverlay() {
         guard focusRange != nil else { return }
         focusOverlay.frame = bounds
         focusOverlay.needsDisplay = true
     }
 
-    // MARK: - Décorations
+    // MARK: - Decorations
 
-    /// Les marques sont peintes dans la passe de fond, donc **derrière** le
-    /// texte et derrière la surbrillance de sélection. Une puce dessinée
-    /// par-dessus le texte barrerait le premier mot de l'item quand la ligne
-    /// est sélectionnée.
+    /// Marks are painted in the background pass, so **behind** the text and
+    /// behind the selection highlight. A bullet drawn over the text would
+    /// strike through the item's first word when the line is selected.
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         drawPlaceholder(in: rect)
@@ -193,24 +192,23 @@ final class EditorTextView: NSTextView {
             .draw(decorations, in: self, dirtyRect: rect)
     }
 
-    /// Ce qui s'affiche dans un document vide.
+    /// What's shown in an empty document.
     ///
-    /// Une page blanche sans un mot est le seul écran de l'app où « faire
-    /// disparaître l'app » (§7) se retourne contre elle : rien n'y indique que
-    /// la touche `/` ouvre les blocs, et c'est précisément la personne qui ne
-    /// connaît pas la syntaxe qu'on vient de lui masquer qui ouvre un document
-    /// vide. Une ligne en gris pâle, à l'endroit exact où le premier mot
-    /// s'écrira, et qui part au premier signe tapé.
+    /// A blank page without a single word is the only screen in the app
+    /// where "making the app disappear" (§7) works against it: nothing on it
+    /// indicates that the `/` key opens blocks, and it's exactly the person
+    /// who doesn't know the syntax that just got hidden from them who opens
+    /// an empty document. A line in pale gray, at the exact spot where the
+    /// first word will land, that vanishes on the first character typed.
     private func drawPlaceholder(in rect: NSRect) {
         guard textStorage?.length == 0 else { return }
         let hint = AppSettings.shared.slashMenuScope == .off
-            ? "Écrivez."
-            : "Écrivez. Tapez « / » pour insérer un titre, une liste, un tableau."
+            ? "Write."
+            : "Write. Type \"/\" to insert a heading, a list, a table."
 
-        // **Il revient à la ligne.** Mesurée sur une seule ligne et dessinée
-        // dans une boîte de cette largeur, la phrase était coupée net dès que
-        // la fenêtre se resserrait — sur l'unique écran de l'app dont le seul
-        // rôle est de se faire lire.
+        // **It wraps.** Measured on a single line and drawn in a box of that
+        // width, the sentence used to get cut off flat as soon as the window
+        // narrowed, on the one screen in the app whose only job is to be read.
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byWordWrapping
         let attributes: [NSAttributedString.Key: Any] = [
@@ -225,11 +223,11 @@ final class EditorTextView: NSTextView {
             with: NSSize(width: width, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: attributes).size
-        // Décalé d'un cheveu : posé pile où le texte commencera, le substitut
-        // passe **sous le curseur**, qui clignote au même endroit. Le « É »
-        // d'« Écrivez » s'y lisait barré d'un trait vertical, ce qui ressemble
-        // à un défaut d'affichage. Deux points ne se remarquent pas ; le trait
-        // dans la lettre, si.
+        // Nudged by a hair: placed exactly where the text will start, the
+        // placeholder sits **under the caret**, which blinks at the same
+        // spot. The `W` of "Write" used to read as struck through by a
+        // vertical bar, which looks like a rendering glitch. A couple of
+        // pixels go unnoticed; a bar through the letter doesn't.
         let box = NSRect(x: origin.x + padding + 2, y: origin.y,
                          width: width, height: size.height.rounded(.up))
         guard box.intersects(rect) else { return }
@@ -237,12 +235,12 @@ final class EditorTextView: NSTextView {
                                 attributes: attributes)
     }
 
-    /// Le pointeur devient une main au-dessus d'une case à cocher.
+    /// The pointer turns into a hand over a checkbox.
     ///
-    /// Sans ça, la case est cliquable sans que rien ne le dise : dans un
-    /// éditeur, tout le reste de la surface est du texte où le pointeur reste
-    /// en I, et une zone qui répond au clic sans le montrer ne se découvre que
-    /// par accident.
+    /// Without this, the checkbox is clickable without anything saying so: in
+    /// an editor, the rest of the surface is text where the pointer stays an
+    /// I-beam, and an area that responds to a click without showing it is
+    /// only discovered by accident.
     override func resetCursorRects() {
         super.resetCursorRects()
         for target in DecorationPainter(typography: typography, documentURL: documentURL)
@@ -251,12 +249,12 @@ final class EditorTextView: NSTextView {
         }
     }
 
-    // MARK: - Suppression intelligente
+    // MARK: - Smart deletion
 
-    /// `⌫` juste après une construction masquée doit supprimer la construction
-    /// **entière**, pas le seul caractère de marqueur qui la précède : sinon on
-    /// obtient un `**` orphelin qui casse le rendu sans qu'on comprenne
-    /// pourquoi (§2.5).
+    /// `⌫` right after a hidden construct must delete the **entire**
+    /// construct, not just the marker character before it: otherwise you get
+    /// an orphaned `**` that breaks the rendering without any obvious reason
+    /// why (§2.5).
     override func deleteBackward(_ sender: Any?) {
         let selection = selectedRange()
         if selection.length == 0, let handler = handlesDeleteBackward, handler(selection) {
@@ -265,11 +263,11 @@ final class EditorTextView: NSTextView {
         super.deleteBackward(sender)
     }
 
-    // MARK: - Menu slash
+    // MARK: - Slash menu
 
-    /// Les touches de navigation sont détournées **avant** l'interprétation
-    /// habituelle : `⏎` doit valider l'entrée choisie, pas insérer un saut de
-    /// ligne, et `⎋` doit refermer le menu sans rien faire d'autre.
+    /// Navigation keys are intercepted **before** the usual interpretation:
+    /// `⏎` must confirm the selected entry, not insert a line break, and `⎋`
+    /// must close the menu without doing anything else.
     override func keyDown(with event: NSEvent) {
         let key: MenuKey? = switch event.keyCode {
         case 126: .up
@@ -284,14 +282,14 @@ final class EditorTextView: NSTextView {
         super.keyDown(with: event)
     }
 
-    // MARK: - Listes
+    // MARK: - Lists
 
-    /// `⏎` continue la liste, `⇥` et `⇧⇥` en changent le niveau (§2.5).
+    /// `⏎` continues the list; `⇥` and `⇧⇥` change its level (§2.5).
     ///
-    /// Ces trois touches sont interceptées ici plutôt que dans `keyDown` :
-    /// `insertNewline(_:)` et `insertTab(_:)` sont les actions que le système
-    /// envoie, et les traiter à ce niveau conserve la saisie par dictée, les
-    /// méthodes de saisie asiatiques et les claviers de remplacement.
+    /// These three keys are intercepted here rather than in `keyDown`:
+    /// `insertNewline(_:)` and `insertTab(_:)` are the actions the system
+    /// sends, and handling them at this level preserves dictation input,
+    /// Asian input methods, and alternate keyboards.
     override func insertNewline(_ sender: Any?) {
         if handlesNewline?() == true { return }
         super.insertNewline(sender)
@@ -302,28 +300,27 @@ final class EditorTextView: NSTextView {
         super.insertTab(sender)
     }
 
-    /// Les paires automatiques passent par ici, et non par `keyDown` : c'est le
-    /// point où le caractère est déjà déterminé, quelle que soit la façon dont
-    /// il a été produit — clavier, dictée, palette de caractères.
+    /// Auto-pairing goes through here, not through `keyDown`: this is the
+    /// point where the character is already determined, regardless of how it
+    /// was produced: keyboard, dictation, character palette.
     ///
-    /// La saisie en cours de composition — accents morts, méthodes asiatiques —
-    /// est laissée intacte : y intercaler une fermeture couperait la
-    /// composition en deux.
-    /// # La seconde porte, pour les touches mortes
+    /// Text still being composed, dead-key accents, Asian input methods, is
+    /// left untouched: inserting a closing character into it would split the
+    /// composition in two.
+    /// # The second door, for dead keys
     ///
-    /// Les deux gardes ci-dessous protègent une composition en cours : on ne
-    /// peut pas glisser une fermeture au milieu d'un accent qu'on est en train
-    /// de former. Mais sur un **clavier français**, l'accent grave et le tilde
-    /// *sont* des touches mortes : `` ` `` et `~` n'arrivent jamais bruts, ils
-    /// concluent une composition — et les gardes les écartaient donc en
-    /// silence. Les paires automatiques ne se déclenchaient pas une seule fois
-    /// sur les deux marqueurs markdown qui en ont le plus besoin, et la
-    /// promotion en bloc de code non plus.
+    /// The two guards below protect an ongoing composition: a closing
+    /// character cannot be slipped in the middle of an accent that's being
+    /// formed. But on a **French keyboard**, the grave accent and the tilde
+    /// *are* dead keys: `` ` `` and `~` never arrive raw, they conclude a
+    /// composition, so the guards were turning them away silently.
+    /// Auto-pairing never fired once for the two markdown markers that need
+    /// it the most, and promotion to a code block didn't either.
     ///
-    /// La composition doit bien être validée d'abord. On écrit donc, **puis**
-    /// on rejoue la décision sur le texte tel qu'il est — c'est
-    /// `TypingBehaviour.autoPairAfterTyping`, qui dit la même chose depuis
-    /// l'autre côté de la frappe.
+    /// The composition still has to be committed first. So it's written,
+    /// **then** the decision is replayed on the text as it now stands: that's
+    /// `TypingBehaviour.autoPairAfterTyping`, which says the same thing from
+    /// the other side of the keystroke.
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string
         guard let typed, typed.count == 1, let character = typed.first else {
@@ -346,13 +343,13 @@ final class EditorTextView: NSTextView {
         super.insertBacktab(sender)
     }
 
-    // MARK: - Glisser-déposer d'images
+    // MARK: - Image drag and drop
 
-    /// Accepte les images déposées depuis le Finder ou d'autres apps (§4.4).
+    /// Accepts images dropped from the Finder or other apps (§4.4).
     ///
-    /// `NSTextView` accepte déjà des dépôts, mais pour y insérer du texte
-    /// riche — ce qu'un tampon `isRichText = false` refuse. On intercepte donc
-    /// avant lui, et seulement pour ce qui est une image.
+    /// `NSTextView` already accepts drops, but to insert rich text there,
+    /// which a buffer with `isRichText = false` refuses. So it's intercepted
+    /// before that, and only for what is an image.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         carriesImage(sender) || !documents(in: sender).isEmpty ? .copy : super.draggingEntered(sender)
     }
@@ -362,10 +359,11 @@ final class EditorTextView: NSTextView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        // Un fichier texte déposé s'**ouvre**. Sans ce cas, `NSTextView` faisait
-        // ce qu'il fait par défaut d'une URL : il en insérait le chemin dans le
-        // document, ce qui n'est ce que personne n'a jamais voulu en faisant ce
-        // geste — surtout dans un éditeur qui gère les onglets.
+        // A dropped text file gets **opened**. Without this case,
+        // `NSTextView` did what it does by default with a URL: it inserted
+        // its path into the document, which is not what anyone has ever
+        // wanted from this gesture, especially in an editor that manages
+        // tabs.
         let files = documents(in: sender)
         if !files.isEmpty {
             for url in files {
@@ -378,8 +376,9 @@ final class EditorTextView: NSTextView {
               let result = ImageDrop.handle(sender.draggingPasteboard, document: documentURL)
         else { return super.performDragOperation(sender) }
 
-        // L'insertion se fait là où le curseur *serait* si on cliquait : c'est
-        // l'endroit visé par le geste, pas la sélection d'avant le dépôt.
+        // The insertion happens where the caret *would be* if clicked there:
+        // that's the spot the gesture targets, not the selection from before
+        // the drop.
         let point = convert(sender.draggingLocation, from: nil)
         let index = characterIndexForInsertion(at: point)
         setSelectedRange(NSRange(location: index, length: 0))
@@ -387,8 +386,8 @@ final class EditorTextView: NSTextView {
         return true
     }
 
-    /// Les fichiers déposés que l'app sait ouvrir : ses propres types de
-    /// document, tels que l'`Info.plist` les déclare.
+    /// The dropped files the app knows how to open: its own document types,
+    /// as declared in `Info.plist`.
     private func documents(in sender: NSDraggingInfo) -> [URL] {
         guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
             return []
@@ -411,9 +410,9 @@ final class EditorTextView: NSTextView {
         return NSImage.canInit(with: pasteboard)
     }
 
-    /// Une image est un bloc : elle a besoin d'une ligne vide de chaque côté,
-    /// sans quoi markdown la colle au paragraphe voisin et elle se rend en
-    /// pleine phrase.
+    /// An image is a block: it needs a blank line on each side, or markdown
+    /// glues it to the neighboring paragraph and it renders in the middle of
+    /// a sentence.
     private func surrounded(_ markdown: String, at index: Int) -> String {
         guard let storage = textStorage else { return markdown }
         let text = storage.mutableString
@@ -426,17 +425,18 @@ final class EditorTextView: NSTextView {
         return prefix + markdown + suffix
     }
 
-    // MARK: - Collage
+    // MARK: - Paste
 
-    /// `⌘V` convertit le texte riche en markdown (§2.5).
+    /// `⌘V` converts rich text into markdown (§2.5).
     ///
-    /// `NSTextView` propose `paste(_:)` et `pasteAsPlainText(_:)`. Le premier
-    /// collerait du texte riche dans un tampon qui n'en veut pas — la vue est
-    /// en `isRichText = false`, les attributs seraient perdus sans rien laisser
-    /// en échange. On intercepte donc, et on insère du markdown.
+    /// `NSTextView` offers `paste(_:)` and `pasteAsPlainText(_:)`. The former
+    /// would paste rich text into a buffer that doesn't want it: the view is
+    /// `isRichText = false`, and the attributes would be lost without leaving
+    /// anything in exchange. So it's intercepted, and markdown is inserted
+    /// instead.
     override func paste(_ sender: Any?) {
-        // Une image d'abord : elle doit devenir un fichier à côté du document,
-        // pas un texte riche perdu (§2.5, étape 3).
+        // An image first: it must become a file next to the document, not
+        // rich text that gets lost (§2.5, step 3).
         if NSImage.canInit(with: .general),
            let result = ImageDrop.handle(.general, document: documentURL) {
             let index = selectedRange().location
@@ -450,22 +450,22 @@ final class EditorTextView: NSTextView {
         super.pasteAsPlainText(sender)
     }
 
-    /// `⌘⇧V` colle toujours en texte brut, sans aucune conversion (§2.5).
+    /// `⌘⇧V` always pastes as plain text, with no conversion at all (§2.5).
     @objc func pastePlainText(_ sender: Any?) {
         super.pasteAsPlainText(sender)
     }
 
-    // MARK: - Liens
+    // MARK: - Links
 
-    /// `⌘`+clic ouvre l'URL. Un clic simple ne le fait pas : dans un éditeur,
-    /// cliquer dans un lien sert d'abord à y placer le curseur.
+    /// `⌘`+click opens the URL. A plain click does not: in an editor,
+    /// clicking inside a link is primarily meant to place the caret there.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
-        // Une case à cocher se coche au clic. C'est le pendant du §2.5 pour la
-        // souris : la case est dessinée, donc le seul moyen de la cocher serait
-        // sinon d'aller réécrire à la main un `x` entre deux crochets qu'on a
-        // justement masqués.
+        // A checkbox gets checked on click. This is the mouse counterpart of
+        // §2.5: the checkbox is drawn, so the only way to check it would
+        // otherwise be to manually rewrite an `x` between two brackets that
+        // were just hidden.
         if !event.modifierFlags.contains(.command),
            let range = DecorationPainter(typography: typography, documentURL: documentURL)
                .task(at: point, among: decorations, in: self),
@@ -483,30 +483,30 @@ final class EditorTextView: NSTextView {
             NSWorkspace.shared.open(link)
             return
         }
-        // Une note de bas de page n'a pas d'adresse à ouvrir, mais elle a une
-        // autre moitié quelque part dans le document : le même geste y mène.
+        // A footnote has no address to open, but it has another half
+        // somewhere in the document: the same gesture leads there.
         if handlesFootnoteJump?(index) == true { return }
         super.mouseDown(with: event)
     }
 
-    // MARK: - Apparence
+    // MARK: - Appearance
 
-    /// Le fond et les couleurs sont des `NSColor` dynamiques, mais les
-    /// attributs déjà posés dans le tampon, eux, sont figés : ils ont été
-    /// résolus au moment de la pose. Un changement de thème système doit donc
-    /// déclencher un nouveau rendu, que le contrôleur écoute.
+    /// The background and colors are dynamic `NSColor`s, but the attributes
+    /// already set in the buffer are frozen: they were resolved at the
+    /// moment they were applied. A system theme change must therefore
+    /// trigger a new render, which the controller listens for.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         NotificationCenter.default.post(name: .foveaAppearanceChanged, object: self)
     }
 }
 
-/// Le voile qui atténue tout sauf l'unité active.
+/// The veil that dims everything but the active unit.
 ///
-/// Il est peint dans la couleur du fond à faible opacité, plutôt qu'en
-/// changeant la couleur des caractères. Les attributs de couleur portent déjà
-/// du sens — code, citation, marqueur révélé — et les écraser obligerait à tout
-/// recalculer pour revenir en arrière, à chaque déplacement du curseur.
+/// It is painted in the background color at low opacity, rather than by
+/// changing the character color. Color attributes already carry meaning:
+/// code, blockquote, revealed marker, and overwriting them would require
+/// recomputing everything to undo it on every caret move.
 private final class FocusOverlayView: NSView {
 
     private weak var owner: EditorTextView?
@@ -517,19 +517,19 @@ private final class FocusOverlayView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("aucune vue ne vient d'un xib") }
+    required init?(coder: NSCoder) { fatalError("no view comes from a xib") }
 
-    /// Transparente aux clics : le voile est décoratif, on écrit à travers.
+    /// Transparent to clicks: the veil is decorative, typing happens through
+    /// it.
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    /// **Retournée, comme la vue de texte qu'elle recouvre.**
+    /// **Flipped, like the text view it covers.**
     ///
-    /// `NSTextView` est retournée, une `NSView` ordinaire ne l'est pas. Les
-    /// bornes de l'unité active venaient donc de la mise en page en
-    /// coordonnées descendantes, et se dessinaient dans un repère montant :
-    /// la bande claire était le **miroir vertical** de la bonne. Elle tombait
-    /// sur un autre paragraphe, et ses bords coupaient les lignes en pleine
-    /// hauteur au lieu de se poser entre elles.
+    /// `NSTextView` is flipped; a plain `NSView` isn't. The active unit's
+    /// bounds therefore came from layout in top-down coordinates, and were
+    /// drawn in a bottom-up frame: the light band was the **vertical mirror**
+    /// of the right one. It landed on a different paragraph, and its edges
+    /// cut through the middle of lines instead of sitting between them.
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -540,22 +540,23 @@ private final class FocusOverlayView: NSView {
               let end = content.location(start, offsetBy: focusRange.length),
               let range = NSTextRange(location: start, end: end) else { return }
 
-        // **Les fragments de mise en page, pas les segments de texte.**
+        // **Layout fragments, not text segments.**
         //
-        // Un segment épouse la hauteur typographique des caractères qu'il
-        // couvre, laquelle est plus courte que la ligne : la frontière du voile
-        // tombait alors *dans* les lettres. Sur le titre du document, mesuré au
-        // pixel, la moitié haute restait claire et la moitié basse s'assombrissait
-        // au milieu des jambages — une ligne coupée en deux dans sa hauteur.
+        // A segment hugs the typographic height of the characters it covers,
+        // which is shorter than the line: the veil's edge then fell *inside*
+        // the letters. On the document title, measured to the pixel, the top
+        // half stayed light and the bottom half darkened partway through the
+        // descenders, a line cut in half across its own height.
         //
-        // Les fragments, eux, pavent le document sans trou ni recouvrement :
-        // leur bord est toujours *entre* deux lignes, jamais dedans.
+        // Fragments, by contrast, tile the document with no gap and no
+        // overlap: their edge is always *between* two lines, never inside
+        // one.
         var union: NSRect?
         layout.enumerateTextLayoutFragments(from: range.location, options: []) { fragment in
             let frame = fragment.layoutFragmentFrame
             union = union.map { $0.union(frame) } ?? frame
-            // On s'arrête au fragment qui contient la fin de l'unité — celui-là
-            // compris, sinon la dernière ligne resterait sous le voile.
+            // Stops at the fragment that contains the end of the unit, that
+            // one included, or the last line would stay under the veil.
             return fragment.rangeInElement.endLocation.compare(range.endLocation) == .orderedAscending
         }
         guard let union else { return }

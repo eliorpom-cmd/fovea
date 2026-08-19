@@ -1,92 +1,91 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 
 extension NSAttributedString.Key {
-    /// Marque une plage comme **marqueur markdown actuellement masqué**.
+    /// Marks a range as a **currently hidden markdown marker**.
     ///
-    /// L'attribut n'a aucun effet visuel par lui-même : c'est un drapeau posé
-    /// en même temps que les attributs qui, eux, rendent la plage invisible.
-    /// Il sert au reste de l'éditeur — suppression intelligente (§2.5),
-    /// accessibilité (§8), export — à savoir ce qui est syntaxe et ce qui est
-    /// contenu, sans avoir à re-parser.
+    /// The attribute has no visual effect by itself: it is a flag set
+    /// alongside the attributes that actually make the range invisible. It
+    /// lets the rest of the editor — smart delete (§2.5), accessibility
+    /// (§8), export — know what is syntax and what is content, without
+    /// having to re-parse.
     static let foveaMasked = NSAttributedString.Key("foveaMasked")
 
-    /// Marque une plage comme **marqueur markdown révélé** : elle appartient à
-    /// la construction que le curseur touche en ce moment (§2.2).
+    /// Marks a range as a **revealed markdown marker**: it belongs to the
+    /// construct the caret is currently touching (§2.2).
     static let foveaRevealed = NSAttributedString.Key("foveaRevealed")
 }
 
-/// Le mécanisme qui fait disparaître les marqueurs.
+/// The mechanism that makes markers disappear.
 ///
-/// # Le pari du jalon 0
+/// # The milestone-0 bet
 ///
-/// Le cahier des charges (§3.4) posait deux mécanismes possibles et n'en
-/// tranchait aucun. Celui retenu est **A — rendu à largeur nulle** : les
-/// marqueurs restent dans le tampon *et* dans la chaîne d'affichage, mais
-/// reçoivent une police de taille infinitésimale et une couleur transparente.
+/// The spec (§3.4) laid out two possible mechanisms and did not settle on
+/// either. The one chosen is **A — zero-width rendering**: markers stay in
+/// the buffer *and* in the display string, but receive an infinitesimal
+/// font size and a transparent color.
 ///
-/// L'intérêt décisif est que **les plages du tampon et de l'affichage restent
-/// identiques**. Sélection, `NSTextFinder`, `NSUndoManager`, accessibilité et
-/// export continuent de fonctionner sans le moindre mapping, là où le
-/// mécanisme B — renvoyer un `NSTextParagraph` plus court depuis
-/// `NSTextContentStorageDelegate` — aurait fait diverger `NSTextLocation` et
-/// les offsets de stockage dans tous ces sous-systèmes à la fois.
+/// The decisive advantage is that **the buffer's ranges and the display's
+/// ranges stay identical**. Selection, `NSTextFinder`, `NSUndoManager`,
+/// accessibility and export keep working without any mapping, whereas
+/// mechanism B — returning a shorter `NSTextParagraph` from
+/// `NSTextContentStorageDelegate` — would have made `NSTextLocation` and the
+/// storage offsets diverge across all of those subsystems at once.
 ///
-/// # Ce que le prototype a corrigé dans le cahier des charges
+/// # What the prototype corrected in the spec
 ///
-/// Le §2.3 annonçait des « positions de curseur invisibles » à contourner en
-/// interceptant toutes les commandes de déplacement de `NSTextView`. **Cette
-/// crainte était infondée**, et c'est la règle de révélation qui l'annule :
-/// une construction se révèle dès que le curseur touche `[début, fin]`,
-/// bornes comprises. Or toute position située dans un marqueur est par
-/// construction dans cet intervalle. Donc **quand un marqueur est masqué, le
-/// curseur ne peut pas s'y trouver**, et il n'y a rien à intercepter.
+/// §2.3 announced "invisible caret positions" to work around by
+/// intercepting every `NSTextView` movement command. **That fear was
+/// unfounded**, and it is the reveal rule that cancels it: a construct
+/// reveals as soon as the caret touches `[start, end]`, bounds included.
+/// Any position inside a marker is, by construction, within that interval.
+/// So **when a marker is hidden, the caret cannot be inside it**, and there
+/// is nothing to intercept.
 ///
-/// Voir `RevealPolicy` pour la démonstration, et `MarkerMaskTests` pour la
-/// vérification exhaustive sur un document réel.
+/// See `RevealPolicy` for the proof, and `MarkerMaskTests` for the
+/// exhaustive check on a real document.
 ///
-/// `@MainActor` parce que le masquage résout des `NSFont` et lit les réglages
-/// d'accessibilité du système : AppKit n'est pas thread-safe, et cette couche
-/// n'est de toute façon appelée que depuis le rendu, lui-même sur le thread
-/// principal.
+/// `@MainActor` because masking resolves `NSFont` and reads the system's
+/// accessibility settings: AppKit is not thread-safe, and this layer is in
+/// any case only called from rendering, itself on the main thread.
 @MainActor
 enum MarkerMask {
 
-    /// Pas zéro : `NSFont` accepte 0 mais TextKit produit alors des métriques
-    /// dégénérées, et une largeur `NaN` se propage jusqu'au rect du curseur.
-    /// Une taille infinitésimale donne une avance sous le dixième de point,
-    /// invisible à toute échelle d'écran.
+    /// Not zero: `NSFont` accepts 0, but TextKit then produces degenerate
+    /// metrics, and a `NaN` width propagates all the way to the caret rect.
+    /// An infinitesimal size gives an advance under a tenth of a point,
+    /// invisible at any screen scale.
     static let hiddenFontSize: CGFloat = 0.01
 
-    /// Rend une plage invisible et de largeur nulle.
+    /// Makes a range invisible and zero-width.
     ///
-    /// La police de substitution est délibérément la police système et non
-    /// celle du texte porteur : à 0,01 pt, aucun dessin n'a lieu, et charger la
-    /// vraie fonte à une taille absurde coûterait une entrée de cache par
-    /// couple (fonte, taille) pour rien.
+    /// The substitute font is deliberately the system font, not the
+    /// surrounding text's font: at 0.01 pt nothing gets drawn, and loading
+    /// the real font at an absurd size would cost a cache entry per
+    /// (font, size) pair for nothing.
     static func hide(in storage: NSTextStorage, range: NSRange) {
         guard range.length > 0 else { return }
         storage.addAttributes([
             .font: NSFont.systemFont(ofSize: hiddenFontSize),
             .foregroundColor: NSColor.clear,
-            // Sans cette remise à zéro explicite, un crénage hérité du texte
-            // porteur survivrait et rendrait la plage large de quelques
-            // dixièmes de point — assez pour qu'un `**` décale visiblement une
-            // ligne de titre.
+            // Without this explicit reset, kerning inherited from the
+            // surrounding text would survive and make the range a few
+            // tenths of a point wide — enough for a `**` to visibly shift a
+            // heading line.
             .kern: 0,
             .foveaMasked: true,
         ], range: range)
         storage.removeAttribute(.foveaRevealed, range: range)
     }
 
-    /// Rend une plage invisible en lui imposant **une largeur choisie**.
+    /// Makes a range invisible while imposing **a chosen width** on it.
     ///
-    /// C'est ce qui permet à la grille des tableaux d'exister sans qu'un seul
-    /// caractère soit ajouté au fichier (§3.1) : le `|` qui sépare deux
-    /// cellules ne se dessine plus, mais son avance est calculée pour poser la
-    /// colonne suivante exactement où elle doit tomber. Le crénage porte cette
-    /// avance, la fonte infinitésimale annule celle du glyphe.
+    /// This is what lets the table grid exist without a single character
+    /// being added to the file (§3.1): the `|` that separates two cells no
+    /// longer draws, but its advance is computed to place the next column
+    /// exactly where it must land. The kerning carries that advance; the
+    /// infinitesimal font cancels the glyph's own.
     static func hide(in storage: NSTextStorage, range: NSRange, advance: CGFloat) {
         guard range.length > 0 else { return }
         storage.addAttributes([
@@ -98,16 +97,17 @@ enum MarkerMask {
         storage.removeAttribute(.foveaRevealed, range: range)
     }
 
-    /// Rend une plage invisible **sans réduire sa largeur ni sa hauteur**.
+    /// Makes a range invisible **without shrinking its width or its
+    /// height**.
     ///
-    /// Pour une ligne dont *tout* le contenu est un marqueur — le `---` d'un
-    /// filet horizontal — le masquage ordinaire ferait s'effondrer la hauteur
-    /// de ligne, puisque plus aucun caractère ne porterait la fonte normale. Le
-    /// filet n'aurait alors nulle part où se dessiner.
+    /// For a line whose *entire* content is a marker — the `---` of a
+    /// horizontal rule — ordinary masking would collapse the line height,
+    /// since no character would carry the normal font anymore. The rule
+    /// would then have nowhere to draw itself.
     ///
-    /// Ici la fonte reste celle du corps et seule la couleur devient
-    /// transparente : la ligne garde sa place, et `DecorationPainter` y trace
-    /// le trait.
+    /// Here the font stays the body font and only the color becomes
+    /// transparent: the line keeps its place, and `DecorationPainter` draws
+    /// the line there.
     static func hideKeepingMetrics(in storage: NSTextStorage, range: NSRange, font: NSFont) {
         guard range.length > 0 else { return }
         storage.addAttributes([
@@ -118,17 +118,17 @@ enum MarkerMask {
         storage.removeAttribute(.foveaRevealed, range: range)
     }
 
-    /// Affiche une plage de marqueurs, en retrait : présente, jamais bruyante.
+    /// Displays a range of markers, understated: present, never loud.
     ///
-    /// Le texte porteur ne change pas de style — le mot reste gras pendant que
-    /// ses `**` réapparaissent (§2.1).
+    /// The surrounding text does not change style — the word stays bold
+    /// while its `**` reappear (§2.1).
     static func reveal(in storage: NSTextStorage, range: NSRange, font: NSFont) {
         guard range.length > 0 else { return }
         storage.addAttributes([
             .font: font,
-            // §8 : sous le seuil AA, et assumé — ce sont des repères, pas du
-            // contenu. Quand « Augmenter le contraste » est actif, l'utilisateur
-            // a dit qu'il ne voulait pas de ce compromis.
+            // §8: below the AA threshold, and deliberately so — these are
+            // cues, not content. When "Increase contrast" is active, the
+            // user has said they do not want this trade-off.
             .foregroundColor: Accessibility.markerColor,
             .kern: 0,
             .foveaRevealed: true,
@@ -141,10 +141,10 @@ enum MarkerMask {
         return storage.attribute(.foveaMasked, at: location, effectiveRange: nil) != nil
     }
 
-    /// La plage masquée contenant `location`, s'il y en a une.
+    /// The hidden range containing `location`, if there is one.
     ///
-    /// Utile à la suppression intelligente (§2.5) et aux tests, qui doivent
-    /// pouvoir affirmer qu'une position donnée n'est *pas* dans du masqué.
+    /// Useful to smart delete (§2.5) and to tests, which need to assert
+    /// that a given position is *not* inside something hidden.
     static func maskedRange(in storage: NSTextStorage, at location: Int) -> NSRange? {
         guard location >= 0, location < storage.length else { return nil }
         var range = NSRange(location: 0, length: 0)

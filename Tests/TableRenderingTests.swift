@@ -1,28 +1,28 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
-/// La grille des tableaux, **mesurée sur la mise en page réelle** (§2.6).
+/// The table grid, **measured against actual layout** (§2.6).
 ///
-/// Comme pour le jalon 0, on ne vérifie pas une intention mais des abscisses :
-/// une colonne est alignée si le curseur placé au début de chaque cellule tombe
-/// exactement au même x. C'est la seule assertion qui ait du sens ici — la
-/// grille n'existe que dans le crénage des `|`, et rien dans le tampon ne dirait
-/// qu'elle est droite.
+/// As with milestone 0, this checks x-coordinates, not intent: a column is
+/// aligned if the caret placed at the start of each cell lands at exactly the
+/// same x. That is the only assertion that makes sense here: the grid only
+/// exists in the kerning of the `|`, and nothing in the buffer would say
+/// whether it is straight.
 @MainActor
 final class TableRenderingTests: XCTestCase {
 
-    /// TextKit arrondit au sous-pixel ; la tolérance reste très en dessous de
-    /// la largeur du plus fin des caractères.
+    /// TextKit rounds to the sub-pixel; the tolerance stays well below the
+    /// width of the narrowest character.
     private let tolerance: CGFloat = 0.6
 
-    // MARK: - L'assertion qui compte
+    // MARK: - The assertion that matters
 
     func testColumnsLineUpAcrossRows() throws {
-        // Les contenus n'ont pas la même longueur d'une ligne à l'autre : sans
-        // grille, la deuxième colonne serait à trois abscisses différentes.
+        // The contents don't have the same length from one row to the next:
+        // without a grid, the second column would sit at three different x-coordinates.
         let source = """
         | a | x |
         |---|---|
@@ -32,8 +32,8 @@ final class TableRenderingTests: XCTestCase {
         let view = try render(source)
         let xs = try ["x", "y", "z"].map { try caretX(atFirstOccurrenceOf: $0, in: source, view: view) }
 
-        XCTAssertEqual(xs[0], xs[1], accuracy: tolerance, "L'en-tête et la première rangée doivent s'aligner")
-        XCTAssertEqual(xs[1], xs[2], accuracy: tolerance, "Les rangées doivent s'aligner entre elles")
+        XCTAssertEqual(xs[0], xs[1], accuracy: tolerance, "The header row and the first row must align")
+        XCTAssertEqual(xs[1], xs[2], accuracy: tolerance, "The rows must align with each other")
     }
 
     func testTheSecondColumnStartsAfterTheWidestCellOfTheFirst() throws {
@@ -47,19 +47,19 @@ final class TableRenderingTests: XCTestCase {
         let secondColumn = try caretX(atFirstOccurrenceOf: "x", in: source, view: view)
         let widest = try width(of: "bbbbbbbb", in: source, view: view)
 
-        // Huit signes plus la gouttière : la colonne suivante ne peut pas
-        // commencer avant, sinon « bbbbbbbb » déborderait dessus.
+        // Eight characters plus the gutter: the next column cannot
+        // start before that, otherwise "bbbbbbbb" would overflow into it.
         XCTAssertGreaterThan(secondColumn - firstColumn, widest)
     }
 
-    // MARK: - Alignements
+    // MARK: - Alignments
 
-    /// **Toutes les cellules partent du même bord.**
+    /// **Every cell starts from the same edge.**
     ///
-    /// L'alignement de la ligne `|:---:|---:|` reste dans le fichier — il n'est
-    /// simplement plus rendu. Une grille dont chaque colonne commence à un bord
-    /// différent se parcourt moins bien qu'une grille dont toutes les entrées
-    /// tombent au même point, et c'est le rendu qui a été tranché.
+    /// The alignment of the `|:---:|---:|` line stays in the file: it simply
+    /// isn't rendered anymore. A grid whose columns each start at a different
+    /// edge is harder to scan than one whose entries all land at the same
+    /// point, and rendering is what settled the question.
     func testEveryCellIsLeftAlignedWhateverTheDelimiterSays() throws {
         let source = """
         | g | c | d |
@@ -72,29 +72,28 @@ final class TableRenderingTests: XCTestCase {
             let short = try cellStart(row: "| 1 | 1 | 1 |", column: column, in: source, view: view)
             let long = try cellStart(row: "| 1234 | 1234 | 1234 |", column: column, in: source, view: view)
             XCTAssertEqual(short, long, accuracy: tolerance,
-                           "La colonne \(column) doit partir du même x sur les deux rangées")
+                           "Column \(column) must start at the same x on both rows")
         }
     }
 
     func testACellIsNotGluedToItsRule() throws {
-        // Un peu d'air entre le filet et la première lettre : sans lui, la
-        // grille se lit comme un tableau de chiffres.
+        // A little breathing room between the rule and the first letter: without
+        // it, the grid reads like a table of numbers.
         let source = "| a | b |\n|---|---|\n| c | d |"
         let view = try render(source)
         let left = try caretX(at: 0, view: view)
         let text = try caretX(atFirstOccurrenceOf: "a", in: source, view: view)
-        XCTAssertGreaterThan(text - left, 2, "Le contenu garde un retrait par rapport au bord")
+        XCTAssertGreaterThan(text - left, 2, "Content keeps an indent relative to the edge")
     }
 
-    // MARK: - Hauteur des rangées
+    // MARK: - Row height
 
-    /// **Un tableau vide reste un tableau.**
+    /// **An empty table stays a table.**
     ///
-    /// Les `|` masqués mesurent un centième de point : une rangée dont toutes
-    /// les cellules sont vides n'avait donc aucune hauteur naturelle, et le
-    /// multiplicateur d'interlignage multipliait ce néant. Le tableau à remplir
-    /// de « 6 — Tableaux » se réduisait à trois filets empilés, sans une rangée
-    /// où poser le curseur.
+    /// Masked `|` measure a hundredth of a point: a row whose cells are all
+    /// empty therefore had no natural height, and the line-spacing multiplier
+    /// multiplied that nothingness. The table to fill in from "6 — Tables"
+    /// collapsed to three stacked rules, with no row to place the caret in.
     func testAnEmptyTableKeepsClickableRows() throws {
         let full = try lineHeights(in: try render("| a | b |\n|---|---|\n| c | d |"))
         let empty = try lineHeights(in: try render("|  |  |\n|---|---|\n|  |  |"))
@@ -102,20 +101,20 @@ final class TableRenderingTests: XCTestCase {
         XCTAssertEqual(empty.count, full.count)
         for (index, height) in empty.enumerated() {
             XCTAssertEqual(height, full[index], accuracy: tolerance,
-                           "La rangée \(index) vide doit faire la hauteur d'une rangée pleine")
+                           "Empty row \(index) must be the height of a full row")
         }
     }
 
-    /// Le tableau occupe **toute la colonne de texte**.
+    /// The table occupies **the entire text column**.
     ///
-    /// À la taille de son contenu, un tableau qu'on venait d'insérer — toutes
-    /// cellules vides — se réduisait à un filet de 168 points au milieu d'une
-    /// colonne trois fois plus large : on ne voyait pas où cliquer.
+    /// Sized to its content, a table that was just inserted, with every cell
+    /// empty, collapsed to a 168-point rule in the middle of a column three
+    /// times as wide: there was nowhere visible to click.
     func testATableFillsTheTextColumn() throws {
         let typography = EditorTypography.default
         for source in ["|  |  |  |\n|---|---|---|\n|  |  |  |",
                        "| a | b |\n|---|---|\n| c | d |",
-                       "| Piège | Symptôme | Correctif |\n|---|---|---|\n| a | b | c |"] {
+                       "| Pitfall | Symptom | Fix |\n|---|---|---|\n| a | b | c |"] {
             let view = try render(source)
             let storage = try XCTUnwrap(view.textStorage)
             let table = try XCTUnwrap(firstTable(in: source))
@@ -123,15 +122,15 @@ final class TableRenderingTests: XCTestCase {
                                                           typography: typography,
                                                           available: typography.columnWidth))
             XCTAssertEqual(layout.width, typography.columnWidth, accuracy: 3,
-                           "Le tableau doit tenir toute la colonne : \(source)")
+                           "The table must fill the entire column: \(source)")
         }
     }
 
-    /// L'étirement ne doit pas rattraper un tableau trop large : celui-là reste
-    /// en source, et le test se fait sur sa largeur **naturelle**.
+    /// Stretching must not rescue a table that's too wide: that one stays in
+    /// source form, and the test is done on its **natural** width.
     func testAnOversizedTableIsStillRefusedBeforeStretching() throws {
         let source = """
-        | Une colonne au titre interminable | Une deuxième tout aussi longue | Une troisième pour finir | Et une quatrième |
+        | A column with an endless title | A second one just as long | A third one to finish | And a fourth |
         |---|---|---|---|
         | a | b | c | d |
         """
@@ -150,64 +149,64 @@ final class TableRenderingTests: XCTestCase {
         return nil
     }
 
-    // MARK: - Les deux états du §2.1
+    // MARK: - The two states from §2.1
 
     func testPipesTakeNoWidthWhenTheCaretIsElsewhere() throws {
         let source = "| a | b |\n|---|---|\n| c | d |"
         let view = try render(source)
         let storage = try XCTUnwrap(view.textStorage)
 
-        // Le `|` de bord gauche de la première rangée.
+        // The left border `|` of the first row.
         XCTAssertTrue(MarkerMask.isMasked(storage, at: 0))
-        // Les blancs de remplissage aussi : c'est la grille qui espace.
+        // The padding spaces too: it's the grid that provides the spacing.
         XCTAssertTrue(MarkerMask.isMasked(storage, at: 1))
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "« a » est du contenu")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "\"a\" is content")
     }
 
-    /// **La grille ne se replie plus sous le curseur.**
+    /// **The grid no longer collapses under the caret.**
     ///
-    /// C'était le repli du §2.6 : le curseur entrait, `| a | b |` réapparaissait,
-    /// on éditait la source. Honnête, mais cela revient à demander de connaître
-    /// la syntaxe d'un tableau markdown pour changer une cellule — c'est-à-dire
-    /// exactement ce que l'app promet d'éviter, et ce que personne ne fait à la
-    /// main. On écrit maintenant dans la grille ; `TableEditing` s'occupe des
-    /// positions de curseur que plus rien n'affiche.
+    /// That was the §2.6 fallback: the caret would enter, `| a | b |` would
+    /// reappear, and the source got edited directly. Honest, but that amounts
+    /// to requiring markdown table syntax knowledge to change a single cell:
+    /// exactly what the app promises to avoid, and what nobody does by hand.
+    /// Writing now happens directly in the grid; `TableEditing` handles the
+    /// caret positions that nothing displays anymore.
     func testTheGridStaysWhenTheCaretEntersTheTable() throws {
         let source = "| a | b |\n|---|---|\n| c | d |"
         let view = try render(source, caret: 2)
         let storage = try XCTUnwrap(view.textStorage)
 
-        XCTAssertTrue(MarkerMask.isMasked(storage, at: 0), "Le `|` doit rester masqué")
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: 0), "The `|` must stay hidden")
         XCTAssertNil(storage.attribute(.foveaRevealed, at: 0, effectiveRange: nil))
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "…et « a » rester du contenu")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "…and \"a\" must remain content")
     }
 
     func testTheDelimiterLineIsShorterThanARow() throws {
-        // Elle ne montre rien : sa hauteur est celle du filet qu'elle porte.
+        // It shows nothing: its height is that of the rule it carries.
         let source = "| a |\n|---|\n| c |"
         let view = try render(source)
         let heights = try lineHeights(in: view)
         XCTAssertEqual(heights.count, 3)
         XCTAssertLessThan(heights[1], heights[0] * 0.9,
-                          "La ligne |---| doit être réduite, pas rendue comme une rangée")
+                          "The |---| line must be collapsed, not rendered as a row")
     }
 
-    // MARK: - Quand il n'y a pas de grille (§6)
+    // MARK: - When there is no grid (§6)
 
     func testAMalformedTableKeepsItsSourceIntact() throws {
-        // Aucune grille, aucun masquage : on ne devine jamais l'intention.
+        // No grid, no masking: intent is never guessed.
         let source = "| a | b |\n| x | y |\n| 1 | 2 |"
         let view = try render(source)
         let storage = try XCTUnwrap(view.textStorage)
         for offset in 0..<storage.length {
             XCTAssertFalse(MarkerMask.isMasked(storage, at: offset),
-                           "Rien ne doit être masqué à l'offset \(offset)")
+                           "Nothing should be masked at offset \(offset)")
         }
     }
 
     func testATableTooWideForTheColumnStaysInSource() throws {
-        // Une grille plus large que la colonne se replierait rangée par rangée
-        // et ne se lirait plus. Mieux vaut la source, lisible.
+        // A grid wider than the column would wrap row by row and become
+        // unreadable. The readable source is better.
         let wide = String(repeating: "x", count: 60)
         let source = "| \(wide) | \(wide) |\n|---|---|\n| a | b |"
         let view = try render(source)
@@ -217,16 +216,16 @@ final class TableRenderingTests: XCTestCase {
         XCTAssertNotNil(storage.attribute(.foveaRevealed, at: 0, effectiveRange: nil))
     }
 
-    // MARK: - Le tampon n'est jamais touché (§3.1)
+    // MARK: - The buffer is never touched (§3.1)
 
     func testRenderingATableAddsNoCharacter() throws {
         let source = "| a | b |\n|---|---|\n| c | d |"
         let view = try render(source)
         XCTAssertEqual(view.string, source,
-                       "La grille est faite d'attributs seuls : pas un signe ajouté")
+                       "The grid is made of attributes alone: not a single character added")
     }
 
-    // MARK: - Instruments
+    // MARK: - Helpers
 
     private func render(_ source: String, caret: Int? = nil) throws -> EditorTextView {
         let view = EditorTextView.make()
@@ -264,23 +263,23 @@ final class TableRenderingTests: XCTestCase {
             x = frame.origin.x
             return false
         }
-        return try XCTUnwrap(x, "Aucun segment à l'offset \(offset)")
+        return try XCTUnwrap(x, "No segment at offset \(offset)")
     }
 
     private func caretX(atFirstOccurrenceOf needle: String, in source: String,
                         view: EditorTextView) throws -> CGFloat {
         let range = (source as NSString).range(of: needle)
-        XCTAssertNotEqual(range.location, NSNotFound, "« \(needle) » introuvable")
+        XCTAssertNotEqual(range.location, NSNotFound, "\"\(needle)\" not found")
         return try caretX(at: range.location, view: view)
     }
 
-    /// Abscisse du premier signe d'une cellule, repérée par sa rangée source.
+    /// X-coordinate of the first character of a cell, located by its source row.
     private func cellStart(row: String, column: Int, in source: String,
                            view: EditorTextView) throws -> CGFloat {
         let line = (source as NSString).range(of: row)
-        XCTAssertNotEqual(line.location, NSNotFound, "Rangée « \(row) » introuvable")
-        // `| a | b |` : le contenu de la colonne n commence après le n+1-ième
-        // `|` et son blanc.
+        XCTAssertNotEqual(line.location, NSNotFound, "Row \"\(row)\" not found")
+        // `| a | b |`: the content of column n starts after the (n+1)th
+        // `|` and its space.
         var offset = line.location
         var seen = 0
         while seen <= column, offset < line.upperBound {
@@ -290,10 +289,10 @@ final class TableRenderingTests: XCTestCase {
         return try caretX(at: offset + 1, view: view)
     }
 
-    /// Largeur rendue d'un fragment, mesurée entre ses deux extrémités.
+    /// Rendered width of a fragment, measured between its two ends.
     private func width(of needle: String, in source: String, view: EditorTextView) throws -> CGFloat {
         let range = (source as NSString).range(of: needle)
-        XCTAssertNotEqual(range.location, NSNotFound, "« \(needle) » introuvable")
+        XCTAssertNotEqual(range.location, NSNotFound, "\"\(needle)\" not found")
         return try caretX(at: range.upperBound, view: view) - caretX(at: range.location, view: view)
     }
 

@@ -1,49 +1,49 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import Foundation
 
-/// Convertit les positions de `swift-markdown` en offsets de `NSTextStorage`.
+/// Converts `swift-markdown` positions to `NSTextStorage` offsets.
 ///
-/// # Pourquoi cette classe existe
+/// # Why this class exists
 ///
-/// Les deux côtés ne comptent pas dans la même unité :
+/// The two sides do not count in the same unit:
 ///
-/// | | Unité | « é » | « 🙂 » |
+/// | | Unit | `é` | `🙂` |
 /// |---|---|---|---|
-/// | `swift-markdown` (cmark) | **octets UTF-8** | 2 | 4 |
-/// | `NSTextStorage` | **unités UTF-16** | 1 | 2 |
+/// | `swift-markdown` (cmark) | **UTF-8 bytes** | 2 | 4 |
+/// | `NSTextStorage` | **UTF-16 code units** | 1 | 2 |
 ///
-/// Une conversion naïve — traiter la colonne comme un index de caractère —
-/// désaligne tous les attributs dès la première lettre accentuée. Sur un texte
-/// français, c'est-à-dire tout de suite. Le §3.3 du cahier des charges l'avait
-/// identifié comme non négociable ; c'est ici que la promesse est tenue, et
-/// `SourcePositionMapTests` la vérifie sur de l'accentué, des emoji et du CJK.
+/// A naive conversion, treating the column as a character index, misaligns
+/// every attribute at the first accented letter. In French text, that means
+/// right away. §3.3 of the spec had flagged this as non-negotiable; this is
+/// where that promise is kept, and `SourcePositionMapTests` verifies it
+/// against accented text, emoji and CJK.
 ///
-/// # Ce que ça coûte
+/// # What it costs
 ///
-/// Le tableau des lignes est construit en une passe à chaque reparse complet.
-/// Une ligne purement ASCII — la majorité, même en français, dès qu'on compte
-/// la ponctuation et les blancs — se convertit par une addition, sans parcours.
-/// Les autres sont parcourues scalaire par scalaire, sur une longueur de ligne,
-/// pas de document.
+/// The line table is built in a single pass on every full reparse. A purely
+/// ASCII line (the majority, even in French, once punctuation and whitespace
+/// are counted) converts through a single addition, without a scan. The
+/// others are walked scalar by scalar, over the length of a line, not of the
+/// document.
 struct SourcePositionMap {
 
     private struct Line {
-        /// Offset UTF-16 du premier caractère de la ligne, depuis le début du texte.
+        /// UTF-16 offset of the first character of the line, from the start of the text.
         let utf16Start: Int
-        /// Index du premier scalaire de la ligne, pour le parcours.
+        /// Index of the line's first scalar, for traversal.
         let scalarStart: String.UnicodeScalarView.Index
-        /// Longueur de la ligne en unités UTF-16, terminateur exclu.
+        /// Length of the line in UTF-16 units, terminator excluded.
         let utf16Length: Int
-        /// Vrai si la ligne ne contient que de l'ASCII : octets et unités
-        /// coïncident, la conversion est une addition.
+        /// True if the line contains only ASCII: bytes and units coincide,
+        /// the conversion is a single addition.
         let isASCII: Bool
     }
 
     private let scalars: String.UnicodeScalarView
     private let lines: [Line]
 
-    /// Longueur totale du texte en unités UTF-16.
+    /// Total length of the text in UTF-16 units.
     let utf16Length: Int
 
     init(text: String) {
@@ -65,7 +65,7 @@ struct SourcePositionMap {
                                   scalarStart: lineStartIndex,
                                   utf16Length: utf16Offset - lineStartUTF16,
                                   isASCII: lineIsASCII))
-                utf16Offset += 1 // le saut de ligne lui-même
+                utf16Offset += 1 // the newline itself
                 index = scalars.index(after: index)
                 lineStartUTF16 = utf16Offset
                 lineStartIndex = index
@@ -77,9 +77,9 @@ struct SourcePositionMap {
             index = scalars.index(after: index)
         }
 
-        // La dernière ligne, qui n'est pas terminée par un saut de ligne. Elle
-        // existe même quand le texte est vide : cmark numérote à partir de 1 et
-        // référencerait une ligne 1 inexistante sans elle.
+        // The last line, which is not terminated by a line break. It exists
+        // even when the text is empty: cmark numbers lines starting at 1,
+        // and would reference a nonexistent line 1 without it.
         built.append(Line(utf16Start: lineStartUTF16,
                           scalarStart: lineStartIndex,
                           utf16Length: utf16Offset - lineStartUTF16,
@@ -89,19 +89,19 @@ struct SourcePositionMap {
         self.utf16Length = utf16Offset
     }
 
-    /// Nombre de lignes, en comptant la dernière même si elle est vide.
+    /// Number of lines, counting the last one even if it is empty.
     var lineCount: Int { lines.count }
 
-    /// Offset UTF-16 d'une position `swift-markdown`.
+    /// UTF-16 offset of a `swift-markdown` position.
     ///
     /// - Parameters:
-    ///   - line: numéro de ligne **à partir de 1**, comme cmark.
-    ///   - column: numéro de colonne **à partir de 1**, compté en **octets UTF-8**.
+    ///   - line: line number **starting at 1**, as cmark does.
+    ///   - column: column number **starting at 1**, counted in **UTF-8 bytes**.
     ///
-    /// Les positions hors bornes sont ramenées dans le texte plutôt que de
-    /// déclencher une erreur : cmark place parfois la fin d'un nœud une colonne
-    /// après le dernier caractère d'une ligne, et ce n'est pas un défaut à
-    /// signaler mais une convention à absorber.
+    /// Out-of-bounds positions are clamped into the text rather than
+    /// triggering an error: cmark sometimes places the end of a node one
+    /// column past the last character of a line, and that is not a defect
+    /// to report but a convention to absorb.
     func utf16Offset(line: Int, column: Int) -> Int {
         guard line >= 1 else { return 0 }
         guard line <= lines.count else { return utf16Length }
@@ -126,28 +126,28 @@ struct SourcePositionMap {
         return target.utf16Start + min(unitsSeen, target.utf16Length)
     }
 
-    /// Plage UTF-16 correspondant à un intervalle de positions cmark.
+    /// UTF-16 range corresponding to an interval of cmark positions.
     ///
-    /// La borne de fin de `swift-markdown` est **exclusive** — vérifié sur la
-    /// bibliothèque, pas supposé : `"ab **cd** ef"` donne pour le `Strong` les
-    /// colonnes 4 → 10, soit les octets 3 à 8 inclus, c'est-à-dire exactement
-    /// les six octets de `**cd**`. Elle se transpose donc telle quelle en plage
-    /// Cocoa, sans ajouter la largeur du dernier caractère.
+    /// `swift-markdown`'s end bound is **exclusive** — verified against the
+    /// library, not assumed: `"ab **cd** ef"` gives the `Strong` node
+    /// columns 4 → 10, i.e. bytes 3 to 8 inclusive, which is exactly the six
+    /// bytes of `**cd**`. It therefore carries over as-is into a Cocoa
+    /// range, without adding the width of the last code unit.
     func range(fromLine: Int, fromColumn: Int, toLine: Int, toColumn: Int) -> NSRange {
         let start = utf16Offset(line: fromLine, column: fromColumn)
         let end = max(start, utf16Offset(line: toLine, column: toColumn))
         return NSRange(location: start, length: end - start)
     }
 
-    /// Plage UTF-16 de la ligne contenant `location`, terminateur **exclu**.
-    /// Sert aux constructions à portée ligne du §2.2.
+    /// UTF-16 range of the line containing `location`, terminator **excluded**.
+    /// Used by the line-scoped constructs of §2.2.
     func lineRange(containing location: Int) -> NSRange {
         let line = lines[lineIndex(containing: location)]
         return NSRange(location: line.utf16Start, length: line.utf16Length)
     }
 
-    /// Recherche dichotomique. Appelée à chaque déplacement du curseur, donc
-    /// sur le trajet le plus sensible de l'app.
+    /// Binary search. Called on every caret movement, i.e. on the app's
+    /// most sensitive path.
     private func lineIndex(containing location: Int) -> Int {
         var low = 0
         var high = lines.count - 1

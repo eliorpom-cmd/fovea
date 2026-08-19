@@ -1,89 +1,91 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
 import SwiftUI
 
-/// Système de design : monochrome, aucune couleur d'accent, sous-teinte grise
-/// neutre. La hiérarchie vient de la graisse, de la taille et de l'espace,
-/// jamais de la teinte (§7 du cahier des charges).
+/// Design system: monochrome, no accent color, neutral gray undertone.
+/// Hierarchy comes from weight, size and space, never from hue (§7 of the
+/// spec).
 ///
-/// Deux règles propres à Fovea, plus strictes que celles de TBD :
+/// Two rules specific to Fovea, stricter than TBD's:
 ///
-/// 1. **L'app doit disparaître.** Le chrome est réduit au minimum ; en plein
-///    écran il ne doit rester que la colonne de texte.
-/// 2. **Le seul objet coloré autorisé est le contenu de l'utilisateur** — ses
-///    images, et ses blocs de code s'il a demandé la coloration en couleurs.
+/// 1. **The app must disappear.** Chrome is reduced to a minimum; in full
+///    screen only the text column should remain.
+/// 2. **The only colored object allowed is the user's content** — their
+///    images, and their code blocks, if they've requested colored syntax
+///    highlighting.
 enum Theme {
 
-    // MARK: - Fonds
+    // MARK: - Backgrounds
 
-    /// Fond de la fenêtre d'édition. Volontairement pas `windowBackgroundColor` :
-    /// on veut un blanc franc en clair, et un gris qui ne tire pas au bleu en
-    /// sombre — le texte doit être la seule chose que l'œil accroche.
+    /// Background of the editing window. Deliberately not
+    /// `windowBackgroundColor`: a crisp white is wanted in light mode, and a
+    /// gray that doesn't skew blue in dark mode — text should be the only
+    /// thing the eye catches on.
     static let window = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E)
 
-    /// Surface de carte : palette de commandes, popovers, panneau de plan.
+    /// Card surface: command palette, popovers, outline panel.
     static let card = adaptive(light: 0xFFFFFF, dark: 0x2A2A2C)
 
-    // MARK: - Rampe de remplissage
+    // MARK: - Fill ramp
     //
-    // Gris translucide neutre, comme `NSColor.systemFill` : la teinte suit le
-    // fond, ce qui évite les aplats boueux en mode sombre.
+    // Neutral translucent gray, like `NSColor.systemFill`: the hue follows
+    // the background, which avoids muddy flat colors in dark mode.
 
-    /// Fond des blocs de code et du code inline.
+    /// Background of code blocks and inline code.
     static let fillQuaternary = adaptive(light: (0x747480, 0.05), dark: (0x767680, 0.16))
-    /// Fond des champs et capsules.
+    /// Background of fields and capsules.
     static let fillTertiary = adaptive(light: (0x767680, 0.08), dark: (0x767680, 0.22))
     static let fillSecondary = adaptive(light: (0x787880, 0.12), dark: (0x787880, 0.30))
-    /// Ligne survolée dans le plan ou la palette.
+    /// Hovered row in the outline or the palette.
     static let rowHover = adaptive(light: (0x787880, 0.16), dark: (0x787880, 0.32))
-    /// **Ligne sélectionnée** dans une liste — menu slash, palette, plan.
+    /// **Selected row** in a list — slash menu, palette, outline.
     ///
-    /// Un cran au-dessus du survol, pour qu'on distingue les deux, et gris :
-    /// `NSTableView` peint sa sélection en bleu système, ce qui était la seule
-    /// couleur d'accent restée dans l'app. Le §7 n'autorise la couleur que sur
-    /// le contenu de l'utilisateur, et ce fichier annonçait déjà la neutraliser
-    /// — sans que les listes l'appliquent jamais.
+    /// One notch above hover, so the two are distinguishable, and gray:
+    /// `NSTableView` paints its selection in system blue, which was the only
+    /// accent color left in the app. §7 only allows color on the user's
+    /// content, and this file already claimed to neutralize it — without the
+    /// lists ever applying it.
     static let rowSelection = adaptive(light: (0x787880, 0.22), dark: (0x787880, 0.42))
 
-    // MARK: - Libellés
+    // MARK: - Labels
 
-    /// Le texte de l'utilisateur. Pas du noir pur : sur un fond blanc, le noir
-    /// pur vibre sur les longues sessions d'écriture.
+    /// The user's text. Not pure black: on a white background, pure black
+    /// vibrates over long writing sessions.
     static let label = adaptive(light: (0x000000, 0.88), dark: (0xFFFFFF, 0.92))
-    /// Citations, métadonnées, statistiques.
+    /// Quotes, metadata, statistics.
     static let labelSecondary = adaptive(light: (0x000000, 0.50), dark: (0xFFFFFF, 0.55))
-    /// **Les marqueurs markdown révélés** (§2.1), les substituts, le texte
-    /// désactivé. Présents, jamais bruyants.
+    /// **Revealed markdown markers** (§2.1), placeholders, disabled text.
+    /// Present, never loud.
     static let labelTertiary = adaptive(light: (0x000000, 0.28), dark: (0xFFFFFF, 0.30))
-    /// Le texte atténué par le mode focus (§4.5).
+    /// Text dimmed by focus mode (§4.5).
     static let labelDimmed = adaptive(light: (0x000000, 0.22), dark: (0xFFFFFF, 0.24))
 
-    // MARK: - Traits
+    // MARK: - Strokes
 
     static let separator = adaptive(light: (0x000000, 0.10), dark: (0xFFFFFF, 0.12))
     static let strokeControl = adaptive(light: (0x000000, 0.12), dark: (0xFFFFFF, 0.14))
-    /// Halo de focus clavier, neutre — jamais le bleu système.
+    /// Keyboard focus ring, neutral — never system blue.
     static let focusRing = adaptive(light: (0x0A0A0A, 0.24), dark: (0xF5F5F5, 0.30))
 
-    /// La barre verticale à gauche d'une citation.
+    /// The vertical bar to the left of a blockquote.
     static let quoteBar = adaptive(light: (0x000000, 0.18), dark: (0xFFFFFF, 0.22))
 
-    // MARK: - Encre (bouton principal)
+    // MARK: - Ink (primary button)
 
     static let ink = adaptive(light: 0x0A0A0A, dark: 0xF5F5F5)
     static let inkOn = adaptive(light: 0xFFFFFF, dark: 0x0A0A0A)
 
-    // MARK: - Sélection
+    // MARK: - Selection
     //
-    // La sélection système est bleue. Dans un éditeur monochrome où la seule
-    // couleur autorisée est le contenu de l'utilisateur, on la neutralise.
+    // The system selection is blue. In a monochrome editor where the only
+    // allowed color is the user's content, it gets neutralized.
 
     static let selection = adaptive(light: (0x000000, 0.12), dark: (0xFFFFFF, 0.18))
 
-    // MARK: - Mise en page
+    // MARK: - Layout
 
-    /// Échelle d'espacement.
+    /// Spacing scale.
     enum Space {
         static let s2: CGFloat = 2
         static let s4: CGFloat = 4
@@ -108,11 +110,11 @@ enum Theme {
         static let window: CGFloat = 14
     }
 
-    // MARK: - Rampe typographique de l'interface
+    // MARK: - Interface typography ramp
     //
-    // Pour le chrome uniquement — barre d'état, palette, réglages, plan. La
-    // typographie du **texte de l'utilisateur** ne vit pas ici : elle est
-    // réglable (§4.7) et calculée par `EditorTypography`.
+    // For chrome only — status bar, palette, settings, outline. The
+    // typography of the **user's text** doesn't live here: it's configurable
+    // (§4.7) and computed by `EditorTypography`.
 
     enum UIText {
         static let title2 = Font.system(size: 17, weight: .regular)
@@ -123,11 +125,11 @@ enum Theme {
         static let callout = Font.system(size: 12, weight: .regular)
         static let subheadline = Font.system(size: 11, weight: .regular)
         static let footnote = Font.system(size: 10, weight: .regular)
-        /// En-tête de section en petites capitales.
+        /// Section header in small caps.
         static let sectionHeader = Font.system(size: 10, weight: .semibold)
     }
 
-    // MARK: - Construction des couleurs
+    // MARK: - Color construction
 
     private static func adaptive(light: Int, dark: Int) -> Color {
         adaptive(light: (light, 1.0), dark: (dark, 1.0))
@@ -146,12 +148,12 @@ enum Theme {
     }
 }
 
-// MARK: - Accès AppKit
+// MARK: - AppKit access
 //
-// L'éditeur est en AppKit pur : il lui faut des NSColor, pas des Color SwiftUI.
-// Ce miroir évite un `NSColor(theme.x)` disséminé dans tout le code de rendu,
-// qui coûte une conversion à chaque pose d'attribut — et il y en a des milliers
-// par frappe.
+// The editor is pure AppKit: it needs NSColor, not SwiftUI Color. This
+// mirror avoids an `NSColor(theme.x)` scattered throughout the rendering
+// code, which costs a conversion at every attribute application — and there
+// are thousands of those per keystroke.
 
 extension Theme {
     enum NS {
@@ -170,9 +172,8 @@ extension Theme {
         static let separator = ns(light: (0x000000, 0.10), dark: (0xFFFFFF, 0.12))
         static let quoteBar = ns(light: (0x000000, 0.18), dark: (0xFFFFFF, 0.22))
         static let selection = ns(light: (0x000000, 0.12), dark: (0xFFFFFF, 0.18))
-        /// Ligne **survolée** dans une liste. Un cran en dessous de la
-        /// sélection, pour qu'on distingue « ce que je vais cliquer » de « ce
-        /// qui est choisi ».
+        /// **Hovered** row in a list. One notch below selection, so "what I'm
+        /// about to click" is distinguishable from "what's chosen".
         static let rowHover = ns(light: (0x787880, 0.10), dark: (0x787880, 0.20))
         static let rowSelection = ns(light: (0x787880, 0.22), dark: (0x787880, 0.42))
         static let ink = ns(light: (0x0A0A0A, 1.0), dark: (0xF5F5F5, 1.0))
@@ -189,26 +190,27 @@ extension Theme {
 
 extension NSView {
 
-    /// Pose une couleur de fond sur le calque, **dans l'apparence de la vue**.
+    /// Sets a background color on the layer, **in the view's appearance**.
     ///
-    /// # Le piège que cette méthode existe pour fermer
+    /// # The pitfall this method exists to close
     ///
-    /// `NSColor.cgColor` résout la couleur avec `NSAppearance.current` — celle
-    /// du **thread au moment de l'appel** — et non celle de la vue. Tant que
-    /// l'app suit le système, les deux coïncident et rien ne se voit.
+    /// `NSColor.cgColor` resolves the color with `NSAppearance.current` — the
+    /// **thread's appearance at call time** — not the view's. As long as the
+    /// app follows the system, the two coincide and nothing shows.
     ///
-    /// Dès que l'app est forcée dans l'autre thème, une vue **créée** à ce
-    /// moment-là naît avec les couleurs de l'autre. Mesuré, thème clair sur
-    /// système sombre : le plan était un rectangle **noir** dans une fenêtre
-    /// blanche, et son message d'accueil — dont la couleur, dynamique, est
-    /// résolue au dessin — s'y écrivait en **noir sur noir**. La barre d'état
-    /// devenait une capsule gris foncé posée sur la page.
+    /// As soon as the app is forced into the other theme, a view **created**
+    /// at that moment is born with the other theme's colors. Measured: light
+    /// theme over dark system, the outline was a **black** rectangle in a
+    /// white window, and its welcome message — whose color, dynamic, is
+    /// resolved at draw time — was written there in **black on black**. The
+    /// status bar became a dark gray capsule sitting on the page.
     ///
-    /// Et aucun rattrapage n'était possible par `viewDidChangeEffectiveAppearance` :
-    /// il n'y a pas de *changement*, la vue naît fausse.
+    /// And no recovery was possible through
+    /// `viewDidChangeEffectiveAppearance`: there is no *change*, the view is
+    /// born wrong.
     ///
-    /// À rappeler donc aux trois moments où l'apparence peut différer : à la
-    /// construction, à l'entrée dans une fenêtre, et au changement de thème.
+    /// It must therefore be called at the three moments when appearance can
+    /// differ: at construction, on entering a window, and on theme change.
     func applyLayerBackground(_ color: NSColor) {
         wantsLayer = true
         effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -218,7 +220,7 @@ extension NSView {
 }
 
 extension NSColor {
-    /// Construit une couleur sRGB depuis un entier hexadécimal 0xRRGGBB.
+    /// Builds an sRGB color from a 0xRRGGBB hexadecimal integer.
     convenience init(hex: Int, alpha: Double = 1) {
         self.init(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,

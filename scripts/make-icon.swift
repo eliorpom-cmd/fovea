@@ -1,40 +1,40 @@
 #!/usr/bin/env swift
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 //
-// Dessine l'icône de l'app et écrit un .iconset prêt pour `iconutil`.
+// Draws the app icon and writes a .iconset ready for `iconutil`.
 //
-// # Le motif
+// # The pattern
 //
-// La *fovea centralis* est la zone de la rétine où la vision est la plus nette ;
-// l'acuité s'effondre dès qu'on s'en éloigne. L'icône est cela, littéralement :
-// des lignes de texte, celle du milieu franche, les autres s'effaçant vers les
-// bords. C'est aussi le programme de l'app — mettre le texte au point et faire
-// disparaître le reste (§7).
+// The *fovea centralis* is the area of the retina where vision is sharpest;
+// acuity collapses as soon as you move away from it. The icon is that,
+// literally: lines of text, the middle one sharp, the others fading toward
+// the edges. It's also the app's whole program — bring the text into focus
+// and let everything else disappear (§7).
 //
-// Monochrome, comme tout le reste : la hiérarchie vient du contraste, jamais de
-// la teinte.
+// Monochrome, like everything else: hierarchy comes from contrast, never
+// from hue.
 
 import AppKit
 
 let arguments = CommandLine.arguments
 guard arguments.count == 2 else {
-    FileHandle.standardError.write(Data("usage: make-icon.swift <dossier.iconset>\n".utf8))
+    FileHandle.standardError.write(Data("usage: make-icon.swift <folder.iconset>\n".utf8))
     exit(1)
 }
 let output = URL(fileURLWithPath: arguments[1])
 
-// MARK: - Dessin
+// MARK: - Drawing
 
-/// Les lignes de « texte », en fraction de la zone utile.
+/// The "text" lines, as a fraction of the usable area.
 ///
-/// Les longueurs sont irrégulières : un paragraphe de vraie prose ne se termine
-/// pas au cordeau, et des barres toutes égales donneraient un code-barres.
+/// The lengths are irregular: a paragraph of real prose doesn't end on a
+/// straight edge, and bars of equal length would look like a barcode.
 let lines: [(y: CGFloat, width: CGFloat)] = [
     (0.06, 0.78),
     (0.20, 0.92),
     (0.34, 0.66),
-    (0.50, 1.00),   // la ligne nette, au centre optique
+    (0.50, 1.00),   // the sharp line, at the optical center
     (0.66, 0.72),
     (0.80, 0.90),
     (0.94, 0.54),
@@ -47,9 +47,9 @@ func drawIcon(size: CGFloat) -> NSImage {
 
     NSGraphicsContext.current?.imageInterpolation = .high
 
-    // Le fond suit la grille d'Apple : l'art occupe 824 points sur 1024, et le
-    // rayon des angles vaut 185,4 à cette échelle. Hors de cette grille, l'icône
-    // paraît trop grosse ou trop petite à côté de celles du système.
+    // The background follows Apple's grid: the artwork occupies 824 points
+    // out of 1024, and the corner radius is 185.4 at that scale. Outside
+    // this grid, the icon looks too big or too small next to system ones.
     let scale = size / 1024
     let inset = 100 * scale
     let plate = NSRect(x: inset, y: inset, width: size - inset * 2, height: size - inset * 2)
@@ -59,8 +59,8 @@ func drawIcon(size: CGFloat) -> NSImage {
     NSColor(srgbRed: 0.10, green: 0.10, blue: 0.11, alpha: 1).setFill()
     background.fill()
 
-    // Les barres sont rognées par la plaque : celles du haut et du bas
-    // dépasseraient sinon des angles arrondis.
+    // The bars are clipped to the plate: the top and bottom ones would
+    // otherwise stick out past the rounded corners.
     NSGraphicsContext.saveGraphicsState()
     background.addClip()
 
@@ -69,9 +69,9 @@ func drawIcon(size: CGFloat) -> NSImage {
     let barRadius = barHeight / 2
 
     for line in lines {
-        // L'opacité s'effondre avec la distance au centre, comme l'acuité
-        // visuelle hors de la fovéa. La courbe est quadratique : linéaire, la
-        // chute se voyait à peine.
+        // Opacity collapses with distance from the center, like visual
+        // acuity outside the fovea. The curve is quadratic: linear, the
+        // falloff was barely visible.
         let distance = abs(line.y - 0.5) * 2
         let sharpness = max(0.10, 1 - distance * distance * 1.15)
 
@@ -87,10 +87,10 @@ func drawIcon(size: CGFloat) -> NSImage {
     return image
 }
 
-// MARK: - Écriture du .iconset
+// MARK: - Writing the .iconset
 
-/// Les tailles exigées par `iconutil`. En manquer une fait échouer la
-/// conversion, sans dire laquelle.
+/// The sizes required by `iconutil`. Missing one fails the conversion,
+/// without saying which one.
 let variants: [(name: String, pixels: Int)] = [
     ("icon_16x16.png", 16), ("icon_16x16@2x.png", 32),
     ("icon_32x32.png", 32), ("icon_32x32@2x.png", 64),
@@ -106,10 +106,10 @@ for variant in variants {
     guard let tiff = image.tiffRepresentation,
           let bitmap = NSBitmapImageRep(data: tiff),
           let png = bitmap.representation(using: .png, properties: [:]) else {
-        FileHandle.standardError.write(Data("échec du rendu de \(variant.name)\n".utf8))
+        FileHandle.standardError.write(Data("failed to render \(variant.name)\n".utf8))
         exit(1)
     }
     try png.write(to: output.appendingPathComponent(variant.name))
 }
 
-print("✓ \(variants.count) images écrites dans \(output.lastPathComponent)")
+print("✓ \(variants.count) images written to \(output.lastPathComponent)")

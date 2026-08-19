@@ -1,13 +1,13 @@
-// Fovea — éditeur markdown WYSIWYG natif. Copyright (C) 2026 Elior Pommier.
-// Sous licence GNU AGPL v3 ou ultérieure. Voir LICENSE.
+// Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+// Licensed under the GNU AGPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
-/// La lecture de la grille (§2.6).
+/// Reading the grid (§2.6).
 ///
-/// C'est la couche qui décide **quels caractères disparaissent** dans un
-/// tableau. Une erreur d'un signe ici et une colonne entière glisse, ou un `|`
-/// reste à l'écran au milieu d'une grille.
+/// This is the layer that decides **which characters disappear** in a
+/// table. A one-off error here and an entire column shifts, or a `|`
+/// stays on screen in the middle of a grid.
 final class MarkdownTableTests: XCTestCase {
 
     private func scan(_ source: String) -> MarkdownTable? {
@@ -19,23 +19,23 @@ final class MarkdownTableTests: XCTestCase {
         (source as NSString).substring(with: range)
     }
 
-    // MARK: - Forme générale
+    // MARK: - General shape
 
     func testAPlainTableIsRead() throws {
         let source = "| a | b |\n|---|---|\n| 1 | 2 |"
         let table = try XCTUnwrap(scan(source))
 
         XCTAssertEqual(table.columnCount, 2)
-        XCTAssertEqual(table.rows.count, 2, "L'en-tête et le corps, sans la ligne de délimitation")
+        XCTAssertEqual(table.rows.count, 2, "The header row and body, without the delimiter row")
         XCTAssertEqual(text(source, table.delimiter), "|---|---|")
         XCTAssertEqual(table.rows.map { $0.cells.map { text(source, $0.content) } },
                        [["a", "b"], ["1", "2"]])
     }
 
     func testATableWithoutOuterPipesIsRead() {
-        // GFM les autorise, et beaucoup de gens écrivent comme ça.
+        // GFM allows them, and many people write tables that way.
         let source = "a | b\n--|--\n1 | 2"
-        guard let table = scan(source) else { return XCTFail("Le tableau devrait être lu") }
+        guard let table = scan(source) else { return XCTFail("The table should be read") }
         XCTAssertEqual(table.columnCount, 2)
         XCTAssertFalse(table.rows[0].hasLeadingPipe)
         XCTAssertEqual(table.rows[0].cells.map { text(source, $0.content) }, ["a", "b"])
@@ -46,14 +46,14 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertEqual(table.alignments, [.leading, .trailing, .center, .leading])
     }
 
-    // MARK: - Ce qui disparaît
+    // MARK: - What disappears
 
     func testEveryPipeAndEveryPadIsAMarker() {
         let source = "| a | b |\n|---|---|\n| 1 | 2 |"
-        guard let table = scan(source) else { return XCTFail("Le tableau devrait être lu") }
+        guard let table = scan(source) else { return XCTFail("The table should be read") }
 
-        // Tout sauf le contenu des cellules doit être couvert : ce qui n'est pas
-        // masqué reste à l'écran, et un seul `|` oublié saute aux yeux.
+        // Everything except cell content must be covered: whatever isn't
+        // hidden stays on screen, and a single forgotten `|` stands out immediately.
         var covered = Set<Int>()
         for marker in table.markerRanges {
             for offset in marker.location..<marker.upperBound { covered.insert(offset) }
@@ -64,7 +64,7 @@ final class MarkdownTableTests: XCTestCase {
                 for offset in cell.content.location..<cell.content.upperBound { expected.remove(offset) }
             }
         }
-        // Les sauts de ligne ne sont ni contenu ni marqueur.
+        // Line breaks are neither content nor markers.
         for (offset, unit) in Array(source.utf16).enumerated() where unit == 10 { expected.remove(offset) }
         XCTAssertEqual(covered, expected)
     }
@@ -75,21 +75,21 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertTrue(table.markerRanges.contains(table.delimiter))
     }
 
-    // MARK: - Le cas qui casserait tout
+    // MARK: - The case that would break everything
 
     func testAnEscapedPipeDoesNotSplitACell() throws {
-        // `\|` est le seul moyen d'écrire un `|` dans une cellule. Le traiter
-        // comme un séparateur couperait la cellule en deux et décalerait toutes
-        // les colonnes suivantes.
+        // `\|` is the only way to write a `|` inside a cell. Treating it
+        // as a separator would split the cell in two and shift every
+        // subsequent column.
         let source = "| a \\| b | c |\n|---|---|\n| 1 | 2 |"
         let table = try XCTUnwrap(scan(source))
         XCTAssertEqual(table.rows[0].cells.map { text(source, $0.content) }, ["a \\| b", "c"])
     }
 
     func testAPipeInsideACodeSpanStillSplits() throws {
-        // C'est la règle de GFM, aussi surprenante soit-elle : la découpe en
-        // cellules a lieu avant l'analyse inline. Rendre autrement donnerait un
-        // tableau différent de celui de GitHub.
+        // This is the GFM rule, however surprising: cell splitting happens
+        // before inline parsing. Rendering it differently would produce a
+        // table different from GitHub's.
         let source = "| `a|b` | c |\n|---|---|\n| 1 | 2 |"
         let table = try XCTUnwrap(scan(source))
         XCTAssertEqual(table.rows[0].cells.count, 3)
@@ -101,16 +101,16 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertEqual(table.rows[0].cells.map { text(source, $0.content) }, ["a", "", "c"])
     }
 
-    // MARK: - Ce qui n'est pas un tableau (§6)
+    // MARK: - What isn't a table (§6)
 
     func testAMalformedDelimiterYieldsNoGrid() {
-        // §6 : aucune grille, la source reste affichée. On ne devine jamais.
+        // §6: no grid, the source stays displayed as-is. Never guess.
         XCTAssertNil(scan("| a | b |\n| x | y |\n| 1 | 2 |"))
         XCTAssertNil(scan("| a | b |\n|--x|---|\n| 1 | 2 |"))
         XCTAssertNil(scan("| a | b |"))
     }
 
-    // MARK: - Largeur d'affichage
+    // MARK: - Display width
 
     func testColumnWidthIsTheWidestContent() throws {
         let table = try XCTUnwrap(scan("| a | bbbb |\n|---|---|\n| ccccc | d |"))
@@ -118,9 +118,9 @@ final class MarkdownTableTests: XCTestCase {
     }
 
     func testAnIdeographTakesTwoCells() {
-        // Dans toute police à chasse fixe, un idéogramme occupe deux cellules.
-        // Compter les unités UTF-16 désalignerait la colonne d'un signe par
-        // caractère.
+        // In any monospaced font, an ideograph occupies two cells.
+        // Counting UTF-16 code units instead of display width would misalign
+        // the column by one cell per such character.
         let source = "漢字"
         let width = MarkdownTable.displayWidth(utf16: Array(source.utf16),
                                                in: NSRange(location: 0, length: 2))
@@ -128,7 +128,7 @@ final class MarkdownTableTests: XCTestCase {
     }
 
     func testACombiningAccentTakesNone() {
-        // « e » suivi d'un accent combinant : un signe à l'écran, deux unités.
+        // "e" followed by a combining accent: one glyph on screen, two code units.
         let source = "e\u{0301}"
         let utf16 = Array(source.utf16)
         XCTAssertEqual(MarkdownTable.displayWidth(utf16: utf16,
@@ -156,28 +156,30 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertEqual(moved.columnWidths, table.columnWidths)
     }
 
-    // MARK: - Intégration avec le parseur
+    // MARK: - Integration with the parser
 
     func testTheParserAttachesTheGridToTheSpan() throws {
-        let source = "Avant.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nAprès.\n"
+        let source = "Before.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nAfter.\n"
         let spans = MarkdownParser.parse(source).spans
         let table = try XCTUnwrap(spans.first { if case .table = $0.kind { return true } else { return false } })
 
-        guard case .table(let grid?) = table.kind else { return XCTFail("La grille doit être attachée") }
+        guard case .table(let grid?) = table.kind else { return XCTFail("The grid must be attached") }
         XCTAssertEqual(grid.columnCount, 2)
-        // Les positions sont celles du document entier, pas celles du bloc.
+        // Positions are relative to the whole document, not to the block.
         XCTAssertEqual(text(source, grid.rows[0].cells[0].content), "a")
     }
 
     func testAnAccentedTableStaysAligned() throws {
-        // Le piège du §3.3 : cmark compte en octets, le tampon en unités UTF-16.
-        // Un tableau plein d'accents est le meilleur révélateur d'un décalage.
-        let source = "| Élément | Réglé |\n|---|---|\n| Été | Oui |\n"
+        // The pitfall from §3.3: cmark counts in bytes, the buffer in UTF-16
+        // code units. A table full of accented characters is the best way to
+        // reveal a mismatch.
+        // Accented text: exercises the UTF-8 → UTF-16 offset conversion.
+        let source = "| Café | Naïve |\n|---|---|\n| Zoë | Hi |\n"
         let spans = MarkdownParser.parse(source).spans
         let table = try XCTUnwrap(spans.first { if case .table = $0.kind { return true } else { return false } })
-        guard case .table(let grid?) = table.kind else { return XCTFail("La grille doit être attachée") }
+        guard case .table(let grid?) = table.kind else { return XCTFail("The grid must be attached") }
 
-        XCTAssertEqual(text(source, grid.rows[0].cells[0].content), "Élément")
-        XCTAssertEqual(text(source, grid.rows[1].cells[0].content), "Été")
+        XCTAssertEqual(text(source, grid.rows[0].cells[0].content), "Café")
+        XCTAssertEqual(text(source, grid.rows[1].cells[0].content), "Zoë")
     }
 }

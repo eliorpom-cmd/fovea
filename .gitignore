@@ -14,9 +14,17 @@ Fovea.xcodeproj/
 .swiftpm/
 Package.resolved
 
-# Local tooling settings — one machine's permissions, nobody else's business
+# Local tooling settings: one machine's permissions, nobody else's business
 .claude/
 .impeccable/
 
-# Documents d'essai manuels, hors du dépôt
+# Manual test documents, kept out of the repository
 essais/
+
+# Internal working documents, kept out of the repository
+CAHIER-DES-CHARGES.md
+docs/AUDIT-UI.md
+docs/AUDIT-UI-E2E.md
+
+# Internal FR->EN translation kit, kept out of the repository
+.translation/
