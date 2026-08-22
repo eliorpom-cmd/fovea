@@ -42,11 +42,6 @@ final class EditorController: NSObject {
     /// Source mode (§4.2): the same buffer, without the styling layer.
     private(set) var isSourceMode = false
 
-    /// The block insertion menu (§4.5), and what triggered it.
-    private let slashMenu = SlashMenu()
-    /// The `/tab` the grid picker will replace once it has an answer.
-    private var slashTrigger: TypingBehaviour.SlashTrigger?
-
     /// Called after every text modification, so the document knows it is dirty.
     var onTextChanged: (() -> Void)?
 
@@ -125,12 +120,6 @@ final class EditorController: NSObject {
         }
         textView.handlesFootnoteJump = { [weak self] index in
             self?.jumpBetweenFootnoteHalves(at: index) ?? false
-        }
-        textView.handlesMenuKey = { [weak self] key in
-            self?.handleSlashMenuKey(key) ?? false
-        }
-        slashMenu.onChoose = { [weak self] command in
-            self?.insertBlock(command)
         }
         NotificationCenter.default.addObserver(
             self, selector: #selector(appearanceChanged),
@@ -474,7 +463,6 @@ final class EditorController: NSObject {
     func toggleSourceMode() {
         let selection = textView.selectedRange()
         isSourceMode.toggle()
-        slashMenu.dismiss()
         rerenderEverything()
 
         // §6: the selection is kept, but **extended to the markers of its
@@ -761,98 +749,6 @@ final class EditorController: NSObject {
                                                    length: span.range.upperBound - cursor))
     }
 
-    // MARK: - Slash menu (§4.5)
-
-    /// Opens, updates or closes the menu depending on what was just typed.
-    ///
-    /// Called after every keystroke **and** every caret move: leaving the line
-    /// must close the menu just as reliably as deleting the `/`.
-    ///
-    /// - Parameter mayOpen: true only when the call follows a **keystroke**. A
-    ///   panel that captures arrow keys and `⏎` must never open on its own:
-    ///   placing the caret at the end of a line ending in `/` used to leave an
-    ///   unrequested menu open and a keyboard that no longer responded to the
-    ///   text. A caret move can therefore **close** the menu or follow it when
-    ///   already open, never open it.
-    private func refreshSlashMenu(mayOpen: Bool) {
-        let selection = textView.selectedRange()
-        guard !isSourceMode, selection.length == 0,
-              textView.window?.isKeyWindow == true,
-              let storage = textView.textStorage
-        else {
-            slashTrigger = nil
-            slashMenu.dismiss()
-            return
-        }
-
-        // `currentLineRange()` costs the length of one line, not of the
-        // document: the menu can therefore be re-evaluated on every keystroke
-        // without eating into the §9 budget.
-        let line = currentLineRange()
-        guard let trigger = TypingBehaviour.slashTrigger(
-            inLine: storage.mutableString.substring(with: line),
-            lineStart: line.location,
-            caret: selection.location)
-        else {
-            slashTrigger = nil
-            slashMenu.dismiss()
-            return
-        }
-        guard mayOpen || slashMenu.isOpen else {
-            slashTrigger = nil
-            return
-        }
-        slashTrigger = trigger
-        // The caret's rectangle is requested in screen coordinates, which the
-        // panel expects as is.
-        let caretRect = caretRectOnScreen()
-        if !slashMenu.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
-            slashTrigger = nil
-        }
-    }
-
-    /// Routes navigation keys to the open panel.
-    ///
-    private func handleSlashMenuKey(_ key: EditorTextView.MenuKey) -> Bool {
-        guard slashMenu.isOpen else { return false }
-        switch key {
-        case .up: slashMenu.moveSelection(by: -1)
-        case .down: slashMenu.moveSelection(by: 1)
-        case .confirm: slashMenu.confirmSelection()
-        case .cancel:
-            slashTrigger = nil
-            slashMenu.dismiss()
-        case .left, .right: return false
-        }
-        return true
-    }
-
-    // MARK: - A code block's language
-
-    /// The caret's rectangle **in screen coordinates**, to anchor the floating
-    /// panels — or `.zero` when there isn't one.
-    ///
-    /// `firstRect(forCharacterRange:actualRange:)` belongs to
-    /// `NSTextInputClient`: it answers for a **session of input in
-    /// progress**, and returns a null rectangle when there isn't one. This is
-    /// the case as soon as the command comes from the menu bar rather than
-    /// from typing — `/tab` opened the grid picker under the caret, ⌥⌘T
-    /// opened it in the bottom-left corner of the screen, half under the
-    /// Dock, with nothing in the code showing it.
-    ///
-    /// No fallback position is improvised here: `.zero` is passed through as
-    /// is, and `FloatingPanel` — the only one that knows its own size —
-    /// decides where to sit when there is no caret.
-    private func caretRectOnScreen() -> NSRect {
-        textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
-    }
-
-    private func insertBlock(_ command: SlashCommand) {
-        guard let trigger = slashTrigger else { return }
-        slashTrigger = nil
-        apply(TypingBehaviour.insertion(of: command, replacing: trigger))
-    }
-
     // MARK: - Reactions
 
     private func handleTextChange() {
@@ -864,7 +760,6 @@ final class EditorController: NSObject {
         let scope = reparseIncrementally(editedRange: edited, delta: delta)
         render(in: scope)
         // Only now: the parse finally matches the buffer.
-        refreshSlashMenu(mayOpen: true)
         onTextChanged?()
     }
 
@@ -909,9 +804,6 @@ extension EditorController: NSTextViewDelegate {
         // the rendering would be computed for a position that doesn't exist
         // on screen.
         updateReveal()
-        // A caret move closes or follows, but never opens: see
-        // `refreshSlashMenu(mayOpen:)`.
-        refreshSlashMenu(mayOpen: false)
     }
 }
 

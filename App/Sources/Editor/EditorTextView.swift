@@ -80,14 +80,6 @@ final class EditorTextView: NSTextView {
     /// item's content, the one the decoration carries.
     var handlesTaskToggle: ((NSRange) -> Bool)?
 
-    /// The keys the slash menu intercepts while it is open (§4.5).
-    enum MenuKey { case up, down, left, right, confirm, cancel }
-
-    /// Returns `true` if the slash menu took the key. It never becomes key
-    /// window: that's what lets typing continue in the text while it filters,
-    /// so it's the text view that receives the arrow keys and forwards them.
-    var handlesMenuKey: ((MenuKey) -> Bool)?
-
     // MARK: - Setup
 
     static func make() -> EditorTextView {
@@ -294,13 +286,17 @@ final class EditorTextView: NSTextView {
     ///
     /// A blank page without a single word is the only screen in the app
     /// where "making the app disappear" (§7) works against it: nothing on it
-    /// indicates that the `/` key opens blocks, and it's exactly the person
-    /// who doesn't know the syntax that just got hidden from them who opens
-    /// an empty document. A line in pale gray, at the exact spot where the
-    /// first word will land, that vanishes on the first character typed.
+    /// says how a heading gets made, and the person opening an empty document
+    /// is exactly the one who does not know. A line in pale gray, at the exact
+    /// spot where the first word will land, that vanishes on the first
+    /// character typed.
+    ///
+    /// It names the syntax rather than a menu. There is no insertion menu any
+    /// more, so the markers **are** the interface: type them and they fold
+    /// away, which is the one thing worth knowing before the first line.
     private func drawPlaceholder(in rect: NSRect) {
         guard textStorage?.length == 0 else { return }
-        let hint = "Write. Type \"/\" to insert a heading, a list, a table."
+        let hint = "Write. Type # for a heading, - for a list, ** around a word for bold."
 
         // **It wraps.** Measured on a single line and drawn in a box of that
         // width, the sentence used to get cut off flat as soon as the window
@@ -357,25 +353,6 @@ final class EditorTextView: NSTextView {
             return
         }
         super.deleteBackward(sender)
-    }
-
-    // MARK: - Slash menu
-
-    /// Navigation keys are intercepted **before** the usual interpretation:
-    /// `⏎` must confirm the selected entry, not insert a line break, and `⎋`
-    /// must close the menu without doing anything else.
-    override func keyDown(with event: NSEvent) {
-        let key: MenuKey? = switch event.keyCode {
-        case 126: .up
-        case 125: .down
-        case 123: .left
-        case 124: .right
-        case 36, 76: .confirm
-        case 53: .cancel
-        default: nil
-        }
-        if let key, handlesMenuKey?(key) == true { return }
-        super.keyDown(with: event)
     }
 
     // MARK: - Lists

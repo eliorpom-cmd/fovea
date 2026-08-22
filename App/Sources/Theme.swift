@@ -74,14 +74,6 @@ extension Theme {
         // The system selection is blue. In a monochrome editor where the only
         // allowed color is the user's content, it gets neutralized.
         static let selection = ns(light: (0x000000, 0.12), dark: (0xFFFFFF, 0.18))
-        /// **Hovered** row in a list. One notch below selection, so "what I'm
-        /// about to click" is distinguishable from "what's chosen".
-        static let rowHover = ns(light: (0x787880, 0.10), dark: (0x787880, 0.20))
-        /// **Selected row** in the slash menu, the app's only list.
-        ///
-        /// Gray, because `NSTableView` paints its selection in system blue,
-        /// which was the only accent color left in the app.
-        static let rowSelection = ns(light: (0x787880, 0.22), dark: (0x787880, 0.42))
 
         private static func ns(light: (Int, Double), dark: (Int, Double)) -> NSColor {
             NSColor(name: nil) { appearance in
