@@ -85,6 +85,11 @@ final class MarkdownDocument: NSDocument {
             // and triggers autosave.
             self?.updateChangeCount(.changeDone)
         }
+
+        // Where this file was last read. It goes here rather than in the
+        // window controller's own layout pass, because that pass runs before
+        // this method has said which file the window is showing.
+        controller.restoreReadingPositionOnce()
     }
 
     /// Can the file be rewritten?

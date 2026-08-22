@@ -19,7 +19,7 @@ final class DocumentWindowController: NSWindowController {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 720),
+            contentRect: NSRect(origin: .zero, size: Self.naturalSize()),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false)
@@ -30,9 +30,20 @@ final class DocumentWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.backgroundColor = Theme.NS.window
-        window.tabbingMode = .preferred
         window.minSize = NSSize(width: 420, height: 320)
         window.isMovableByWindowBackground = false
+
+        // **It appears, it does not animate in.** The default for a document
+        // window is a short scale-and-fade. It costs a frame or two of an
+        // opening that the whole app is built to make instant, and it is the
+        // first thing anyone sees.
+        window.animationBehavior = .none
+
+        // **No tabs.** They are free — the system draws them — but a tab bar
+        // says workspace, and this app opens a file. The capability stays for
+        // anyone who goes looking: `⌘N` in a window still offers it through
+        // the Window menu once this is `.disallowed` only by default.
+        window.tabbingMode = .disallowed
 
         self.init(window: window)
 
@@ -44,7 +55,11 @@ final class DocumentWindowController: NSWindowController {
         let content = LayoutObservingView()
         content.onLayout = { [weak self, weak editor] in
             self?.applyTitleBarInset()
+            self?.refreshTitleTracking()
             editor?.applyColumnLayout()
+            // The reading position needs a laid-out scroll view to land in,
+            // and this is the first pass that has one.
+            self?.restoreReadingPositionOnce()
         }
         content.addSubview(banner)
         content.addSubview(editor.scrollView)
@@ -71,6 +86,7 @@ final class DocumentWindowController: NSWindowController {
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
         ])
         window.contentView = content
+        window.delegate = self
 
 
         // The first responder must be the text view as soon as the window
@@ -94,6 +110,112 @@ final class DocumentWindowController: NSWindowController {
         }
     }
 
+
+    /// The window is **as wide as the text it holds**, not an arbitrary
+    /// rectangle the column then floats inside.
+    ///
+    /// 820 by 720 was a guess, and at the default font it left about a
+    /// hundred points of empty page on either side of the column: the window
+    /// read as a frame around a document rather than as the document. Here
+    /// the width is the column plus its two margins, so the page has edges
+    /// where the text has edges.
+    ///
+    /// The height keeps a proportion rather than a measurement — a document
+    /// has no natural height — and is clamped to what the screen can show.
+    private static func naturalSize() -> NSSize {
+        let typography = AppSettings.shared.typography
+        let width = typography.columnWidth + Theme.Space.s24 * 2
+        let height = (width * 1.15).rounded()
+        guard let visible = NSScreen.main?.visibleFrame else {
+            return NSSize(width: width, height: height)
+        }
+        return NSSize(width: min(width, visible.width),
+                      height: min(height, visible.height))
+    }
+
+    /// The filename, shown only while the pointer is on the title bar.
+    ///
+    /// It is the last piece of chrome left in the reading view, and it is
+    /// information rather than a control: worth having, not worth looking at
+    /// for the whole time a document is open. The same rule the statistics
+    /// bar used to follow, applied to what outlived it.
+    private var titleHover: NSTrackingArea?
+
+    private func refreshTitleTracking() {
+        guard let content = window?.contentView else { return }
+        if let titleHover { content.removeTrackingArea(titleHover) }
+        let height = Theme.Space.s40
+        let area = NSTrackingArea(
+            rect: NSRect(x: 0, y: content.bounds.height - height,
+                         width: content.bounds.width, height: height),
+            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self)
+        content.addTrackingArea(area)
+        titleHover = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        window?.titleVisibility = .visible
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        window?.titleVisibility = .hidden
+    }
+
+    /// Puts the document back where it was last read.
+    ///
+    /// Asking the layout manager for the fragment carrying that character is
+    /// what lays the document out that far, and no further: coming back to
+    /// page two of a long file costs page two. Coming back to the end costs
+    /// the file, which is inherent — there is no way to know where the end is
+    /// without laying it out.
+    private var hasRestoredPosition = false
+
+    /// Called by the document once the text and the URL are in, and again on
+    /// every layout pass until it can be honoured: the content view lays out
+    /// before `makeWindowControllers` has said which file this is, so the
+    /// first pass has nothing to go on.
+    func restoreReadingPositionOnce() {
+        guard !hasRestoredPosition else { return }
+        guard let index = ReadingPosition.character(for: editor.documentURL) else {
+            // Nothing stored is still an answer: stop asking on every pass.
+            hasRestoredPosition = editor.documentURL != nil
+            return
+        }
+        let clip = editor.scrollView.contentView
+        guard clip.bounds.height > 1,
+              let layout = editor.textView.textLayoutManager,
+              let content = editor.textView.textContentStorage,
+              let location = content.location(content.documentRange.location, offsetBy: index),
+              let fragment = layout.textLayoutFragment(for: location)
+        else { return }
+
+        hasRestoredPosition = true
+        let target = fragment.layoutFragmentFrame.minY + editor.textView.textContainerOrigin.y
+
+        // **`scrollRangeToVisible` first, and it is not redundant.**
+        //
+        // Setting the origin by hand is what puts the line at the *top* of
+        // the viewport rather than merely on screen. But the origin is
+        // clamped against `textView.frame.height`, and with TextKit 2 that
+        // height is one screenful until the layout catches up: computing the
+        // clamp straight away landed a document reopened at its end about a
+        // third of the way down. Scrolling by range grows the frame first.
+        editor.textView.scrollRangeToVisible(NSRange(location: index, length: 0))
+
+        let maximum = max(0, editor.textView.frame.height - clip.bounds.height)
+        clip.setBoundsOrigin(NSPoint(x: clip.bounds.origin.x, y: min(target, maximum)))
+        editor.scrollView.reflectScrolledClipView(clip)
+    }
+
+    /// The first character on screen, which is what "where I was" means.
+    private func rememberReadingPosition() {
+        let visible = editor.scrollView.documentVisibleRect
+        let top = NSPoint(x: visible.minX + editor.textView.textContainerInset.width + 1,
+                          y: visible.minY + 1)
+        let index = editor.textView.characterIndexForInsertion(at: top)
+        ReadingPosition.remember(character: index, for: editor.documentURL)
+    }
 
     override func windowDidLoad() {
         super.windowDidLoad()
@@ -202,5 +324,17 @@ extension DocumentWindowController: NSMenuItemValidation {
             break
         }
         return true
+    }
+}
+
+// MARK: - NSWindowDelegate
+
+extension DocumentWindowController: NSWindowDelegate {
+
+    /// The scroll offset is written on the way out rather than as it changes:
+    /// a scroll is a continuous gesture, and `UserDefaults` is not the place
+    /// to record every frame of one.
+    func windowWillClose(_ notification: Notification) {
+        rememberReadingPosition()
     }
 }

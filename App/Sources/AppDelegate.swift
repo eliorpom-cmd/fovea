@@ -117,6 +117,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         !hasVisibleWindows
     }
 
+    /// **Launching alone opens the picker, not a blank page.**
+    ///
+    /// A document app creates an untitled document when it starts with
+    /// nothing to show. That is right for an app you write *in*; this one is
+    /// opened to look at a file that already exists, and an empty page is a
+    /// question — "what now?" — where the picker is the answer.
+    ///
+    /// `⌘N` still makes a new document, for the times that is what is wanted.
+    func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        NSDocumentController.shared.openDocument(nil)
+        return true
+    }
+
     /// The app survives its last window, like TextEdit and Pages: closing a
     /// document isn't quitting, and the next `⌘N` must stay instant.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

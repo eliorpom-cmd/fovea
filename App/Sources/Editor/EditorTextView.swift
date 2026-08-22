@@ -395,6 +395,10 @@ final class EditorTextView: NSTextView {
     /// `TypingBehaviour.autoPairAfterTyping`, which says the same thing from
     /// the other side of the keystroke.
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        // The pointer sits in the middle of the page and has nothing to do
+        // while someone types. It comes back the moment the mouse moves.
+        NSCursor.setHiddenUntilMouseMoves(true)
+
         let typed = (string as? String) ?? (string as? NSAttributedString)?.string
         guard let typed, typed.count == 1, let character = typed.first else {
             super.insertText(string, replacementRange: replacementRange)
