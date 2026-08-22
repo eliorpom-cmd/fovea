@@ -244,6 +244,19 @@ struct MarkdownRenderer {
         guard case .table(let table) = span.kind, let table,
               span.range.upperBound <= storage.length else { return }
 
+        // **The caret in the block shows the source.** Without this the grid
+        // is drawn unconditionally, and the buffer keeps `|` characters, cell
+        // padding and a whole `|---|` row that nothing will ever display: the
+        // caret lands inside them, `⌫` eats a character nobody can see, and
+        // the columns shift with no visible cause. §2.3's invariant — the
+        // caret is never inside a masked marker — holds only because a
+        // construct reveals itself when touched, and a table is a construct
+        // like any other.
+        guard !revealed else {
+            showTableSource(storage, table: table, font: typography.body)
+            return
+        }
+
         // The source is also what gets shown for what **can't** be drawn: a
         // malformed table, and a table wider than the column — which would
         // wrap line by line, and a wrapped grid can't be read at all.

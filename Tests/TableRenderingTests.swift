@@ -163,22 +163,31 @@ final class TableRenderingTests: XCTestCase {
         XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "\"a\" is content")
     }
 
-    /// **The grid no longer collapses under the caret.**
+    /// **The grid collapses to source under the caret** (§2.6).
     ///
-    /// That was the §2.6 fallback: the caret would enter, `| a | b |` would
-    /// reappear, and the source got edited directly. Honest, but that amounts
-    /// to requiring markdown table syntax knowledge to change a single cell:
-    /// exactly what the app promises to avoid, and what nobody does by hand.
-    /// Writing now happens directly in the grid; `TableEditing` handles the
-    /// caret positions that nothing displays anymore.
-    func testTheGridStaysWhenTheCaretEntersTheTable() throws {
+    /// Grid while reading, source while editing. The app once wrote into the
+    /// grid directly, with the `|` never reappearing, and paid for it with a
+    /// second editor: the caret could land inside a masked marker, so every
+    /// caret move had to be corrected after the fact and `⌫` at a cell
+    /// boundary intercepted. That machinery is gone, which makes this reveal
+    /// load-bearing rather than cosmetic — without it the buffer holds pipes,
+    /// padding and a whole `|---|` row that nothing displays, and `⌫` deletes
+    /// a character nobody can see.
+    func testTheGridCollapsesToSourceUnderTheCaret() throws {
         let source = "| a | b |\n|---|---|\n| c | d |"
-        let view = try render(source, caret: 2)
-        let storage = try XCTUnwrap(view.textStorage)
+        let storage = try XCTUnwrap(render(source, caret: 2).textStorage)
 
-        XCTAssertTrue(MarkerMask.isMasked(storage, at: 0), "The `|` must stay hidden")
-        XCTAssertNil(storage.attribute(.foveaRevealed, at: 0, effectiveRange: nil))
-        XCTAssertFalse(MarkerMask.isMasked(storage, at: 2), "…and \"a\" must remain content")
+        XCTAssertFalse(MarkerMask.isMasked(storage, at: 0), "The `|` must come back")
+        XCTAssertNotNil(storage.attribute(.foveaRevealed, at: 0, effectiveRange: nil))
+    }
+
+    /// And the caret elsewhere draws the grid again.
+    func testTheGridComesBackWhenTheCaretLeaves() throws {
+        let source = "A paragraph.\n\n| a | b |\n|---|---|\n| c | d |"
+        let storage = try XCTUnwrap(render(source, caret: 0).textStorage)
+
+        let pipe = (source as NSString).range(of: "|").location
+        XCTAssertTrue(MarkerMask.isMasked(storage, at: pipe), "The `|` must be hidden again")
     }
 
     func testTheDelimiterLineIsShorterThanARow() throws {
