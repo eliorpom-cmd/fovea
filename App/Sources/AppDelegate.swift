@@ -13,12 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // must exist before AppKit restores windows.
         _ = NSDocumentController.shared
 
-        // Fonts brought in by the user (§4.7) are registered in `.process`
-        // scope: they only exist while Fovea is running, which requires
-        // starting over at every launch — and before the first window asks
-        // for a font.
-        FontLibrary.registerAll()
-
         // The prompt waits for the app to settle: shown before the first
         // window exists, the alert would appear in front of an empty screen.
         Task { @MainActor in DefaultHandler.offerOnceIfNeeded() }

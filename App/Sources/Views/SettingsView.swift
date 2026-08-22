@@ -53,9 +53,6 @@ struct SettingsView: View {
 
 private struct AppearanceSettings: View {
     @Bindable var settings: AppSettings
-    /// Incremented on every import or removal, so the lists rebuild: the
-    /// library lives on disk, not in an observable model.
-    @State private var fontLibraryVersion = 0
 
     var body: some View {
         Form {
@@ -68,9 +65,9 @@ private struct AppearanceSettings: View {
 
             Section("Text") {
                 FontPicker(title: "Body Font", selection: $settings.bodyFontName,
-                           monospaced: false, libraryVersion: fontLibraryVersion)
+                           monospaced: false)
                 FontPicker(title: "Code Font", selection: $settings.monoFontName,
-                           monospaced: true, libraryVersion: fontLibraryVersion)
+                           monospaced: true)
 
                 // A size in points means nothing to anyone; what matters is
                 // the result. A step of 1 pt is enough — half a point is not
@@ -109,10 +106,6 @@ private struct AppearanceSettings: View {
                     }
                 }
             }
-
-            FontLibrarySection(version: $fontLibraryVersion,
-                               bodyFontName: $settings.bodyFontName,
-                               monoFontName: $settings.monoFontName)
 
             Section("Code Blocks") {
                 Toggle("Colorful syntax highlighting", isOn: $settings.colorfulCodeBlocks)
@@ -269,45 +262,20 @@ private struct AboutSettings: View {
 /// The full list of installed fonts has hundreds of entries, including
 /// dingbats and non-Latin alphabets. Only families **readable for running
 /// text** are shown, and for code, only monospaced ones.
-///
-/// Fonts the user has imported (§4.7) are shown **first**, ahead of the
-/// installed ones: someone who bothers to import a font will look for it
-/// first, not in the middle of three hundred system families.
 private struct FontPicker: View {
     let title: String
     @Binding var selection: String?
     let monospaced: Bool
-    /// Changes when a font is imported or removed, to rebuild the list
-    /// without relaunching the app.
-    var libraryVersion: Int = 0
 
     var body: some View {
         Picker(title, selection: $selection) {
             Text(monospaced ? "SF Mono (system)" : "SF Pro (system)").tag(String?.none)
-            if !imported.isEmpty {
-                Divider()
-                ForEach(imported, id: \.self) { family in
-                    Text(family).tag(String?.some(family))
-                }
-            }
             Divider()
-            ForEach(installed, id: \.self) { family in
+            ForEach(FontCatalogue.families(monospaced: monospaced), id: \.self) { family in
                 Text(family).tag(String?.some(family))
             }
         }
-        // **The identity must distinguish the two pickers.** `.id` identifies
-        // a view among its siblings; both used to carry only
-        // `libraryVersion`, so the same value, and SwiftUI treated them as a
-        // single view: "Code Font" was rendered as a duplicate of "Body
-        // Font" — same label and same value — and the code font stopped
-        // being adjustable.
-        .id("\(monospaced)-\(libraryVersion)")
     }
-
-    private var imported: [String] { FontCatalogue.families(monospaced: monospaced,
-                                                           version: libraryVersion).imported }
-    private var installed: [String] { FontCatalogue.families(monospaced: monospaced,
-                                                            version: libraryVersion).installed }
 }
 
 /// The offerable families, **computed once**.
@@ -318,111 +286,28 @@ private struct FontPicker: View {
 /// keystroke and every slider step: dragging the size setting redid all of
 /// that work dozens of times per second, and the settings sliders lagged.
 ///
-/// The list only changes when a font is imported or removed, which is what
-/// `version` tracks. Only the current generation is kept: two entries, body
-/// and code.
+/// The installed families cannot change while the app runs, so one entry per
+/// variant is enough: body and code.
 @MainActor
 private enum FontCatalogue {
 
-    private struct Key: Hashable {
-        let monospaced: Bool
-        let version: Int
-    }
+    private static var cache: [Bool: [String]] = [:]
 
-    private static var cache: [Key: (imported: [String], installed: [String])] = [:]
+    static func families(monospaced: Bool) -> [String] {
+        if let hit = cache[monospaced] { return hit }
 
-    static func families(monospaced: Bool, version: Int) -> (imported: [String], installed: [String]) {
-        let key = Key(monospaced: monospaced, version: version)
-        if let hit = cache[key] { return hit }
-
-        let isSuitable = { (family: String) -> Bool in
-            // Families whose name is prefixed with a dot are internal to the
-            // system; offering them would only cause confusion.
-            guard !family.hasPrefix(".") else { return false }
-            guard let font = NSFont(name: family, size: 12) else { return false }
-            return monospaced ? font.isFixedPitch : true
-        }
-
-        let imported = FontLibrary.importedFamilies().filter(isSuitable)
-        let added = Set(imported)
-        let installed = NSFontManager.shared.availableFontFamilies
-            .filter { !added.contains($0) && isSuitable($0) }
+        let result = NSFontManager.shared.availableFontFamilies
+            .filter { family in
+                // Families whose name is prefixed with a dot are internal to
+                // the system; offering them would only cause confusion.
+                guard !family.hasPrefix(".") else { return false }
+                guard let font = NSFont(name: family, size: 12) else { return false }
+                return monospaced ? font.isFixedPitch : true
+            }
             .sorted()
 
-        cache = cache.filter { $0.key.version == version }
-        cache[key] = (imported, installed)
-        return (imported, installed)
-    }
-}
-
-// MARK: - Font Library
-
-/// Drop an `.otf` or `.ttf` file, and remove it.
-///
-/// Removal is offered here because the `.process` scope makes it
-/// **reversible without a trace**: the font was never installed system-wide,
-/// so removing it just deletes a file. That is what makes it safe to try a
-/// font without consequences.
-private struct FontLibrarySection: View {
-    @Binding var version: Int
-    @Binding var bodyFontName: String?
-    @Binding var monoFontName: String?
-    @State private var failure: String?
-
-    var body: some View {
-        Section("Your Fonts") {
-            let families = FontLibrary.importedFamilies()
-            if families.isEmpty {
-                Text("No fonts imported. Files dropped here are only available within "
-                     + "Fovea: your system is left untouched.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(families, id: \.self) { family in
-                    HStack {
-                        Text(family)
-                        Spacer()
-                        Button("Remove") { remove(family) }
-                            .buttonStyle(.link)
-                    }
-                }
-            }
-
-            Button("Import a Font…") { pick() }
-
-            if let failure {
-                Text(failure)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func pick() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = FontLibrary.acceptedContentTypes
-        panel.allowsMultipleSelection = true
-        panel.message = "Fonts are copied into Fovea, not installed system-wide."
-        guard panel.runModal() == .OK else { return }
-
-        failure = nil
-        for url in panel.urls {
-            do {
-                try FontLibrary.importFont(at: url)
-            } catch {
-                failure = error.localizedDescription
-            }
-        }
-        version += 1
-    }
-
-    private func remove(_ family: String) {
-        // A removed font must not stay selected: the text would fall back to
-        // the system font without the setting reflecting it.
-        if bodyFontName == family { bodyFontName = nil }
-        if monoFontName == family { monoFontName = nil }
-        FontLibrary.remove(family: family)
-        version += 1
+        cache[monospaced] = result
+        return result
     }
 }
 
