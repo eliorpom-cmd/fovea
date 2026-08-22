@@ -187,40 +187,20 @@ things out, not the author. The `|---|` line is masked entirely and its
 height reduced to the space of a rule, which `DecorationPainter` draws
 there.
 
-**Then the fallback was dropped, and usage is what dropped it.** "Source
-while editing" means: to change a cell, you have to know how to write a
-markdown table. That's exactly what the app promises to spare people from,
-and nobody writes a table by hand. The grid **no longer falls back**: you
-write directly into it, the `|` never reappear.
+**The grid is for reading; editing happens in the source.** Put the caret
+in a table and the whole block reveals: the `|` come back and the table is
+edited as the plain text it is, exactly as a code fence behaves. Nothing had
+to be written for that — a table's `revealScope` is `.wholeBlock`, so the
+reveal engine already does it.
 
-What that costs is precise, and `TableEditing` is what pays it. §2.3
-demonstrates that the caret can never land inside a masked marker — but the
-proof relies on the fact that a construct reveals itself as soon as it's
-touched. A grid that never falls back to source falls outside that
-reasoning: the buffer still contains `|`, padding spaces and a `|---|` line
-that nothing will ever show again.
-
-The answer isn't to intercept movement commands — there are about thirty of
-them with their selection variants, and one day one would be missed. It's
-to **correct the caret after the fact**, at a single point
-(`textViewDidChangeSelection`): whatever the gesture — arrow key, click,
-`⌘↓`, dictation, search — if it lands outside a cell, the caret is pulled
-back into the nearest one, in the direction it was heading. A selection, by
-contrast, is never corrected: it's a gesture still in progress.
-
-Two details that matter in practice:
-
-- **The `|---|` line keeps its column.** It's invisible but still a line,
-  so an arrow down lands on it. `MarkdownTable` keeps the range of each
-  `---` to know which column was entered and to exit into the same one, one
-  row down — otherwise the column being followed visually would be lost at
-  every crossing.
-- **`⌫` at the start of a cell deletes nothing**, it moves back one cell.
-  The character before it is a `|` that nobody sees; deleting it would
-  merge two columns and rewrite the whole table in front of the user.
-
-`TableEditingTests` checks the invariant on **every** position of a real
-table, which no interception scheme could demonstrate.
+Fovea did once write into the grid directly, with the `|` never reappearing.
+That bought a nicer gesture and cost a second editor: the caret could land
+inside a masked marker, which §2.3's proof relies on never happening, so
+every caret move had to be corrected after the fact, `⌫` at a cell boundary
+had to be intercepted, and the invisible `|---|` row had to track its column
+across arrow-downs. Several hundred lines to make a construct comfortable
+that nobody reaches for in the forty seconds this app is open. It was
+removed with the scope reduction.
 
 Three things worth knowing:
 
@@ -302,7 +282,7 @@ the correspondence between the position read and the actual position
 breaks, and VoiceOver's cursor starts lying.
 
 What is done, and tested: `Accessibility` is the single entry point for
-system settings; semantic roles never contain syntax; the outline, the
+system settings; semantic roles never contain syntax; the
 palette and the slash menu carry them properly, where `accessibilityLabel`
 actually works; the layout holds from 11 to 32 points.
 
@@ -320,8 +300,8 @@ actually works; the layout holds from 11 to 32 points.
   `canAsynchronouslyWrite` at `false`, which guarantees the main thread:
   `MainActor.assumeIsolated` is there the exact assertion of what's true,
   and will raise a loud error if either flag ever gets turned on.
-- **Not sandboxed** (§10): reading images relative to the document and
-  saving fonts both require it.
+- **Not sandboxed** (§10): reading images relative to the document requires
+  it.
 - **arm64 only.**
 
 ## A testing pitfall

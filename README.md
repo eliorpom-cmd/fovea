@@ -1,28 +1,26 @@
 # Fovea
 
-A native macOS markdown editor where **formatting is visible immediately**,
-with no code view and no preview pane.
+A native macOS markdown reader you can also write in, where **formatting is
+visible immediately** — no code view, no preview pane.
 
 The name comes from the *fovea centralis*, the area of the retina where
 vision is sharpest. That's the app's whole program: bring the text into focus
 and let everything else disappear.
 
-> **Status: under construction.** The core works — see "What works" below.
-> Images, editable tables and export aren't there yet.
+## What it's for
 
-## Why
+You double-click a `.md` in the Finder. It opens instantly, rendered. You
+read it, fix a line, close it.
 
-The market splits into three camps, and each fails on one axis:
+That's the whole job. Fovea is the tool you reach for **for forty seconds** —
+the one that makes a markdown file behave like a document instead of a wall
+of asterisks.
 
-| | Native | WYSIWYG | Minimal |
-|---|---|---|---|
-| **iA Writer** | yes | **no** — markers stay visible | yes |
-| **Typora, Marktext** | **no** — Electron | yes | medium |
-| **Obsidian** | **no** — Electron | partial | **no** |
-| **Bear** | yes | yes, but proprietary format | yes |
-
-Fovea targets the empty cell: pure AppKit, markers that disappear, `.md`
-files on disk that stay readable by anything else.
+**It is not where you keep your notes.** Obsidian is very good at that, and
+Fovea doesn't try to compete with it: it has no vault, no graph, no
+backlinks, no plugins, and it will never ask you to open a folder. It opens a
+file. If you're writing at length, write in Obsidian. If you just need to
+read or fix one file, this opens faster than anything with a vault to load.
 
 ## The two promises
 
@@ -42,52 +40,50 @@ This second promise isn't a matter of discipline: the app never writes from
 a syntax tree, so it is **structurally incapable** of reformatting anything
 you haven't edited.
 
-## What works
+## What it does
 
-- Headings, bold, italic, strikethrough, inline code, links, blockquotes,
-  bulleted and numbered lists, task lists, horizontal rules, code blocks,
-  YAML front matter, footnotes
-- Syntax highlighting for eleven languages, monochrome by default, real
-  colors as an option, **with zero dependencies**
-- `⏎` continues a list and exits it on an empty item, `⇥`/`⇧⇥` change the
-  level, `⌘B`/`⌘I`/`⌘⇧X`/`⌘⇧K` wrap or remove formatting, `⌘⌃0..6` change the
-  heading level, `⌘⌥K` inserts a link using the pasteboard's address
-- Clicking a task's checkbox checks it — `⌘⏎` from the keyboard — and a
-  completed task dims
-- `⌘V` converts rich text pasted from a browser into markdown, `⌘⇧V` pastes
-  as plain text
-- `⌥⌘S` switches the whole document to raw markdown — the safety net
-- Opening, saving, tabs, Open Recent, Time Machine versions, session
-  restoration and iCloud Drive, via `NSDocument`
-- `⌘F` with the native find bar, system spell checking
-- Focus mode — everything dims except the current sentence or paragraph —
-  and typewriter mode, both optional: normal scrolling is the default
-- Unobtrusive statistics: words, characters, reading time, with an optional
-  session goal. Markdown syntax isn't counted
-- Settings window: theme, body and code font from those installed, size,
-  line spacing, column width in characters
-- Images rendered inline, drag-and-drop from the Finder and image pasting:
-  the file is copied next to the document and the link is written as a
-  relative path
-- Standalone HTML export — a single file, images included — paginated PDF
-  export, and `⌘⇧C` which puts rich text on the pasteboard
-- Document outline (`⌘⌥0`): the whole structure, hierarchical and clickable
-- Command palette (`⌘K`): commands **and** document headings in the same
-  list, filtered by subsequence — "mdf" finds "Focus Mode"
-- **Editable tables in place**: aligned columns, `:--`/`:-:`/`--:`
-  alignments respected, bold header row, subtle rules. **You write into the
-  grid without ever seeing the `|`**: `⇥` moves to the next cell and selects
-  its content, `⏎` moves down a row and creates one at the end, `⌫` at the
-  start of a cell moves back instead of breaking the column. A malformed
-  table, or one too wide for the column, stays displayed exactly as written
-- **Slash menu**: a `/` starting a word offers blocks — heading, list, task,
-  blockquote, code, table, horizontal rule — and **shows the syntax it
-  inserts**. Essential when markers are hidden. Attached to a character it
-  does nothing: `https://` and `12/03` stay as they are
-- **Font import**: drop an `.otf` or `.ttf` file and it becomes available
-  only in Fovea. Your system fonts are never touched, and removing it is one
-  click
-- Installs as the system's default Markdown editor
+**Reads everything.** Headings, bold, italic, strikethrough, inline code,
+links, blockquotes, bulleted and numbered lists, task lists, horizontal
+rules, code blocks with syntax highlighting for eleven languages, YAML front
+matter, footnotes, inline images, and tables as an aligned grid.
+
+**Writes the simple things.** `⏎` continues a list and exits it on an empty
+item, `⇥`/`⇧⇥` change the level, `⌘B`/`⌘I`/`⌘⇧X`/`⌘⇧K` wrap or remove
+formatting, `⌘⌃0..6` change the heading level, `⌘⌥K` inserts a link from the
+pasteboard. Clicking a checkbox checks it — `⌘⏎` from the keyboard. `(`
+closes itself, and `⇥` steps out of the pair.
+
+**A `/` inserts a block** — heading, list, task, blockquote, code, table,
+horizontal rule — and shows the syntax it writes. Essential when the markers
+are hidden. Attached to a character it does nothing: `https://` and `12/03`
+stay as they are.
+
+**`⌘K` finds anything**: commands and the document's headings in one list,
+filtered by subsequence — "mdf" finds "Show Source".
+
+**`⌥⌘S` shows the raw markdown**, the safety net. And for anything more
+elaborate than the list above — restructuring a table, writing a long
+document — that's the way through: put the caret in a table and its `|` come
+back, to be edited as the plain text they are.
+
+`⌘V` converts rich text pasted from a browser into markdown, `⌘⇧V` pastes
+plain. `⌘F` uses the native find bar, spell checking is the system's.
+Opening, saving, tabs, Open Recent, Time Machine versions, session
+restoration and iCloud Drive all come from `NSDocument`. Four settings:
+theme, body font, code font, size.
+
+Installs as the system's default Markdown editor.
+
+## What it deliberately doesn't do
+
+No export, no PDF, no printing, no share sheet. No vault, no tags, no
+backlinks, no plugins. No focus mode, no typewriter mode, no word count. No
+font importing. No editing inside the table grid — the source is right there
+under the caret.
+
+Each of these existed at some point and was removed. They come back one at a
+time if enough people ask, and not before: the app that opens in two seconds
+is the app that has little to load.
 
 ## What's not there yet
 
@@ -112,7 +108,7 @@ notarized — right-click the app → Open, once.
 
 Fovea then offers to become the default Markdown editor: `.md`, `.markdown`
 and `.mdown` files will open with a double-click. The option stays available
-in the Fovea menu and in Settings › About.
+in the Fovea menu and in Settings.
 
 ## Build
 
@@ -130,8 +126,9 @@ See [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-133 tests, including the performance budgets, which **fail** if they're
-exceeded. They run in Debug, the least favorable configuration.
+262 tests, including the performance budgets, which **fail** if they're
+exceeded: 8 ms per keystroke at 10,000 words, 16 ms at 100,000, 500 ms to
+first display. They run in Debug, the least favorable configuration.
 
 To check file fidelity on real documents:
 
