@@ -137,24 +137,6 @@ enum MainMenu {
         link.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(link)
 
-        // A grid picker instead of a fixed 3 × 3: the shape of the table is
-        // the first thing one knows, and the last thing one likes to correct.
-        //
-        // ⌥⌘T, not ⌘⇧T — the one MarkText uses: Fovea's windows accept native
-        // tabs, and macOS already attaches "Show Tab Bar" to that shortcut.
-        // The duplicate would have produced a shortcut that doesn't work
-        // without anything saying so, exactly like the ⌘K of the Link menu.
-        // `insertMarkdownTable`, not `insertTable`: **`NSTextView` already has
-        // an `insertTable:`**, its rich-text table-insertion action. The text
-        // view is the first responder, so it answered first — and since it's
-        // `isRichText = false`, it refused the action. The "Table…" entry
-        // stayed grayed out and ⌥⌘T did nothing, with nothing explaining why:
-        // the window controller, which does know how to open it, was never
-        // reached. The grid picker only ever existed through `/tab`.
-        let table = item("Table…", #selector(AppCommands.insertMarkdownTable(_:)), "t")
-        table.keyEquivalentModifierMask = [.command, .option]
-        menu.addItem(table)
-
         let task = item("Toggle Task", #selector(AppCommands.toggleTaskAtCaret(_:)), "\r")
         menu.addItem(task)
         menu.addItem(.separator())
@@ -302,7 +284,6 @@ enum MainMenu {
     func toggleStrikethrough(_ sender: Any?)
     func toggleInlineCode(_ sender: Any?)
     func insertLink(_ sender: Any?)
-    func insertMarkdownTable(_ sender: Any?)
     func toggleTaskAtCaret(_ sender: Any?)
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)

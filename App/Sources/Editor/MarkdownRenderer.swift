@@ -214,19 +214,24 @@ struct MarkdownRenderer {
 
     /// Applies — or removes — a table's grid.
     ///
-    /// # The §2.6 fallback, and why it's the right one
+    /// # Grid while reading, source while editing (§2.6)
     ///
-    /// The spec aimed for a truly editable grid, with a
-    /// `firstResponder` nested per cell, and set up a fallback in advance:
-    /// *grid while reading, source while editing*. That fallback is what's
-    /// in place, and not for lack of time: the decoration layer, written
-    /// for images, made it **better** than the original target.
+    /// The grid is a **reading** affordance. A table renders as aligned
+    /// columns for as long as the caret is elsewhere; the moment it enters,
+    /// the whole block reveals and the `|` come back, to be edited as the
+    /// plain text they are.
     ///
-    /// An editor inside the editor would have meant two undo stacks to
-    /// keep in sync, a selection that no longer crosses the table, and a
-    /// `⌘F` that stops at its edges. Here there is still only a single buffer:
-    /// the selection crosses the grid, search finds matches in it, and undo is
-    /// the same undo as for typing.
+    /// Nothing here has to arrange that: a table's `revealScope` is
+    /// `.wholeBlock`, so the reveal engine does it, exactly as it does for a
+    /// code fence. `revealed` is simply passed through.
+    ///
+    /// The spec once aimed for a truly editable grid, with a `firstResponder`
+    /// nested per cell. It would have meant two undo stacks to keep in sync, a
+    /// selection that no longer crosses the table, and a `⌘F` that stops at
+    /// its edges — a second editor inside the editor, for a construct nobody
+    /// reaches for in the forty seconds this app is open. Here there is still
+    /// only a single buffer: the selection crosses the grid, search finds
+    /// matches in it, and undo is the same undo as for typing.
     ///
     /// # How the grid holds together without a single character added
     ///
@@ -243,16 +248,9 @@ struct MarkdownRenderer {
         guard case .table(let table) = span.kind, let table,
               span.range.upperBound <= storage.length else { return }
 
-        // **The grid no longer falls back to source under the caret.** It used to —
-        // that was the §2.6 fallback — and that amounted to requiring knowledge of the
-        // markdown table syntax to edit a cell, that is,
-        // exactly what the app promises to avoid. Editing now happens directly in the
-        // grid; `TableEditing` handles the caret positions that
-        // nothing displays anymore.
-        //
-        // The fallback remains for what can't be drawn: a
-        // malformed table, and a table wider than the column — which would wrap
-        // line by line, and a wrapped grid can't be read at all anymore.
+        // The source is also what gets shown for what **can't** be drawn: a
+        // malformed table, and a table wider than the column — which would
+        // wrap line by line, and a wrapped grid can't be read at all.
         guard let layout = TableLayout.measure(table, in: storage, typography: typography,
                                                available: gridWidth) else {
             showTableSource(storage, table: table, font: typography.body)

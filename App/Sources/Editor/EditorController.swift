@@ -45,11 +45,9 @@ final class EditorController: NSObject {
     /// The block insertion menu (§4.5), and what triggered it.
     private let slashMenu = SlashMenu()
     private let languagePicker = LanguagePicker()
-    private let tableSizePicker = TableSizePicker()
     /// The range of the language word the picker will replace.
     private var languageTrigger: CodeFence.LanguageTrigger?
     /// The `/tab` the grid picker will replace once it has an answer.
-    private var pendingTableTrigger: TypingBehaviour.SlashTrigger?
     private var slashTrigger: TypingBehaviour.SlashTrigger?
 
     /// Called after every text modification, so the document knows it is dirty.
@@ -87,8 +85,7 @@ final class EditorController: NSObject {
             // Nothing is lost by the change: a freshly typed pair — `()`, an
             // empty `**` — is never a parsed construct, so `deleteConstruct` lets
             // it pass through.
-            return stepBackInsteadOfBreakingTheGrid(at: selection)
-                || deleteConstruct(at: selection)
+            return deleteConstruct(at: selection)
                 || deletePair(at: selection)
         }
         textView.handlesTyping = { [weak self] character in
@@ -116,9 +113,6 @@ final class EditorController: NSObject {
         }
         textView.handlesNewline = { [weak self] in
             guard let self else { return false }
-            // The table first: inside one, `⏎` moves down a row instead of
-            // inserting a return that would split the grid in two.
-            if moveToRowBelow() { return true }
             guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.newline(in: text, selection: textView.selectedRange()))
         }
@@ -127,7 +121,6 @@ final class EditorController: NSObject {
             // Escaping a format comes before everything else: it is the gesture
             // that closes the loop opened by the auto-pairs.
             if !outdent, escapeFormat() { return true }
-            if moveBetweenCells(outdent: outdent) { return true }
             guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
         }
@@ -142,21 +135,11 @@ final class EditorController: NSObject {
             self?.handleSlashMenuKey(key) ?? false
         }
         slashMenu.onChoose = { [weak self] command in
-            // The table is the only block whose shape is asked before it is
-            // written: the grid picker takes over from the menu.
-            if command == .table {
-                self?.presentTableSizePicker(replacing: self?.slashTrigger)
-            } else {
-                self?.insertBlock(command)
-            }
+            self?.insertBlock(command)
         }
         languagePicker.onChoose = { [weak self] language in
             self?.applyLanguage(language)
         }
-        tableSizePicker.onChoose = { [weak self] columns, rows in
-            self?.insertTable(columns: columns, rows: rows)
-        }
-
         NotificationCenter.default.addObserver(
             self, selector: #selector(appearanceChanged),
             name: .foveaAppearanceChanged, object: textView)
@@ -401,156 +384,6 @@ final class EditorController: NSObject {
                                                           availableWidth: renderedColumnWidth,
                                                           revealed: next)
         }
-    }
-
-    // MARK: - Writing inside a table (§2.6)
-
-    /// The caret's last known position, to know which direction it was moving
-    /// when it fell between two cells.
-    private var previousCaret = 0
-    /// Prevents the correction from re-triggering itself: repositioning the
-    /// selection calls `textViewDidChangeSelection` back.
-    private var isCorrectingCaret = false
-
-    /// The table that contains this position, if it is rendered as a grid.
-    ///
-    /// A table left in source form — malformed, or too wide — is edited as
-    /// plain text: its `|` characters are visible, so there is nothing to
-    /// correct.
-    private func grid(at location: Int) -> MarkdownTable? {
-        guard let storage = textView.textStorage else { return nil }
-        for span in spans {
-            guard case .table(let table?) = span.kind,
-                  RevealPolicy.contains(span.range, location) else { continue }
-            return MarkdownRenderer(typography: typography, availableWidth: renderedColumnWidth)
-                .gridLayout(for: table, in: storage) != nil ? table : nil
-        }
-        return nil
-    }
-
-    /// Brings the caret back into a cell when it fell somewhere the grid
-    /// doesn't show.
-    ///
-    /// Correcting **after** the move rather than intercepting every command:
-    /// there are about thirty of them with their variants, and one would be
-    /// missed. Here, everything that moves the caret goes through the same
-    /// point: arrow keys, click, `⌘↓`, dictation, search.
-    private func correctCaretInsideTable() {
-        guard !isSourceMode, !isCorrectingCaret else { return }
-        // The buffer just changed and the parse predates it: `spans` describes
-        // a table that no longer exists. Correcting against that used to place
-        // the caret according to the **old** geometry — typing the first
-        // letter of an empty cell, it jumped to the next one, and the word
-        // spread from one cell to another. `handleTextChange()` calls back
-        // afterward.
-        guard lastEditedRange == nil else { return }
-
-        let selection = textView.selectedRange()
-        // A selection is a gesture in progress: it is not moved out from under
-        // the user's hand.
-        guard selection.length == 0, let table = grid(at: selection.location) else {
-            previousCaret = selection.location
-            return
-        }
-
-        let forward = selection.location >= previousCaret
-        previousCaret = selection.location
-        guard let corrected = TableEditing.correctedCaret(selection.location, in: table, forward: forward),
-              corrected != selection.location
-        else { return }
-
-        isCorrectingCaret = true
-        textView.setSelectedRange(NSRange(location: corrected, length: 0))
-        previousCaret = corrected
-        isCorrectingCaret = false
-    }
-
-    /// `⇥` moves to the next cell and **selects its content**, like in a
-    /// spreadsheet: typing replaces it. Past the last one, a row is added.
-    private func moveBetweenCells(outdent: Bool) -> Bool {
-        let caret = textView.selectedRange().location
-        guard !isSourceMode, let table = grid(at: caret) else { return false }
-
-        if let cell = TableEditing.neighbouringCell(from: caret, in: table, forward: !outdent) {
-            textView.setSelectedRange(cell)
-            return true
-        }
-        // Advancing from the last cell adds a row, which is what was wanted by
-        // getting there. Backing up from the first **exits upward**: the key
-        // used to return `true` without doing anything, and `⇧⇥` was dead at
-        // that spot without anything saying so.
-        guard !outdent else { return leaveTableUpwards(table) }
-        return appendRow(to: table)
-    }
-
-    /// Places the caret on the line before the table, or at the very start of
-    /// the document when there isn't one.
-    private func leaveTableUpwards(_ table: MarkdownTable) -> Bool {
-        guard let first = table.rows.first, first.line.location > 0 else { return true }
-        textView.setSelectedRange(NSRange(location: first.line.location - 1, length: 0))
-        return true
-    }
-
-    /// `⏎` moves down a row in the same column, and **exits the table** on the
-    /// last one.
-    ///
-    /// Exiting rather than adding a row: `⇥` already adds one, and without this
-    /// there would be literally no way to leave a table by keyboard through the
-    /// key one tries first — every attempt would add another row. This is
-    /// MarkText's choice, and it is the right one.
-    private func moveToRowBelow() -> Bool {
-        let caret = textView.selectedRange().location
-        guard !isSourceMode, let table = grid(at: caret) else { return false }
-
-        if let cell = TableEditing.cellBelow(caret, in: table) {
-            textView.setSelectedRange(cell)
-            return true
-        }
-        return leaveTable(table)
-    }
-
-    /// Places the caret below the table, creating the missing empty line.
-    private func leaveTable(_ table: MarkdownTable) -> Bool {
-        guard let storage = textView.textStorage, let last = table.rows.last else { return false }
-        let end = min(last.line.upperBound, storage.length)
-
-        // A table at the end of the document has no line to go to: one is
-        // written, or the key would do nothing and the user would be trapped.
-        guard end < storage.length else {
-            return apply(TypingBehaviour.Edit(range: NSRange(location: end, length: 0),
-                                              replacement: "\n\n",
-                                              caret: end + 2,
-                                              undoName: "Exit Table"))
-        }
-        textView.setSelectedRange(NSRange(location: end + 1, length: 0))
-        return true
-    }
-
-    private func appendRow(to table: MarkdownTable) -> Bool {
-        guard let last = table.rows.last,
-              let row = TableEditing.newRow(below: table.rows.count - 1, in: table)
-        else { return false }
-        return apply(TypingBehaviour.Edit(range: NSRange(location: last.line.upperBound, length: 0),
-                                          replacement: row.text,
-                                          caret: last.line.upperBound + row.caret,
-                                          undoName: "Add Row"))
-    }
-
-    /// `⌫` at the start of a cell deletes nothing: it steps back a cell.
-    ///
-    /// The preceding character is a `|` nobody sees; deleting it would merge
-    /// two columns without anything having asked for it, and the whole table
-    /// would rewrite itself in front of the user.
-    private func stepBackInsteadOfBreakingTheGrid(at selection: NSRange) -> Bool {
-        guard !isSourceMode, selection.length == 0,
-              let table = grid(at: selection.location),
-              TableEditing.isAtCellStart(selection.location, in: table)
-        else { return false }
-
-        if let previous = TableEditing.neighbouringCell(from: selection.location, in: table, forward: false) {
-            textView.setSelectedRange(NSRange(location: previous.upperBound, length: 0))
-        }
-        return true
     }
 
     /// The line-scope latch: see `RevealPolicy`. The start of the line is
@@ -994,17 +827,6 @@ final class EditorController: NSObject {
     /// doesn't need to resolve a conflict; it simply says which one to check
     /// first.
     private func handleSlashMenuKey(_ key: EditorTextView.MenuKey) -> Bool {
-        if tableSizePicker.isOpen {
-            switch key {
-            case .up: tableSizePicker.move(columns: 0, rows: -1)
-            case .down: tableSizePicker.move(columns: 0, rows: 1)
-            case .left: tableSizePicker.move(columns: -1, rows: 0)
-            case .right: tableSizePicker.move(columns: 1, rows: 0)
-            case .confirm: tableSizePicker.confirmSelection()
-            case .cancel: tableSizePicker.dismiss()
-            }
-            return true
-        }
         if languagePicker.isOpen {
             switch key {
             case .up: languagePicker.moveSelection(by: -1)
@@ -1123,52 +945,7 @@ final class EditorController: NSObject {
         textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
     }
 
-    // MARK: - The table size grid
-
-    /// Opens the grid, remembering what it will need to replace.
-    ///
-    /// The typed `/tab` is removed at insertion time, not at opening: closing
-    /// the grid without choosing must leave the text exactly as it was typed.
-    var isTableSizePickerOpen: Bool { tableSizePicker.isOpen }
     var isLanguagePickerOpen: Bool { languagePicker.isOpen }
-
-    func presentTableSizePicker(replacing trigger: TypingBehaviour.SlashTrigger? = nil) {
-        pendingTableTrigger = trigger
-        slashTrigger = nil
-        slashMenu.dismiss()
-        // One runloop turn before showing the panel.
-        //
-        // Without it, the "Table…" menu item opened nothing: opening a menu
-        // bar menu briefly deactivates the app, and a `hidesOnDeactivate`
-        // panel shown during that deactivation closed right back. The slash
-        // menu path did work, which made the bug perfectly invisible to both
-        // the tests and a quick try.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let caretRect = caretRectOnScreen()
-            tableSizePicker.present(caretRect: caretRect, over: textView.window)
-        }
-    }
-
-    private func insertTable(columns: Int, rows: Int) {
-        let (markdown, offset) = CodeFence.table(columns: columns, rows: rows)
-        let target: NSRange
-        if let trigger = pendingTableTrigger {
-            target = trigger.range
-        } else {
-            target = textView.selectedRange()
-        }
-        pendingTableTrigger = nil
-        // A grid cannot start in the middle of a sentence: if the line
-        // already carries text, the table is written below it.
-        let line = TypingBehaviour.lineRange(Array(text.utf16), containing: target.location)
-        let needsBreak = target.location > line.location
-        let prefix = needsBreak ? "\n\n" : ""
-        apply(TypingBehaviour.Edit(range: target,
-                                   replacement: prefix + markdown,
-                                   caret: target.location + prefix.utf16.count + offset,
-                                   undoName: "Insert Table"))
-    }
 
     private func insertBlock(_ command: SlashCommand) {
         guard let trigger = slashTrigger else { return }
@@ -1187,7 +964,6 @@ final class EditorController: NSObject {
         let scope = reparseIncrementally(editedRange: edited, delta: delta)
         render(in: scope)
         // Only now: the parse finally matches the buffer.
-        correctCaretInsideTable()
         refreshSlashMenu(mayOpen: true)
         refreshLanguagePicker(mayOpen: true)
         onTextChanged?()
@@ -1239,7 +1015,6 @@ extension EditorController: NSTextViewDelegate {
         // Before everything else: the caret must be somewhere writable, or
         // the rendering would be computed for a position that doesn't exist
         // on screen.
-        correctCaretInsideTable()
         updateReveal()
         // A caret move closes or follows, but never opens: see
         // `refreshSlashMenu(mayOpen:)`.

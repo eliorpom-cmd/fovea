@@ -173,7 +173,6 @@ extension DocumentWindowController: NSMenuItemValidation {
     @objc func toggleStrikethrough(_ sender: Any?) { editor.wrapSelection(with: "~~") }
     @objc func toggleInlineCode(_ sender: Any?) { editor.wrapSelection(with: "`") }
     @objc func insertLink(_ sender: Any?) { editor.insertLink() }
-    @objc func insertMarkdownTable(_ sender: Any?) { editor.presentTableSizePicker() }
     @objc func toggleTaskAtCaret(_ sender: Any?) { editor.toggleTaskAtCaret() }
 
     @objc func setHeadingLevel(_ sender: Any?) {
@@ -227,9 +226,6 @@ extension DocumentWindowController: NSMenuItemValidation {
             },
             .init(title: "Strikethrough", detail: key(#selector(toggleStrikethrough(_:)), nil)) { [weak self] in
                 self?.editor.wrapSelection(with: "~~")
-            },
-            .init(title: "Table…", detail: key(#selector(insertMarkdownTable(_:)), nil)) { [weak self] in
-                self?.editor.presentTableSizePicker()
             },
             .init(title: "Link…", detail: key(#selector(insertLink(_:)), nil)) { [weak self] in
                 self?.editor.insertLink()
@@ -295,7 +291,7 @@ extension DocumentWindowController: NSMenuItemValidation {
 
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)),
              #selector(toggleStrikethrough(_:)), #selector(toggleInlineCode(_:)),
-             #selector(insertLink(_:)), #selector(insertMarkdownTable(_:)), #selector(setHeadingLevel(_:)):
+             #selector(insertLink(_:)), #selector(setHeadingLevel(_:)):
             // Source mode shows the file exactly as it is: applying
             // formatting through a shortcut there would mean writing
             // asterisks blindly into plain text.

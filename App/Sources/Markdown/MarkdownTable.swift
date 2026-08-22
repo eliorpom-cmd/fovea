@@ -53,14 +53,6 @@ struct MarkdownTable: Equatable, Sendable {
     /// The `|---|:--:|` row. It carries no content: entirely hidden when
     /// read, it leaves room for the header rule.
     var delimiter: NSRange
-    /// The ranges of the `---` on that row, one per column.
-    ///
-    /// They never render. They serve **navigation**: the row is invisible
-    /// but is still a row, so a down arrow can land on it. Knowing which
-    /// column it landed in lets it come back out in the same column on the
-    /// next row, instead of being sent back to the start of the table. See
-    /// `TableEditing`.
-    var delimiterCells: [NSRange]
     /// The header row followed by the body. The delimiter row is not part of
     /// it.
     var rows: [Row]
@@ -101,7 +93,6 @@ struct MarkdownTable: Equatable, Sendable {
         }
         var copy = self
         copy.delimiter = move(delimiter)
-        copy.delimiterCells = delimiterCells.map(move)
         copy.rows = rows.map { row in
             var moved = row
             moved.line = move(row.line)
@@ -141,7 +132,6 @@ struct MarkdownTable: Equatable, Sendable {
         }
 
         return MarkdownTable(delimiter: lines[1],
-                             delimiterCells: parsed[1].cells.map(\.content),
                              rows: content,
                              alignments: alignments,
                              columnWidths: widths)

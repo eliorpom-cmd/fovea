@@ -117,19 +117,6 @@ final class PerformanceTests: XCTestCase {
     /// the quantity that describes the bug, and it does not depend on the
     /// machine. Before the fix, it went from 634 to 35,160 points.
     func testPaintingTheBackgroundDoesNotLayOutTheWholeDocument() throws {
-        // **The settings of whoever runs the tests must not decide anything.**
-        // `AppSettings.shared` reads the app's preferences, and the test runs
-        // inside its binary: someone with typewriter mode enabled in Fovea
-        // made this test fail, unrelated to the change under review.
-        // Typewriter mode asks for the caret's position on every selection
-        // change; `setText` leaves the caret at the end of the document, and
-        // measuring it lays out everything before it: the 40,000 words. The
-        // mode itself is not at fault: it is the test that must state which
-        // state it runs in.
-        let typewriter = AppSettings.shared.typewriterMode
-        AppSettings.shared.typewriterMode = false
-        defer { AppSettings.shared.typewriterMode = typewriter }
-
         let controller = EditorController(typography: .default)
         controller.scrollView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
         controller.applyColumnLayout()

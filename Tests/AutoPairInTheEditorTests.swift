@@ -79,25 +79,3 @@ final class AutoPairInTheEditorTests: XCTestCase {
         XCTAssertEqual(controller.text, "See ")
     }
 }
-
-/// Does the table grid really open?
-@MainActor
-final class TableSizePickerInTheEditorTests: XCTestCase {
-
-    func testTheMenuOpensThePicker() {
-        let controller = EditorController(typography: .default)
-        controller.textView.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
-        controller.setText("A paragraph.\n")
-        controller.presentTableSizePicker()
-
-        // The opening is deferred by one run-loop turn — see the comment
-        // on `presentTableSizePicker`: that's what makes it visible from
-        // the menu bar.
-        let opened = expectation(description: "the table grid opens")
-        DispatchQueue.main.async {
-            XCTAssertTrue(controller.isTableSizePickerOpen)
-            opened.fulfill()
-        }
-        wait(for: [opened], timeout: 1)
-    }
-}
