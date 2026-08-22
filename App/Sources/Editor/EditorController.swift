@@ -86,7 +86,7 @@ final class EditorController: NSObject {
                 || deletePair(at: selection)
         }
         textView.handlesTyping = { [weak self] character in
-            guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return false }
+            guard let self, !isSourceMode else { return false }
             // The third backtick first: without it, the auto-pairs double every
             // keystroke and ` ``` ` produces six.
             if apply(TypingBehaviour.codeFence(typing: character, in: text,
@@ -100,7 +100,7 @@ final class EditorController: NSObject {
         // Catching up on dead keys: the same decision, made after the fact.
         // See `EditorTextView.insertText`.
         textView.handlesTypedCharacter = { [weak self] character in
-            guard let self, !isSourceMode, AppSettings.shared.automaticPairs else { return }
+            guard let self, !isSourceMode else { return }
             let selection = textView.selectedRange()
             guard selection.length == 0 else { return }
             let caret = selection.location
@@ -110,7 +110,6 @@ final class EditorController: NSObject {
         }
         textView.handlesNewline = { [weak self] in
             guard let self else { return false }
-            guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.newline(in: text, selection: textView.selectedRange()))
         }
         textView.handlesIndent = { [weak self] outdent in
@@ -118,7 +117,6 @@ final class EditorController: NSObject {
             // Escaping a format comes before everything else: it is the gesture
             // that closes the loop opened by the auto-pairs.
             if !outdent, escapeFormat() { return true }
-            guard AppSettings.shared.markdownShortcutsWhileTyping else { return false }
             return apply(TypingBehaviour.indent(in: text, selection: textView.selectedRange(), outdent: outdent))
         }
 
@@ -593,7 +591,7 @@ final class EditorController: NSObject {
 
     /// `⌫` between the two halves of a pair deletes both of them.
     private func deletePair(at selection: NSRange) -> Bool {
-        guard !isSourceMode, AppSettings.shared.automaticPairs else { return false }
+        guard !isSourceMode else { return false }
         return apply(TypingBehaviour.deletingPair(in: text, selection: selection))
     }
 
@@ -794,8 +792,7 @@ final class EditorController: NSObject {
         guard let trigger = TypingBehaviour.slashTrigger(
             inLine: storage.mutableString.substring(with: line),
             lineStart: line.location,
-            caret: selection.location,
-            scope: AppSettings.shared.slashMenuScope)
+            caret: selection.location)
         else {
             slashTrigger = nil
             slashMenu.dismiss()

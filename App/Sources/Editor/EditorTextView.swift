@@ -301,9 +301,7 @@ final class EditorTextView: NSTextView {
     /// first word will land, that vanishes on the first character typed.
     private func drawPlaceholder(in rect: NSRect) {
         guard textStorage?.length == 0 else { return }
-        let hint = AppSettings.shared.slashMenuScope == .off
-            ? "Write."
-            : "Write. Type \"/\" to insert a heading, a list, a table."
+        let hint = "Write. Type \"/\" to insert a heading, a list, a table."
 
         // **It wraps.** Measured on a single line and drawn in a box of that
         // width, the sentence used to get cut off flat as soon as the window

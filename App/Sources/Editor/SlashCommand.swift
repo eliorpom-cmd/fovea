@@ -136,10 +136,7 @@ extension TypingBehaviour {
     ///   - line: the caret's line, terminator excluded.
     ///   - lineStart: its offset in the document, to produce an absolute range.
     ///   - caret: the caret, as an absolute offset.
-    ///   - scope: the §4.7 setting — never, line start only, or everywhere.
-    static func slashTrigger(inLine line: String, lineStart: Int, caret: Int,
-                             scope: AppSettings.SlashMenuScope) -> SlashTrigger? {
-        guard scope != .off else { return nil }
+    static func slashTrigger(inLine line: String, lineStart: Int, caret: Int) -> SlashTrigger? {
         let units = Array(line.utf16)
         let offset = caret - lineStart
         guard offset > 0, offset <= units.count else { return nil }
@@ -160,7 +157,6 @@ extension TypingBehaviour {
         // The rule that makes the `/` key usable again for what it is: glued
         // to a character, it opens nothing.
         if start > 0, !isBlank(units[start - 1]) { return nil }
-        if scope == .lineStart, start != 0 { return nil }
 
         let query = String(decoding: units[(start + 1)..<offset], as: UTF16.self)
         return SlashTrigger(range: NSRange(location: lineStart + start, length: offset - start),

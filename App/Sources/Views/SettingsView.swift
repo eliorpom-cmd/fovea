@@ -9,49 +9,19 @@ import AppKit
 /// where SwiftUI is the right tool — forms, not text to lay out. The editor
 /// itself stays in pure AppKit.
 ///
-/// Three tabs, and nothing more. A setting with no obvious place to live is
-/// almost always a setting that should not exist.
+/// # One pane, four settings
+///
+/// There were three tabs and seventeen stored keys: focus mode and its unit,
+/// typewriter mode, a word goal, colourful code, an image folder, three
+/// toggles for markdown behaviour. Every one of them asked the reader to make
+/// a decision before they could read.
+///
+/// What is left is what genuinely differs from one person to the next: how
+/// the text should look. Everything else is now a chosen default. A setting
+/// with no obvious place to live is almost always a setting that should not
+/// exist — and the shortest way to honour that is to have nowhere to put it.
 struct SettingsView: View {
 
-    @Bindable var settings: AppSettings
-
-    var body: some View {
-        TabView {
-            AppearanceSettings(settings: settings)
-                .tabItem { Label("Appearance", systemImage: "textformat") }
-            EditingSettings(settings: settings)
-                .tabItem { Label("Editing", systemImage: "pencil.line") }
-            AboutSettings()
-                .tabItem { Label("About", systemImage: "info.circle") }
-        }
-        // **A starting size, plus a floor — and the window can grow.**
-        //
-        // The height was fixed at 560, and `styleMask` had no `.resizable`:
-        // on the Appearance tab, "Colorful syntax highlighting" was cut in
-        // half by the bottom edge, and on the Editing tab, "Image folder" and
-        // its explanation were entirely below the fold. Nothing indicated
-        // that scrolling was needed, and nothing allowed the window to grow.
-        //
-        // Plain intrinsic sizing still does not work — `NSHostingController`
-        // does not propagate the height of a `Form` nested in a `TabView` —
-        // hence the minimum/ideal pair.
-        .frame(minWidth: 480, idealWidth: 480, minHeight: 420, idealHeight: 660)
-        // §7: monochrome also applies to the screen that explains the
-        // settings. The segmented control, sliders and toggles were the only
-        // remaining surfaces of blue accent color in the app.
-        //
-        // **A `TabView`'s tab bar escapes this**: on macOS it is rendered by
-        // the system control, which ignores the tint. It will not be
-        // repainted by hand — that would mean rewriting a piece of AppKit for
-        // three pixels, and it would stop following the system the day it
-        // changes.
-        .tint(Color(nsColor: Theme.NS.label))
-    }
-}
-
-// MARK: - Appearance
-
-private struct AppearanceSettings: View {
     @Bindable var settings: AppSettings
 
     var body: some View {
@@ -81,101 +51,6 @@ private struct AppearanceSettings: View {
                             .frame(width: 44, alignment: .trailing)
                     }
                 }
-
-                LabeledContent("Line Spacing") {
-                    HStack {
-                        Slider(value: $settings.lineHeightMultiple, in: 1.0...2.2, step: 0.05)
-                        Text(String(format: "%.2f", settings.lineHeightMultiple))
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .trailing)
-                    }
-                }
-
-                // Measured in characters, not points: that is the quantity
-                // that matters for reading, and it follows the font choice.
-                LabeledContent("Column Width") {
-                    HStack {
-                        Slider(value: .init(get: { Double(settings.columnWidthInCharacters) },
-                                            set: { settings.columnWidthInCharacters = Int($0) }),
-                               in: 50...100, step: 1)
-                        Text("\(settings.columnWidthInCharacters) characters")
-                            .font(.callout.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 74, alignment: .trailing)
-                    }
-                }
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - Editing
-
-private struct EditingSettings: View {
-    @Bindable var settings: AppSettings
-
-    var body: some View {
-        Form {
-            Section("Markdown") {
-                Toggle("Recognize constructs while typing", isOn: $settings.markdownShortcutsWhileTyping)
-                Text("`-` continues the list on Return, ⇥ changes the level.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                Toggle("Close pairs automatically", isOn: $settings.automaticPairs)
-                Text("`(` inserts `()`, `**` inserts `****` and places the caret in the middle; "
-                     + "⇥ steps out of the format. With text selected, the key wraps it instead "
-                     + "of deleting it. The apostrophe is left alone.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                Picker("Insertion menu on \"/\"", selection: $settings.slashMenuScope) {
-                    ForEach(AppSettings.SlashMenuScope.allCases) { Text($0.label).tag($0) }
-                }
-                Text("A `/` offers blocks: heading, list, blockquote, code, table, "
-                     + "horizontal rule. It only opens the menu when it starts a word, never "
-                     + "right after a character — `https://` and `12/03` stay as they are.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                LabeledContent("Image folder") {
-                    TextField("", text: $settings.assetsFolderName)
-                        .labelsHidden()
-                        .frame(width: 140)
-                }
-                Text("Images dropped there are copied next to the document, "
-                     + "and referenced with a relative path.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-
-// MARK: - About
-
-private struct AboutSettings: View {
-    @State private var isDefaultHandler = DefaultHandler.isDefault
-
-    var body: some View {
-        Form {
-            Section {
-                HStack(spacing: 14) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 56, height: 56)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(AppConfig.name).font(.title2.weight(.semibold))
-                        Text("Version \(AppConfig.version) (\(AppConfig.build))")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                }
-                .padding(.vertical, 4)
             }
 
             Section {
@@ -196,14 +71,24 @@ private struct AboutSettings: View {
 
             Section {
                 Link("Source Code and Issues", destination: AppConfig.repositoryURL)
-                Text("GNU AGPL v3 or later. Markdown parsing by swift-markdown (Apple), "
-                     + "under the Apache 2.0 license.")
+                Text("Version \(AppConfig.version) (\(AppConfig.build)). GNU AGPL v3 or later. "
+                     + "Markdown parsing by swift-markdown (Apple), under the Apache 2.0 license.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+        // The window no longer has to guess: one `Form`, no `TabView` in the
+        // way, so the intrinsic height propagates and the pane fits what it
+        // holds. The floor is kept for a larger system font.
+        .frame(minWidth: 420, idealWidth: 420, minHeight: 300)
+        // §7: monochrome also applies to the screen that explains the
+        // settings. The segmented control and the slider were the only
+        // remaining surfaces of blue accent color in the app.
+        .tint(Color(nsColor: Theme.NS.label))
     }
+
+    @State private var isDefaultHandler = DefaultHandler.isDefault
 }
 
 // MARK: - Font Picker
@@ -275,10 +160,7 @@ final class SettingsWindowController: NSWindowController {
         let window = NSWindow(contentViewController: hosting)
         window.title = "Settings"
         window.styleMask = [.titled, .closable, .resizable]
-        // `idealHeight` does not propagate up to the window through the
-        // `TabView`: the starting size is set here, and `.resizable` lets
-        // the user enlarge it if their system font is larger.
-        window.setContentSize(NSSize(width: 480, height: 660))
+        window.setContentSize(NSSize(width: 420, height: 420))
         // A settings window left open behind the editor muddles the return
         // to the text; this one closes and reopens identically.
         window.isReleasedWhenClosed = false

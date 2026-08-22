@@ -11,12 +11,11 @@ import AppKit
 /// file paths or dates.
 final class SlashCommandTests: XCTestCase {
 
-    private func trigger(_ line: String, caret: Int? = nil, lineStart: Int = 0,
-                         scope: AppSettings.SlashMenuScope = .anywhere) -> TypingBehaviour.SlashTrigger? {
+    private func trigger(_ line: String, caret: Int? = nil,
+                         lineStart: Int = 0) -> TypingBehaviour.SlashTrigger? {
         TypingBehaviour.slashTrigger(inLine: line,
                                      lineStart: lineStart,
-                                     caret: lineStart + (caret ?? line.utf16.count),
-                                     scope: scope)
+                                     caret: lineStart + (caret ?? line.utf16.count))
     }
 
     // MARK: - When it opens
@@ -59,12 +58,6 @@ final class SlashCommandTests: XCTestCase {
         XCTAssertEqual(found.query, "tab")
         XCTAssertEqual(found.range, NSRange(location: 15, length: 4))
         XCTAssertTrue(found.startsNewLine, "The block must start on its own line")
-    }
-
-    func testTheLineStartScopeKeepsTheOldBehaviour() {
-        XCTAssertNil(trigger("Here's a table /tab", scope: .lineStart))
-        XCTAssertNotNil(trigger("/tab", scope: .lineStart))
-        XCTAssertNil(trigger("/tab", scope: .off))
     }
 
     func testASpaceClosesTheMenu() {

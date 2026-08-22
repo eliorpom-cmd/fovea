@@ -5,9 +5,9 @@ import Observation
 
 /// The preferences, backed by `UserDefaults`.
 ///
-/// §4.7 splits them across three tabs; they all live here, in a single
-/// observable object, so a change propagates to every open window without
-/// any of them having to subscribe to anything.
+/// Four of them, in a single observable object, so a change propagates to
+/// every open window without any of them having to subscribe to anything.
+/// See `SettingsView` for why there are only four.
 @MainActor
 @Observable
 final class AppSettings {
@@ -48,34 +48,6 @@ final class AppSettings {
     var bodyFontName: String? { didSet { store(bodyFontName, .bodyFontName); notify() } }
     var monoFontName: String? { didSet { store(monoFontName, .monoFontName); notify() } }
     var bodySize: Double = 16 { didSet { store(bodySize, .bodySize); notify() } }
-    var lineHeightMultiple: Double = 1.5 { didSet { store(lineHeightMultiple, .lineHeight); notify() } }
-    var columnWidthInCharacters: Int = 68 { didSet { store(columnWidthInCharacters, .columnWidth); notify() } }
-
-    // MARK: - Editing
-
-    /// Where the `/` key opens the block insertion menu (§4.5).
-    ///
-    /// Three states rather than a toggle: "at the start of a line" was the
-    /// original behavior, and it's the one that denied the menu to the people
-    /// it serves the most. "Everywhere" is therefore the default, and the
-    /// setting remains for anyone who writes file paths all day long.
-    enum SlashMenuScope: String, CaseIterable, Identifiable {
-        case off, lineStart, anywhere
-        var id: String { rawValue }
-
-        var label: String {
-            switch self {
-            case .off: "Never"
-            case .lineStart: "At the Start of a Line"
-            case .anywhere: "Everywhere"
-            }
-        }
-    }
-
-    var markdownShortcutsWhileTyping = true { didSet { store(markdownShortcutsWhileTyping, .shortcuts) } }
-    var automaticPairs = true { didSet { store(automaticPairs, .automaticPairs) } }
-    var slashMenuScope: SlashMenuScope = .anywhere { didSet { store(slashMenuScope.rawValue, .slashMenuScope) } }
-    var assetsFolderName = AppConfig.defaultAssetsFolderName { didSet { store(assetsFolderName, .assetsFolder) } }
 
     // MARK: - Broadcasting to windows
 
@@ -88,19 +60,23 @@ final class AppSettings {
         NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
+    /// Line spacing and column width are **no longer adjustable**.
+    ///
+    /// They were two sliders that every reader had to form an opinion about
+    /// before reading a line. 1.5 and 68 characters were their defaults and
+    /// are good measures for running text; they are now simply the measures.
     var typography: EditorTypography {
         EditorTypography(bodyFontName: bodyFontName,
                          monoFontName: monoFontName,
                          bodySize: bodySize,
-                         lineHeightMultiple: lineHeightMultiple,
-                         columnWidthInCharacters: columnWidthInCharacters)
+                         lineHeightMultiple: EditorTypography.default.lineHeightMultiple,
+                         columnWidthInCharacters: EditorTypography.default.columnWidthInCharacters)
     }
 
     // MARK: - Persistence
 
     private enum Key: String {
-        case appearance, bodyFontName, monoFontName, bodySize, lineHeight, columnWidth
-        case shortcuts, automaticPairs, slashMenu, slashMenuScope, assetsFolder
+        case appearance, bodyFontName, monoFontName, bodySize
     }
 
     private let defaults = UserDefaults.standard
@@ -115,19 +91,6 @@ final class AppSettings {
         bodyFontName = read(.bodyFontName) as? String
         monoFontName = read(.monoFontName) as? String
         bodySize = read(.bodySize) as? Double ?? 16
-        lineHeightMultiple = read(.lineHeight) as? Double ?? 1.5
-        columnWidthInCharacters = read(.columnWidth) as? Int ?? 68
-        markdownShortcutsWhileTyping = read(.shortcuts) as? Bool ?? true
-        automaticPairs = read(.automaticPairs) as? Bool ?? true
-        if let raw = read(.slashMenuScope) as? String, let value = SlashMenuScope(rawValue: raw) {
-            slashMenuScope = value
-        } else if read(.slashMenu) as? Bool == false {
-            // The old toggle, honored: whoever had turned the menu off
-            // shouldn't see it come back just because the setting changed
-            // shape.
-            slashMenuScope = .off
-        }
-        assetsFolderName = read(.assetsFolder) as? String ?? AppConfig.defaultAssetsFolderName
 
         isLoaded = true
         NSApp?.appearance = appearance.nsAppearance
