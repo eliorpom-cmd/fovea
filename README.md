@@ -63,8 +63,9 @@ back, to be edited as the plain text they are.
 `⌘V` converts rich text pasted from a browser into markdown, `⌘⇧V` pastes
 plain. `⌘F` uses the native find bar, spell checking is the system's.
 Opening, saving, tabs, Open Recent, Time Machine versions, session
-restoration and iCloud Drive all come from `NSDocument`. Four settings:
-theme, body font, code font, size.
+restoration and iCloud Drive all come from `NSDocument`. Four settings, and
+no window for them: appearance, body font, code font and `⌘+`/`⌘−`, in the
+View menu. The fonts open the system font panel.
 
 Installs as the system's default Markdown editor.
 
@@ -103,7 +104,7 @@ notarized — right-click the app → Open, once.
 
 Fovea then offers to become the default Markdown editor: `.md`, `.markdown`
 and `.mdown` files will open with a double-click. The option stays available
-in the Fovea menu and in Settings.
+in the Fovea menu.
 
 ## Build
 
