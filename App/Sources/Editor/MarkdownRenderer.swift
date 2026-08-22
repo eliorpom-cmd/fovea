@@ -12,9 +12,6 @@ struct MarkdownRenderer {
 
     var typography: EditorTypography
 
-    /// §4.3: monochrome by default, real colors only on explicit request.
-    var colorfulCode = false
-
     /// The document's location, to resolve images with relative paths.
     var documentURL: URL?
 
@@ -25,8 +22,7 @@ struct MarkdownRenderer {
     /// The measurement used to be taken against `typography.columnWidth`, i.e. the
     /// width *requested in settings* — that is, 68 characters, about 612 points.
     /// But `EditorController.applyColumnLayout` clamps the actual column to the
-    /// space available: in a 430-point window with the outline open,
-    /// it drops to 162.
+    /// space available: in a narrow window it drops to a fraction of that.
     ///
     /// The grid therefore kept being laid out at 612 points. It overflowed the
     /// container: since the view isn't horizontally resizable, it was
@@ -35,8 +31,8 @@ struct MarkdownRenderer {
     /// provides precisely for this case, since that fallback was also decided
     /// based on the desired width.
     ///
-    /// `nil` means "use the one from settings": this is the case for export
-    /// and printing, which have no container to consult.
+    /// `nil` means "use the one from settings", for a caller with no
+    /// container to consult.
     var availableWidth: CGFloat?
 
     var gridWidth: CGFloat { availableWidth ?? typography.columnWidth }
@@ -686,10 +682,8 @@ struct MarkdownRenderer {
         let font = typography.codeBlock
         for (range, category) in CodeHighlighter.categorize(code, language: language, offset: content.location) {
             guard range.upperBound <= storage.length else { continue }
-            let attributes = colorfulCode
-                ? CodeHighlighter.colorAttributes(for: category, font: font)
-                : CodeHighlighter.monochromeAttributes(for: category, font: font)
-            storage.addAttributes(attributes, range: range)
+            storage.addAttributes(CodeHighlighter.monochromeAttributes(for: category, font: font),
+                                  range: range)
         }
     }
 

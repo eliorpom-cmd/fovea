@@ -44,9 +44,6 @@ final class EditorController: NSObject {
 
     /// The block insertion menu (§4.5), and what triggered it.
     private let slashMenu = SlashMenu()
-    private let languagePicker = LanguagePicker()
-    /// The range of the language word the picker will replace.
-    private var languageTrigger: CodeFence.LanguageTrigger?
     /// The `/tab` the grid picker will replace once it has an answer.
     private var slashTrigger: TypingBehaviour.SlashTrigger?
 
@@ -136,9 +133,6 @@ final class EditorController: NSObject {
         }
         slashMenu.onChoose = { [weak self] command in
             self?.insertBlock(command)
-        }
-        languagePicker.onChoose = { [weak self] language in
-            self?.applyLanguage(language)
         }
         NotificationCenter.default.addObserver(
             self, selector: #selector(appearanceChanged),
@@ -293,7 +287,6 @@ final class EditorController: NSObject {
         }
         revealed = currentRevealedIndices()
         let renderer = MarkdownRenderer(typography: typography,
-                                        colorfulCode: AppSettings.shared.colorfulCodeBlocks,
                                         documentURL: documentURL,
                                         availableWidth: renderedColumnWidth)
         // Only the constructs that touch the range are re-passed; the range is
@@ -823,24 +816,7 @@ final class EditorController: NSObject {
 
     /// Routes navigation keys to the open panel.
     ///
-    /// Only one is open at a time — they close each other — so the order
-    /// doesn't need to resolve a conflict; it simply says which one to check
-    /// first.
     private func handleSlashMenuKey(_ key: EditorTextView.MenuKey) -> Bool {
-        if languagePicker.isOpen {
-            switch key {
-            case .up: languagePicker.moveSelection(by: -1)
-            case .down: languagePicker.moveSelection(by: 1)
-            case .confirm: languagePicker.confirmSelection()
-            case .cancel:
-                languageTrigger = nil
-                languagePicker.dismiss()
-            // Horizontal arrows stay with the text: a word is being typed
-            // here, not navigated in a grid.
-            case .left, .right: return false
-            }
-            return true
-        }
         guard slashMenu.isOpen else { return false }
         switch key {
         case .up: slashMenu.moveSelection(by: -1)
@@ -855,77 +831,6 @@ final class EditorController: NSObject {
     }
 
     // MARK: - A code block's language
-
-    /// Opens, updates or closes the language picker.
-    ///
-    /// Called at the same point as the slash menu, and for the same reason:
-    /// the question "is the caret somewhere the app can help?" is asked again
-    /// on every keystroke and every move.
-    ///
-    /// - Parameter mayOpen: as with the slash menu, only a keystroke opens it.
-    ///   This used to be the app's nastiest pitfall: placing the caret at the
-    ///   end of a  ```  line — by click, by arrow, after a search — opened the
-    ///   list of eleven languages, which immediately captured `↑`, `↓` and
-    ///   `⏎`. The down arrow no longer moved down a line and `⏎` wrote
-    ///   `swift` instead of a newline, without anything having asked for it.
-    private func refreshLanguagePicker(mayOpen: Bool) {
-        let selection = textView.selectedRange()
-        guard !isSourceMode, selection.length == 0, !slashMenu.isOpen,
-              textView.window?.isKeyWindow == true,
-              let storage = textView.textStorage
-        else {
-            languageTrigger = nil
-            languagePicker.dismiss()
-            return
-        }
-        let line = currentLineRange()
-        guard isOpeningFence(line: line),
-              let trigger = CodeFence.languageTrigger(
-                inLine: storage.mutableString.substring(with: line),
-                lineStart: line.location,
-                caret: selection.location)
-        else {
-            languageTrigger = nil
-            languagePicker.dismiss()
-            return
-        }
-        guard mayOpen || languagePicker.isOpen else {
-            languageTrigger = nil
-            return
-        }
-        languageTrigger = trigger
-        let caretRect = caretRectOnScreen()
-        if !languagePicker.present(query: trigger.query, caretRect: caretRect, over: textView.window) {
-            languageTrigger = nil
-        }
-    }
-
-    /// Is this line the **opening** fence of a code block?
-    ///
-    /// `CodeFence.languageTrigger` only sees one line: it cannot distinguish
-    /// the opening from the closing fence, so the picker used to offer to
-    /// name a language on the **bottom** fence — where the word would be
-    /// written after the closing fence, making no sense. The answer lies in
-    /// the constructs: does the block containing the caret start on this
-    /// line? A fence that no block closes yet is, in turn, an opening being
-    /// written right now.
-    private func isOpeningFence(line: NSRange) -> Bool {
-        for span in spans {
-            guard case .codeBlock = span.kind,
-                  RevealPolicy.contains(span.range, line.location) else { continue }
-            return span.range.location >= line.location
-        }
-        return true
-    }
-
-    private func applyLanguage(_ language: String) {
-        guard let trigger = languageTrigger else { return }
-        languageTrigger = nil
-        apply(TypingBehaviour.Edit(range: trigger.range,
-                                   replacement: language,
-                                   caret: trigger.range.location + language.utf16.count,
-                                   undoName: "Choose Language"))
-    }
 
     /// The caret's rectangle **in screen coordinates**, to anchor the floating
     /// panels — or `.zero` when there isn't one.
@@ -945,8 +850,6 @@ final class EditorController: NSObject {
         textView.firstRect(forCharacterRange: textView.selectedRange(), actualRange: nil)
     }
 
-    var isLanguagePickerOpen: Bool { languagePicker.isOpen }
-
     private func insertBlock(_ command: SlashCommand) {
         guard let trigger = slashTrigger else { return }
         slashTrigger = nil
@@ -965,7 +868,6 @@ final class EditorController: NSObject {
         render(in: scope)
         // Only now: the parse finally matches the buffer.
         refreshSlashMenu(mayOpen: true)
-        refreshLanguagePicker(mayOpen: true)
         onTextChanged?()
     }
 
@@ -991,16 +893,10 @@ final class EditorController: NSObject {
         // full render: several hundred milliseconds on a long document, for
         // nothing.
         let settings = AppSettings.shared
-        if typography != settings.typography || lastColorfulCode != settings.colorfulCodeBlocks {
-            lastColorfulCode = settings.colorfulCodeBlocks
+        if typography != settings.typography {
             typography = settings.typography
         }
     }
-
-    /// The code block coloring at the last render. It doesn't live in
-    /// `EditorTypography` — it isn't typography — but it changes the
-    /// rendering, so it also decides whether to redo it.
-    private var lastColorfulCode = AppSettings.shared.colorfulCodeBlocks
 }
 
 // MARK: - NSTextViewDelegate
@@ -1019,7 +915,6 @@ extension EditorController: NSTextViewDelegate {
         // A caret move closes or follows, but never opens: see
         // `refreshSlashMenu(mayOpen:)`.
         refreshSlashMenu(mayOpen: false)
-        refreshLanguagePicker(mayOpen: false)
     }
 }
 

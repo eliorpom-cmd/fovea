@@ -51,10 +51,6 @@ final class AppSettings {
     var lineHeightMultiple: Double = 1.5 { didSet { store(lineHeightMultiple, .lineHeight); notify() } }
     var columnWidthInCharacters: Int = 68 { didSet { store(columnWidthInCharacters, .columnWidth); notify() } }
 
-    /// §4.3: the only place in the app where color is allowed, and only on
-    /// explicit request.
-    var colorfulCodeBlocks = false { didSet { store(colorfulCodeBlocks, .colorfulCode); notify() } }
-
     // MARK: - Editing
 
     /// Where the `/` key opens the block insertion menu (§4.5).
@@ -104,7 +100,6 @@ final class AppSettings {
 
     private enum Key: String {
         case appearance, bodyFontName, monoFontName, bodySize, lineHeight, columnWidth
-        case colorfulCode
         case shortcuts, automaticPairs, slashMenu, slashMenuScope, assetsFolder
     }
 
@@ -122,7 +117,6 @@ final class AppSettings {
         bodySize = read(.bodySize) as? Double ?? 16
         lineHeightMultiple = read(.lineHeight) as? Double ?? 1.5
         columnWidthInCharacters = read(.columnWidth) as? Int ?? 68
-        colorfulCodeBlocks = read(.colorfulCode) as? Bool ?? false
         markdownShortcutsWhileTyping = read(.shortcuts) as? Bool ?? true
         automaticPairs = read(.automaticPairs) as? Bool ?? true
         if let raw = read(.slashMenuScope) as? String, let value = SlashMenuScope(rawValue: raw) {

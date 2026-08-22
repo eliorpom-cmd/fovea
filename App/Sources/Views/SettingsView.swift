@@ -106,14 +106,6 @@ private struct AppearanceSettings: View {
                     }
                 }
             }
-
-            Section("Code Blocks") {
-                Toggle("Colorful syntax highlighting", isOn: $settings.colorfulCodeBlocks)
-                Text("Without this option, highlighting relies on weight and opacity instead. "
-                     + "This is the only place in the app where color is allowed.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
         }
         .formStyle(.grouped)
     }

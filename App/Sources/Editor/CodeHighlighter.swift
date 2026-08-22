@@ -30,8 +30,12 @@ enum CodeHighlighter {
         case number
     }
 
-    /// The **default** palette: monochrome (§7). Meaning is carried by
-    /// weight and opacity, never by hue.
+    /// The palette: monochrome (§7). Meaning is carried by weight and
+    /// opacity, never by hue.
+    ///
+    /// There used to be a colour palette too, behind a setting. It was the
+    /// only place in the app where colour was allowed, and the only setting
+    /// whose change forced a full re-render.
     static func monochromeAttributes(for category: Category, font: NSFont) -> [NSAttributedString.Key: Any] {
         switch category {
         case .keyword:
@@ -44,25 +48,6 @@ enum CodeHighlighter {
              .foregroundColor: Theme.NS.labelTertiary]
         case .number:
             [.foregroundColor: Theme.NS.labelSecondary]
-        }
-    }
-
-    /// The **color** palette, enabled from settings.
-    ///
-    /// It's the only place in the app where color is allowed, and only on
-    /// the user's explicit request (§4.3). The hues are deliberately muted:
-    /// a code block should not become the brightest spot on a page of prose.
-    static func colorAttributes(for category: Category, font: NSFont) -> [NSAttributedString.Key: Any] {
-        switch category {
-        case .keyword:
-            [.foregroundColor: adaptive(light: 0x8B2A6B, dark: 0xE08CC4)]
-        case .string:
-            [.foregroundColor: adaptive(light: 0x1E6B3A, dark: 0x8CD6A4)]
-        case .comment:
-            [.font: NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask),
-             .foregroundColor: adaptive(light: 0x6B6B6B, dark: 0x8A8A8A)]
-        case .number:
-            [.foregroundColor: adaptive(light: 0x1E4F8B, dark: 0x8CB8E0)]
         }
     }
 
@@ -275,12 +260,5 @@ enum CodeHighlighter {
 
     private static func isHexLetter(_ unit: UInt16) -> Bool {
         (unit >= 97 && unit <= 102) || (unit >= 65 && unit <= 70) || unit == 120 // a-f A-F x
-    }
-
-    private static func adaptive(light: Int, dark: Int) -> NSColor {
-        NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(hex: dark) : NSColor(hex: light)
-        }
     }
 }

@@ -123,7 +123,7 @@ final class EditorTextView: NSTextView {
         // while searching through it.
         isIncrementalSearchingEnabled = false
 
-        registerForDraggedTypes([.fileURL, .png, .tiff])
+        registerForDraggedTypes([.fileURL])
 
         // §2.5: no typographic substitution, including macOS's own. In a
         // file destined for git or a site generator, an invisible
@@ -446,15 +446,17 @@ final class EditorTextView: NSTextView {
 
     /// Accepts images dropped from the Finder or other apps (§4.4).
     ///
-    /// `NSTextView` already accepts drops, but to insert rich text there,
-    /// which a buffer with `isRichText = false` refuses. So it's intercepted
-    /// before that, and only for what is an image.
+    /// A dropped markdown file is **opened**, not inserted.
+    ///
+    /// `NSTextView` would do what it does by default with a URL: write its
+    /// path into the document, which is not what anyone has ever wanted. So
+    /// the drop is intercepted before it gets there.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        carriesImage(sender) || !documents(in: sender).isEmpty ? .copy : super.draggingEntered(sender)
+        documents(in: sender).isEmpty ? super.draggingEntered(sender) : .copy
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        carriesImage(sender) || !documents(in: sender).isEmpty ? .copy : super.draggingUpdated(sender)
+        documents(in: sender).isEmpty ? super.draggingUpdated(sender) : .copy
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -471,18 +473,7 @@ final class EditorTextView: NSTextView {
             return true
         }
 
-        guard carriesImage(sender),
-              let result = ImageDrop.handle(sender.draggingPasteboard, document: documentURL)
-        else { return super.performDragOperation(sender) }
-
-        // The insertion happens where the caret *would be* if clicked there:
-        // that's the spot the gesture targets, not the selection from before
-        // the drop.
-        let point = convert(sender.draggingLocation, from: nil)
-        let index = characterIndexForInsertion(at: point)
-        setSelectedRange(NSRange(location: index, length: 0))
-        insertText(surrounded(result.markdown, at: index), replacementRange: NSRange(location: index, length: 0))
-        return true
+        return super.performDragOperation(sender)
     }
 
     /// The dropped files the app knows how to open: its own document types,
@@ -498,32 +489,6 @@ final class EditorTextView: NSTextView {
         }
     }
 
-    private func carriesImage(_ sender: NSDraggingInfo) -> Bool {
-        let pasteboard = sender.draggingPasteboard
-        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] {
-            return urls.contains { url in
-                guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
-                return type.conforms(to: .image)
-            }
-        }
-        return NSImage.canInit(with: pasteboard)
-    }
-
-    /// An image is a block: it needs a blank line on each side, or markdown
-    /// glues it to the neighboring paragraph and it renders in the middle of
-    /// a sentence.
-    private func surrounded(_ markdown: String, at index: Int) -> String {
-        guard let storage = textStorage else { return markdown }
-        let text = storage.mutableString
-        var prefix = "\n\n"
-        var suffix = "\n\n"
-        if index == 0 { prefix = "" }
-        else if index >= 2, text.substring(with: NSRange(location: index - 2, length: 2)) == "\n\n" { prefix = "" }
-        if index >= text.length { suffix = "\n" }
-        else if text.character(at: index) == 10 { suffix = "\n" }
-        return prefix + markdown + suffix
-    }
-
     // MARK: - Paste
 
     /// `⌘V` converts rich text into markdown (§2.5).
@@ -534,14 +499,6 @@ final class EditorTextView: NSTextView {
     /// anything in exchange. So it's intercepted, and markdown is inserted
     /// instead.
     override func paste(_ sender: Any?) {
-        // An image first: it must become a file next to the document, not
-        // rich text that gets lost (§2.5, step 3).
-        if NSImage.canInit(with: .general),
-           let result = ImageDrop.handle(.general, document: documentURL) {
-            let index = selectedRange().location
-            insertText(surrounded(result.markdown, at: index), replacementRange: selectedRange())
-            return
-        }
         if let markdown = PasteConversion.markdown(from: .general) {
             insertText(markdown, replacementRange: selectedRange())
             return
