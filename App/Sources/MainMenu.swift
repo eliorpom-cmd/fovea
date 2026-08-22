@@ -28,7 +28,6 @@ enum MainMenu {
         let menu = NSMenu()
         menu.addItem(item("About \(AppConfig.name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:))))
         menu.addItem(.separator())
-        menu.addItem(item("Settings…", #selector(AppCommands.showSettings(_:)), ","))
         menu.addItem(item("Open Markdown Files with \(AppConfig.name)",
                           #selector(AppCommands.makeDefaultMarkdownEditor(_:))))
         menu.addItem(.separator())
@@ -164,6 +163,33 @@ enum MainMenu {
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
 
+        // **The settings live here, and nowhere else.**
+        //
+        // Appearance, the two fonts and the size were a window of their own;
+        // four settings do not earn a window. This is also where macOS puts
+        // them in every app that has them, and `⌘+`/`⌘−` are already in the
+        // reader's fingers from every browser they use.
+        let appearance = NSMenuItem(title: "Appearance", action: nil, keyEquivalent: "")
+        let appearanceMenu = NSMenu()
+        for value in AppSettings.Appearance.allCases {
+            let entry = item(value.label, #selector(AppCommands.setAppearance(_:)))
+            entry.representedObject = value.rawValue
+            appearanceMenu.addItem(entry)
+        }
+        appearance.submenu = appearanceMenu
+        menu.addItem(appearance)
+        menu.addItem(.separator())
+
+        menu.addItem(item("Body Font…", #selector(AppCommands.chooseBodyFont(_:))))
+        menu.addItem(item("Code Font…", #selector(AppCommands.chooseCodeFont(_:))))
+
+        // `+` and not `=`: macOS draws the equals key as ⌘+ in the menu and
+        // accepts both, which is the behaviour every browser has.
+        menu.addItem(item("Bigger", #selector(AppCommands.increaseTextSize(_:)), "+"))
+        menu.addItem(item("Smaller", #selector(AppCommands.decreaseTextSize(_:)), "-"))
+        menu.addItem(item("Actual Size", #selector(AppCommands.resetTextSize(_:)), "0"))
+        menu.addItem(.separator())
+
         // §4.2: the safety net. It deserves a one-handed shortcut.
         //
         // **⌥⌘S, not ⌘/.** The slash isn't in the same place from one
@@ -230,8 +256,13 @@ enum MainMenu {
 /// itself out wherever nobody responds.
 @MainActor
 @objc protocol AppCommands {
-    func showSettings(_ sender: Any?)
     func makeDefaultMarkdownEditor(_ sender: Any?)
+    func setAppearance(_ sender: Any?)
+    func chooseBodyFont(_ sender: Any?)
+    func chooseCodeFont(_ sender: Any?)
+    func increaseTextSize(_ sender: Any?)
+    func decreaseTextSize(_ sender: Any?)
+    func resetTextSize(_ sender: Any?)
     func pastePlainText(_ sender: Any?)
     func toggleBold(_ sender: Any?)
     func toggleItalic(_ sender: Any?)

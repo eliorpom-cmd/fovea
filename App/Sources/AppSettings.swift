@@ -7,7 +7,10 @@ import Observation
 ///
 /// Four of them, in a single observable object, so a change propagates to
 /// every open window without any of them having to subscribe to anything.
-/// See `SettingsView` for why there are only four.
+///
+/// Four is what is left of seventeen, and they have no window: appearance,
+/// the two fonts and the size are four items in the View menu. See
+/// `AppDelegate` for why.
 @MainActor
 @Observable
 final class AppSettings {
