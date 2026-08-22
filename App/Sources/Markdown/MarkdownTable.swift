@@ -23,11 +23,6 @@ import Foundation
 /// that would produce a rendering different from GitHub's.
 struct MarkdownTable: Equatable, Sendable {
 
-    /// The alignment of a column, read from the `|:--|--:|:-:|` row.
-    enum Alignment: Equatable, Sendable {
-        case leading, center, trailing
-    }
-
     struct Cell: Equatable, Sendable {
         /// The content, padding whitespace excluded. It is the only part
         /// that stays visible when the grid is displayed.
@@ -36,8 +31,6 @@ struct MarkdownTable: Equatable, Sendable {
         /// the `|`: the grid places the columns itself, the source's spacing
         /// is not its concern.
         var padding: [NSRange]
-        /// Display width of the content, in monospaced characters.
-        var width: Int
     }
 
     struct Row: Equatable, Sendable {
@@ -56,11 +49,15 @@ struct MarkdownTable: Equatable, Sendable {
     /// The header row followed by the body. The delimiter row is not part of
     /// it.
     var rows: [Row]
-    var alignments: [Alignment]
-    /// Width of each column, in characters: the widest of its contents.
-    var columnWidths: [Int]
-
-    var columnCount: Int { alignments.count }
+    /// How many columns the delimiter row declares.
+    ///
+    /// The `:--`/`:-:`/`--:` alignments it can also carry are **read but not
+    /// kept**: every cell is drawn from the same edge, because a grid whose
+    /// columns each start somewhere different is harder to scan than one
+    /// where every entry lands at the same point. The delimiter row still has
+    /// to be validated — that is what makes the block a table at all — so the
+    /// colons are parsed and then dropped. They stay in the file untouched.
+    var columnCount: Int
 
     /// Everything that must disappear when read: the `|`, the padding
     /// whitespace, and the whole delimiter row.
@@ -110,21 +107,11 @@ struct MarkdownTable: Equatable, Sendable {
         guard lines.count >= 2 else { return nil }
 
         let parsed = lines.map { row(utf16: utf16, line: $0) }
-        guard let alignments = delimiterAlignments(parsed[1], utf16: utf16) else { return nil }
-        guard !alignments.isEmpty else { return nil }
-
-        let content = Array(parsed[..<1] + parsed[2...])
-        var widths = [Int](repeating: 1, count: alignments.count)
-        for row in content {
-            for (column, cell) in row.cells.enumerated() where column < widths.count {
-                widths[column] = max(widths[column], cell.width)
-            }
-        }
+        guard let columnCount = delimiterColumnCount(parsed[1], utf16: utf16) else { return nil }
 
         return MarkdownTable(delimiter: lines[1],
-                             rows: content,
-                             alignments: alignments,
-                             columnWidths: widths)
+                             rows: Array(parsed[..<1] + parsed[2...]),
+                             columnCount: columnCount)
     }
 
     // MARK: - Splitting a row
@@ -189,14 +176,13 @@ struct MarkdownTable: Equatable, Sendable {
         if segment.upperBound > end {
             padding.append(NSRange(location: end, length: segment.upperBound - end))
         }
-        return Cell(content: content, padding: padding,
-                    width: displayWidth(utf16: utf16, in: content))
+        return Cell(content: content, padding: padding)
     }
 
-    /// Reads the alignments from the delimiter row, or `nil` if it is not
-    /// one.
-    private static func delimiterAlignments(_ row: Row, utf16: [UInt16]) -> [Alignment]? {
-        var result: [Alignment] = []
+    /// Validates the delimiter row and counts its columns, or `nil` if it is
+    /// not a delimiter row.
+    private static func delimiterColumnCount(_ row: Row, utf16: [UInt16]) -> Int? {
+        var count = 0
         for cell in row.cells {
             guard cell.content.length > 0 else { return nil }
             let colon = UInt16(UnicodeScalar(":").value)
@@ -204,24 +190,17 @@ struct MarkdownTable: Equatable, Sendable {
 
             var offset = cell.content.location
             let end = cell.content.upperBound
-            let opens = utf16[offset] == colon
-            if opens { offset += 1 }
+            if utf16[offset] == colon { offset += 1 }
             var dashes = 0
             while offset < end, utf16[offset] == dash { offset += 1; dashes += 1 }
-            let closes = offset < end && utf16[offset] == colon
-            if closes { offset += 1 }
+            if offset < end, utf16[offset] == colon { offset += 1 }
 
             // Nothing else is tolerated: `|--x--|` is not a delimiter, and
             // the block is then not a table.
             guard dashes >= 1, offset == end else { return nil }
-
-            switch (opens, closes) {
-            case (true, true): result.append(.center)
-            case (false, true): result.append(.trailing)
-            default: result.append(.leading)
-            }
+            count += 1
         }
-        return result.isEmpty ? nil : result
+        return count > 0 ? count : nil
     }
 
     // MARK: - Tools
@@ -263,50 +242,5 @@ struct MarkdownTable: Equatable, Sendable {
             return false
         }
         return true
-    }
-
-    /// Display width in a monospaced font.
-    ///
-    /// This is **not** the number of UTF-16 code units: an ideograph occupies
-    /// two cells in every monospaced font, a combining accent occupies none,
-    /// and an emoji occupies two for two code units. Counting code units
-    /// would misalign any column containing CJK.
-    static func displayWidth(utf16: [UInt16], in range: NSRange) -> Int {
-        var width = 0
-        var offset = range.location
-        while offset < min(range.upperBound, utf16.count) {
-            let unit = utf16[offset]
-            var scalarValue = UInt32(unit)
-            if unit >= 0xD800, unit <= 0xDBFF, offset + 1 < range.upperBound {
-                let low = utf16[offset + 1]
-                if low >= 0xDC00, low <= 0xDFFF {
-                    scalarValue = 0x10000 + (UInt32(unit - 0xD800) << 10) + UInt32(low - 0xDC00)
-                    offset += 1
-                }
-            }
-            offset += 1
-            guard let scalar = Unicode.Scalar(scalarValue) else { width += 1; continue }
-            width += cellWidth(of: scalar)
-        }
-        return width
-    }
-
-    private static func cellWidth(of scalar: Unicode.Scalar) -> Int {
-        // Combining marks: placed on the preceding character, no advance.
-        if scalar.properties.canonicalCombiningClass != .notReordered { return 0 }
-        switch scalar.value {
-        case 0x1100...0x115F,      // initial hangul jamo
-             0x2E80...0xA4CF,      // radicals, kana, ideographs
-             0xAC00...0xD7A3,      // hangul syllables
-             0xF900...0xFAFF,      // compatibility ideographs
-             0xFE30...0xFE6F,      // vertical punctuation forms
-             0xFF00...0xFF60,      // fullwidth forms
-             0xFFE0...0xFFE6,
-             0x1F300...0x1F9FF,    // emoji
-             0x20000...0x3FFFD:    // supplementary ideographic planes
-            return 2
-        default:
-            return 1
-        }
     }
 }

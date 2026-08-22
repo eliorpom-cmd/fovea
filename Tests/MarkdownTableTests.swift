@@ -41,9 +41,12 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertEqual(table.rows[0].cells.map { text(source, $0.content) }, ["a", "b"])
     }
 
-    func testAlignmentsAreRead() throws {
+    /// The delimiter row is what declares how many columns there are, and the
+    /// alignments it may also carry are validated and then dropped: every cell
+    /// renders from the same edge. They stay in the file untouched.
+    func testTheDelimiterRowDeclaresTheColumnCount() throws {
         let table = try XCTUnwrap(scan("| a | b | c | d |\n|:--|--:|:-:|---|\n| 1 | 2 | 3 | 4 |"))
-        XCTAssertEqual(table.alignments, [.leading, .trailing, .center, .leading])
+        XCTAssertEqual(table.columnCount, 4)
     }
 
     // MARK: - What disappears
@@ -110,38 +113,6 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertNil(scan("| a | b |"))
     }
 
-    // MARK: - Display width
-
-    func testColumnWidthIsTheWidestContent() throws {
-        let table = try XCTUnwrap(scan("| a | bbbb |\n|---|---|\n| ccccc | d |"))
-        XCTAssertEqual(table.columnWidths, [5, 4])
-    }
-
-    func testAnIdeographTakesTwoCells() {
-        // In any monospaced font, an ideograph occupies two cells.
-        // Counting UTF-16 code units instead of display width would misalign
-        // the column by one cell per such character.
-        let source = "漢字"
-        let width = MarkdownTable.displayWidth(utf16: Array(source.utf16),
-                                               in: NSRange(location: 0, length: 2))
-        XCTAssertEqual(width, 4)
-    }
-
-    func testACombiningAccentTakesNone() {
-        // "e" followed by a combining accent: one glyph on screen, two code units.
-        let source = "e\u{0301}"
-        let utf16 = Array(source.utf16)
-        XCTAssertEqual(MarkdownTable.displayWidth(utf16: utf16,
-                                                  in: NSRange(location: 0, length: utf16.count)), 1)
-    }
-
-    func testAnEmojiTakesTwoCells() {
-        let source = "🙂"
-        let utf16 = Array(source.utf16)
-        XCTAssertEqual(MarkdownTable.displayWidth(utf16: utf16,
-                                                  in: NSRange(location: 0, length: utf16.count)), 2)
-    }
-
     // MARK: - Positions
 
     func testShiftingMovesEveryPosition() throws {
@@ -153,7 +124,7 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertEqual(moved.rows[0].pipes[0].location, table.rows[0].pipes[0].location + 100)
         XCTAssertEqual(moved.rows[0].cells[0].content.location,
                        table.rows[0].cells[0].content.location + 100)
-        XCTAssertEqual(moved.columnWidths, table.columnWidths)
+        XCTAssertEqual(moved.columnCount, table.columnCount)
     }
 
     // MARK: - Integration with the parser

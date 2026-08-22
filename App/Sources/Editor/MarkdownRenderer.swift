@@ -375,11 +375,6 @@ struct MarkdownRenderer {
         storage.addAttribute(.font, value: typography.body, range: pipe)
     }
 
-    // Column alignment is no longer read at render time: every cell
-    // starts from the same edge. `MarkdownTable.alignments` is still used to count
-    // columns, to place the rules, and for HTML export, which stays faithful to
-    // what the file declares.
-
     /// Actual rendered width of a range, attributes included.
     private func measure(_ storage: NSTextStorage, _ range: NSRange) -> CGFloat {
         guard range.length > 0, range.upperBound <= storage.length else { return 0 }

@@ -196,7 +196,7 @@ extension EditorDecoration {
         // was open on the left and right: the horizontal rules
         // stopped in mid-air, and a table read like underlined
         // lines rather than a box.
-        var separators = table.alignments.indices.compactMap { layout.separatorX(before: $0) }
+        var separators = (0..<table.columnCount).compactMap { layout.separatorX(before: $0) }
         separators.append(0)
         separators.append((width - 1).rounded())
         if !separators.isEmpty {

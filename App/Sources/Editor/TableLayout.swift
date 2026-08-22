@@ -58,7 +58,7 @@ struct TableLayout {
                         in storage: NSTextStorage,
                         typography: EditorTypography,
                         available: CGFloat) -> TableLayout? {
-        guard !table.alignments.isEmpty else { return nil }
+        guard table.columnCount > 0 else { return nil }
 
         // The gutter follows the body text: it is what gives the air, and it
         // has to grow with the font like everything else.
