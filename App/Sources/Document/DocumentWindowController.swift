@@ -278,99 +278,8 @@ extension DocumentWindowController: NSMenuItemValidation {
         AppSettings.shared.typewriterMode.toggle()
     }
 
-    // MARK: - Exports (§4.6)
-
-    @objc func copyAsRichText(_ sender: Any?) {
-        guard let rich = MarkdownExport.richText(from: editor.text, documentURL: editor.documentURL),
-              let rtf = rich.rtf(from: NSRange(location: 0, length: rich.length), documentAttributes: [:])
-        else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        // RTF **and** plain text: an app that can't read the former should
-        // find the latter instead of pasting an empty pasteboard.
-        pasteboard.declareTypes([.rtf, .string], owner: nil)
-        pasteboard.setData(rtf, forType: .rtf)
-        pasteboard.setString(rich.string, forType: .string)
-    }
-
     @objc func pastePlainText(_ sender: Any?) {
         editor.textView.pastePlainText(sender)
-    }
-
-    @objc func exportHTML(_ sender: Any?) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.html]
-        panel.nameFieldStringValue = (documentName as NSString).deletingPathExtension + ".html"
-        panel.message = "A single file, images included."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        let html = MarkdownExport.html(from: editor.text,
-                                       title: (documentName as NSString).deletingPathExtension,
-                                       documentURL: editor.documentURL)
-        try? Data(html.utf8).write(to: url)
-    }
-
-    /// Opens the system share sheet on the file itself.
-    ///
-    /// It's the `.md` that gets shared, not a render: sharing a markdown
-    /// document means sending a file the recipient can reopen and edit.
-    /// Anyone who wants a PDF has the Export menu right above.
-    ///
-    /// A document that has never been saved has nothing to share; the item
-    /// is disabled instead, rather than opening an empty sheet.
-    @objc func shareDocument(_ sender: Any?) {
-        guard let url: URL = document?.fileURL else { return }
-        let picker = NSSharingServicePicker(items: [url])
-        guard let anchor = window?.contentView else { return }
-        picker.show(relativeTo: NSRect(x: anchor.bounds.midX, y: anchor.bounds.maxY - 1, width: 1, height: 1),
-                    of: anchor, preferredEdge: .maxY)
-    }
-
-    @objc func exportPDF(_ sender: Any?) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = (documentName as NSString).deletingPathExtension + ".pdf"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        exportPDF(to: url)
-    }
-
-    /// Produces the PDF from a **disposable** rendering view, without the
-    /// editor's chrome and with every marker hidden (§4.6).
-    ///
-    /// Printing the editing view itself would carry over its column width,
-    /// its background color and its caret. Pagination is left to
-    /// `NSPrintOperation`: splitting by hand would produce paragraphs cut in
-    /// half at the bottom of pages.
-    private func exportPDF(to url: URL) {
-        guard let rich = MarkdownExport.richText(from: editor.text, documentURL: editor.documentURL) else {
-            return
-        }
-        let info = NSPrintInfo()
-        info.paperSize = NSSize(width: 595, height: 842)   // A4 at 72 dpi
-        info.topMargin = 64; info.bottomMargin = 64
-        info.leftMargin = 64; info.rightMargin = 64
-        info.horizontalPagination = .fit
-        info.verticalPagination = .automatic
-        info.jobDisposition = .save
-        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
-
-        let printable = info.paperSize.width - info.leftMargin - info.rightMargin
-        let view = NSTextView(frame: NSRect(x: 0, y: 0, width: printable, height: 100))
-        view.textStorage?.setAttributedString(rich)
-        view.isEditable = false
-        view.backgroundColor = .white
-        view.textContainerInset = .zero
-        view.textContainer?.lineFragmentPadding = 0
-        view.sizeToFit()
-
-        let operation = NSPrintOperation(view: view, printInfo: info)
-        operation.showsPrintPanel = false
-        operation.showsProgressPanel = false
-        operation.run()
-    }
-
-    private var documentName: String {
-        (document as? NSDocument)?.displayName ?? "Document"
     }
 
     // MARK: - Outline and palette (§4.5)
@@ -457,12 +366,6 @@ extension DocumentWindowController: NSMenuItemValidation {
             .init(title: "Link…", detail: key(#selector(insertLink(_:)), nil)) { [weak self] in
                 self?.editor.insertLink()
             },
-            .init(title: "Export as Standalone HTML",
-                  detail: key(#selector(exportHTML(_:)), nil)) { [weak self] in self?.exportHTML(nil) },
-            .init(title: "Export as PDF",
-                  detail: key(#selector(exportPDF(_:)), nil)) { [weak self] in self?.exportPDF(nil) },
-            .init(title: "Copy as Rich Text",
-                  detail: key(#selector(copyAsRichText(_:)), nil)) { [weak self] in self?.copyAsRichText(nil) },
             .init(title: "Settings",
                   detail: key(#selector(AppDelegate.showSettings(_:)), nil)) {
                       SettingsWindowController.shared.present()
@@ -532,9 +435,6 @@ extension DocumentWindowController: NSMenuItemValidation {
 
         case #selector(toggleOutline(_:)):
             menuItem.state = outlineWidth?.constant != 0 ? .on : .off
-
-        case #selector(shareDocument(_:)):
-            return document?.fileURL != nil
 
         case #selector(toggleTaskAtCaret(_:)):
             // The item says what it will do, and grays out outside a task

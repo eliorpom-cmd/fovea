@@ -73,23 +73,6 @@ enum MainMenu {
         menu.addItem(saveAs)
 
         menu.addItem(item("Revert to Saved", #selector(NSDocument.revertToSaved(_:))))
-        menu.addItem(.separator())
-
-        let export = NSMenuItem(title: "Export", action: nil, keyEquivalent: "")
-        let exportMenu = NSMenu()
-        exportMenu.addItem(item("PDF…", #selector(AppCommands.exportPDF(_:))))
-        exportMenu.addItem(item("Standalone HTML…", #selector(AppCommands.exportHTML(_:))))
-        export.submenu = exportMenu
-        menu.addItem(export)
-
-        menu.addItem(.separator())
-        // Sharing is a system affordance: the sheet it opens is macOS's own,
-        // with Mail, Messages, AirDrop and everything else the user has
-        // installed. Writing it ourselves would be both more work and less
-        // complete.
-        menu.addItem(item("Share…", #selector(AppCommands.shareDocument(_:))))
-        menu.addItem(.separator())
-        menu.addItem(item("Print…", #selector(NSDocument.printDocument(_:)), "p"))
         return menu
     }
 
@@ -105,13 +88,6 @@ enum MainMenu {
 
         menu.addItem(item("Cut", #selector(NSText.cut(_:)), "x"))
         menu.addItem(item("Copy", #selector(NSText.copy(_:)), "c"))
-
-        // §4.6: in practice the most used export. It deserves the shortcut
-        // next to ⌘C, not an entry lost in a submenu.
-        let copyRich = item("Copy as Rich Text", #selector(AppCommands.copyAsRichText(_:)), "c")
-        copyRich.keyEquivalentModifierMask = [.command, .shift]
-        menu.addItem(copyRich)
-
         menu.addItem(item("Paste", #selector(NSText.paste(_:)), "v"))
         let pastePlain = item("Paste and Match Style", #selector(AppCommands.pastePlainText(_:)), "v")
         pastePlain.keyEquivalentModifierMask = [.command, .shift]
@@ -328,10 +304,6 @@ enum MainMenu {
 @objc protocol AppCommands {
     func showSettings(_ sender: Any?)
     func makeDefaultMarkdownEditor(_ sender: Any?)
-    func shareDocument(_ sender: Any?)
-    func exportPDF(_ sender: Any?)
-    func exportHTML(_ sender: Any?)
-    func copyAsRichText(_ sender: Any?)
     func pastePlainText(_ sender: Any?)
     func toggleBold(_ sender: Any?)
     func toggleItalic(_ sender: Any?)
