@@ -27,8 +27,5 @@ enum AppConfig {
     /// **Written** extension, always. See §5 of the spec.
     static let defaultExtension = "md"
 
-    /// Folder where dropped images are copied (§4.4). Configurable.
-    static let defaultAssetsFolderName = "assets"
-
     static let repositoryURL = URL(string: "https://github.com/byelior/fovea")!
 }

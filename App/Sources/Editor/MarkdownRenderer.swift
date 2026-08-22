@@ -422,11 +422,6 @@ struct MarkdownRenderer {
     /// A row's line spacing, relative to the body's natural height.
     static let rowLeading: CGFloat = 1.45
 
-    /// The air under a row's text — half of its extra spacing.
-    static func rowPadding(_ typography: EditorTypography) -> CGFloat {
-        (naturalHeight(typography.body) * (rowLeading - 1) / 2).rounded()
-    }
-
     /// How far to drop the rules so the text falls **in the middle** of
     /// its row.
     ///

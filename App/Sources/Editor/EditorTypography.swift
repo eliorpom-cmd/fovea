@@ -36,8 +36,6 @@ struct EditorTypography: Equatable {
 
     var body: NSFont { font(bodyFontName, size: bodySize, weight: .regular) }
     var bodyEmphasized: NSFont { font(bodyFontName, size: bodySize, weight: .semibold) }
-    var bodyItalic: NSFont { italic(body) }
-    var bodyBoldItalic: NSFont { italic(bodyEmphasized) }
 
     /// Inline code is very slightly reduced: at equal size, a monospaced
     /// font looks bigger than the proportional font around it and makes the

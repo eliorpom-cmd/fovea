@@ -87,7 +87,6 @@ final class DocumentBanner: NSView {
         applyLayerBackground(Theme.NS.fillQuaternary)
     }
 
-    var isShowing: Bool { !isHidden }
 
     /// Shows the messages, joined. Nothing to say closes the banner.
     func show(_ messages: [String]) {

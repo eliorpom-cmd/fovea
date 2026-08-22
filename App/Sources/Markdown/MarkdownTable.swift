@@ -62,16 +62,6 @@ struct MarkdownTable: Equatable, Sendable {
 
     var columnCount: Int { alignments.count }
 
-    /// Total width of the grid, gutters included, in characters.
-    ///
-    /// Used as the rendering's guard rail: a table wider than the text
-    /// column would wrap, and a grid that wraps becomes unreadable. In that
-    /// case the grid is abandoned and the source is shown instead.
-    func totalWidth(gutter: Int) -> Int {
-        guard !columnWidths.isEmpty else { return 0 }
-        return columnWidths.reduce(0, +) + gutter * (columnWidths.count - 1)
-    }
-
     /// Everything that must disappear when read: the `|`, the padding
     /// whitespace, and the whole delimiter row.
     var markerRanges: [NSRange] {
