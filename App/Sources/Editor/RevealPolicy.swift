@@ -182,59 +182,6 @@ enum RevealPolicy {
         return latched && intersects(span.range, line) && contains(line, caret)
     }
 
-    /// Reference version, by scanning.
-    ///
-    /// Kept because it is the literal definition of the rule, and because
-    /// `SpanIndexTests` uses it to verify that the index gives exactly the
-    /// same answer.
-    static func revealedIndicesByScan(spans: [SyntaxSpan],
-                                      selection: NSRange,
-                                      lineRange: NSRange,
-                                      linePrefixesLatched: Bool = false) -> Set<Int> {
-
-        let caret = selection.location
-        var revealed = Set<Int>()
-
-        // Line-scoped and block-scoped: several can be revealed at the same
-        // time, and that is intended — a list line inside a blockquote
-        // shows both its `>` and its `-` as soon as the caret touches both
-        // prefixes, otherwise neither could be edited.
-        var innermostInline: (index: Int, length: Int)?
-
-        for (index, span) in spans.enumerated() {
-            switch span.kind.revealScope {
-            case .innermostInline:
-                if selection.length == 0, holdsCaretInAMarker(span, caret: caret) {
-                    revealed.insert(index)
-                }
-                // The innermost wins: the shortest of those that contain the
-                // caret. `<` and not `<=` so that, at equal length, the
-                // first one encountered wins, stably. A construct with no
-                // marker does not enter the contest: it has nothing to
-                // show, and winning would prevent it from showing.
-                guard !span.markers.isEmpty, encloses(span.range, selection) else { continue }
-                if innermostInline == nil || span.range.length < innermostInline!.length {
-                    innermostInline = (index, span.range.length)
-                }
-
-            case .wholeLine:
-                if revealsLinePrefix(span, caret: caret, line: lineRange, latched: linePrefixesLatched) {
-                    revealed.insert(index)
-                }
-
-            case .wholeBlock:
-                if selection.length == 0, contains(span.range, caret) {
-                    revealed.insert(index)
-                }
-            }
-        }
-
-        if let innermostInline {
-            revealed.insert(innermostInline.index)
-        }
-        return revealed
-    }
-
     /// Membership **bounds included** — that is the whole point of the
     /// rule. `NSLocationInRange` excludes the upper bound and is therefore
     /// unsuitable.

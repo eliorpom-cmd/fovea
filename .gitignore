@@ -25,6 +25,7 @@ essais/
 CAHIER-DES-CHARGES.md
 docs/AUDIT-UI.md
 docs/AUDIT-UI-E2E.md
+docs/MARKTEXT.md
 
 # Internal FR->EN translation kit, kept out of the repository
 .translation/

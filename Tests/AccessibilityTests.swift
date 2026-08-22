@@ -85,13 +85,6 @@ final class AccessibilityTests: XCTestCase {
                            ? Theme.NS.labelSecondary : Theme.NS.labelTertiary)
     }
 
-    func testTheFocusVeilLightensAtHigherContrast() {
-        // Dimming helps concentration; it must not make the rest of the
-        // document unreadable for someone who asked for more contrast.
-        XCTAssertEqual(Accessibility.focusVeilOpacity,
-                       Accessibility.prefersIncreasedContrast ? 0.55 : 0.74)
-    }
-
     // MARK: - Motion
 
     func testReducedMotionRemovesTheDurationNotTheChange() {

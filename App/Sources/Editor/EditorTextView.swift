@@ -1,7 +1,6 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
 // Licensed under the GNU AGPL v3 or later. See LICENSE.
 import AppKit
-import UniformTypeIdentifiers
 
 /// The editing view.
 ///
@@ -440,15 +439,14 @@ final class EditorTextView: NSTextView {
         super.insertBacktab(sender)
     }
 
-    // MARK: - Image drag and drop
+    // MARK: - Dropping a document
 
-    /// Accepts images dropped from the Finder or other apps (§4.4).
-    ///
     /// A dropped markdown file is **opened**, not inserted.
     ///
     /// `NSTextView` would do what it does by default with a URL: write its
-    /// path into the document, which is not what anyone has ever wanted. So
-    /// the drop is intercepted before it gets there.
+    /// path into the document, which is not what anyone has ever wanted from
+    /// this gesture, least of all in an editor that manages tabs. So the drop
+    /// is intercepted before it gets there.
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         documents(in: sender).isEmpty ? super.draggingEntered(sender) : .copy
     }
@@ -458,11 +456,6 @@ final class EditorTextView: NSTextView {
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        // A dropped text file gets **opened**. Without this case,
-        // `NSTextView` did what it does by default with a URL: it inserted
-        // its path into the document, which is not what anyone has ever
-        // wanted from this gesture, especially in an editor that manages
-        // tabs.
         let files = documents(in: sender)
         if !files.isEmpty {
             for url in files {
@@ -480,11 +473,7 @@ final class EditorTextView: NSTextView {
         guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
             return []
         }
-        return urls.filter { url in
-            guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
-            return !type.conforms(to: .image)
-                && AppConfig.readableExtensions.contains(url.pathExtension.lowercased())
-        }
+        return urls.filter { AppConfig.readableExtensions.contains($0.pathExtension.lowercased()) }
     }
 
     // MARK: - Paste

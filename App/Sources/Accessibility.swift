@@ -51,15 +51,6 @@ enum Accessibility {
         prefersIncreasedContrast ? Theme.NS.labelSecondary : Theme.NS.labelTertiary
     }
 
-    /// The focus mode veil (§4.5).
-    ///
-    /// The more opaque it is, the less readable the inactive text becomes. At
-    /// increased contrast it's lightened: dimming is an aid to concentration,
-    /// not a way to make the rest of the document unreadable.
-    static var focusVeilOpacity: CGFloat {
-        prefersIncreasedContrast ? 0.55 : 0.74
-    }
-
     // MARK: - Roles read by VoiceOver (§8)
 
     /// What a construct **is**, in one sentence readable aloud.
