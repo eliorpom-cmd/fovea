@@ -52,15 +52,8 @@ final class EditorController: NSObject {
     private var pendingTableTrigger: TypingBehaviour.SlashTrigger?
     private var slashTrigger: TypingBehaviour.SlashTrigger?
 
-    /// Called after every text modification, so the document knows it is dirty
-    /// and the status bar can refresh.
+    /// Called after every text modification, so the document knows it is dirty.
     var onTextChanged: (() -> Void)?
-
-    /// Called when the selection moves, to refresh the statistics.
-    var onSelectionChanged: (() -> Void)?
-
-    /// Called when the constructs have changed, so the outline stays in sync.
-    var onSpansChanged: (() -> Void)?
 
     // MARK: - Setup
 
@@ -231,7 +224,6 @@ final class EditorController: NSObject {
         spans = MarkdownParser.parse(textView.string).spans
             .sorted { $0.range.location < $1.range.location }
         spanIndex = SpanIndex(spans)
-        onSpansChanged?()
     }
 
     /// Re-parses **only the touched block**, and falls back to the whole document
@@ -261,7 +253,6 @@ final class EditorController: NSObject {
         let fresh = MarkdownParser.parse(fragment, offsetBy: scope.location)
         spans = MarkdownParser.splice(spans, replacing: scope, with: fresh, delta: delta)
         spanIndex = SpanIndex(spans)
-        onSpansChanged?()
         return scope
     }
 
@@ -410,90 +401,6 @@ final class EditorController: NSObject {
                                                           availableWidth: renderedColumnWidth,
                                                           revealed: next)
         }
-    }
-
-    // MARK: - Writing modes (§4.5)
-
-    /// Document statistics, or of the selection when there is one.
-    var statistics: WritingModes.Statistics {
-        guard let storage = textView.textStorage else {
-            return WritingModes.Statistics(words: 0, characters: 0, readingMinutes: 0)
-        }
-        let selection = textView.selectedRange()
-        guard selection.length > 0 else {
-            return WritingModes.statistics(of: storage.string, spans: spans)
-        }
-        // On a selection, the selection is counted — with its constructs mapped
-        // to its own coordinates, or the syntax would no longer be excluded.
-        let fragment = storage.mutableString.substring(with: selection)
-        let local = spans
-            .filter { NSIntersectionRange($0.range, selection).length > 0 }
-            .map { $0.shifted(by: -selection.location) }
-        return WritingModes.statistics(of: fragment, spans: local)
-    }
-
-    /// Dims everything but the current unit (§4.5).
-    ///
-    /// The dimming is a layer of opacity applied over the rendering, and
-    /// **never** a color change: the color attributes already carry meaning —
-    /// code, blockquote, revealed marker — and overwriting them would require
-    /// recomputing everything to revert.
-    private func applyFocus() {
-        guard let storage = textView.textStorage, !isSourceMode else { return }
-        let settings = AppSettings.shared
-        guard settings.focusMode else {
-            textView.focusRange = nil
-            return
-        }
-        textView.focusRange = WritingModes.focusRange(in: storage.mutableString,
-                                                      caret: textView.selectedRange().location,
-                                                      unit: settings.focusUnit)
-    }
-
-    /// Keeps the active line at a fixed height (§4.5).
-    ///
-    /// **Disabled by default**: normal scrolling is the default, and this mode
-    /// confuses more than it helps until it has been requested.
-    private func applyTypewriterScrolling() {
-        guard AppSettings.shared.typewriterMode,
-              // **Never while a selection is extending.** This guard is also
-              // the one for every selection change, mouse drag included:
-              // scrolling at that moment pulls the text out from under the
-              // pointer, and the selection extends toward something not being
-              // aimed at. Recentering only happens on a settled caret.
-              textView.selectedRange().length == 0,
-              let layout = textView.textLayoutManager,
-              let content = textView.textContentStorage,
-              let caretLocation = content.location(content.documentRange.location,
-                                                   offsetBy: textView.selectedRange().location)
-        else { return }
-
-        var caretFrame: NSRect?
-        layout.enumerateTextSegments(in: NSTextRange(location: caretLocation),
-                                     type: .selection, options: []) { _, frame, _, _ in
-            caretFrame = frame
-            return false
-        }
-        guard let caretFrame else { return }
-
-        let clip = scrollView.contentView
-        let visible = clip.bounds
-        // A third of the height, not half: writing happens downward, and
-        // leaving two thirds of context above reads better than an even split.
-        let target = caretFrame.midY + textView.textContainerOrigin.y - visible.height / 3
-
-        // **The bounds are those of the insets, not zero and infinity.** The
-        // window is `fullSizeContentView`: AppKit places an inset at the top so
-        // the text doesn't scroll under the title bar, so the valid origin
-        // starts at `-contentInsets.top`. A floor at zero used to offset the
-        // active line by the height of that bar, and nothing held the bottom
-        // back — `setBoundsOrigin` doesn't go through `NSClipView`'s clamping,
-        // so a keystroke at the end of the document used to push the text off
-        // screen.
-        let top = -clip.contentInsets.top
-        let bottom = max(top, textView.frame.height + clip.contentInsets.bottom - visible.height)
-        clip.setBoundsOrigin(NSPoint(x: visible.origin.x, y: min(max(top, target), bottom)))
-        scrollView.reflectScrolledClipView(clip)
     }
 
     // MARK: - Writing inside a table (§2.6)
@@ -702,7 +609,6 @@ final class EditorController: NSObject {
     /// needs to run when the available width or the typography changes: that
     /// is, on resize and in settings.
     func applyColumnLayout() {
-        textView.refreshFocusOverlay()
         guard let container = textView.textContainer else { return }
         let available = scrollView.contentSize.width
         // **No measured space, no decision.**
@@ -1282,8 +1188,6 @@ final class EditorController: NSObject {
         render(in: scope)
         // Only now: the parse finally matches the buffer.
         correctCaretInsideTable()
-        applyFocus()
-        applyTypewriterScrolling()
         refreshSlashMenu(mayOpen: true)
         refreshLanguagePicker(mayOpen: true)
         onTextChanged?()
@@ -1315,8 +1219,6 @@ final class EditorController: NSObject {
             lastColorfulCode = settings.colorfulCodeBlocks
             typography = settings.typography
         }
-        applyFocus()
-        applyTypewriterScrolling()
     }
 
     /// The code block coloring at the last render. It doesn't live in
@@ -1339,13 +1241,10 @@ extension EditorController: NSTextViewDelegate {
         // on screen.
         correctCaretInsideTable()
         updateReveal()
-        applyFocus()
-        applyTypewriterScrolling()
         // A caret move closes or follows, but never opens: see
         // `refreshSlashMenu(mayOpen:)`.
         refreshSlashMenu(mayOpen: false)
         refreshLanguagePicker(mayOpen: false)
-        onSelectionChanged?()
     }
 }
 

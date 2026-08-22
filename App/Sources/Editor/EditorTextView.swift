@@ -60,31 +60,6 @@ final class EditorTextView: NSTextView {
 
     var documentURL: URL?
 
-    /// The range left at full intensity by focus mode (§4.5).
-    /// `nil` when the mode is off.
-    var focusRange: NSRange? {
-        didSet {
-            guard focusRange != oldValue else { return }
-            focusOverlay.isHidden = focusRange == nil
-            focusOverlay.frame = bounds
-            focusOverlay.needsDisplay = true
-        }
-    }
-
-    /// The focus mode veil, **above** the text.
-    ///
-    /// It cannot be painted in `draw(_:)`: with TextKit 2, text fragments are
-    /// rendered in layers placed above the view's own drawing, and the veil
-    /// ended up underneath them, invisible. A subview, by contrast, composites
-    /// above them.
-    private lazy var focusOverlay: FocusOverlayView = {
-        let overlay = FocusOverlayView(owner: self)
-        overlay.isHidden = true
-        overlay.autoresizingMask = [.width, .height]
-        addSubview(overlay)
-        return overlay
-    }()
-
     /// Callbacks into `EditorController` for keys whose behavior depends on
     /// markdown. Each one returns `true` if it took over.
     var handlesNewline: (() -> Bool)?
@@ -185,17 +160,6 @@ final class EditorTextView: NSTextView {
         isHorizontallyResizable = false
         autoresizingMask = [.width]
         textContainerInset = NSSize(width: 0, height: Theme.Space.s40)
-    }
-
-    /// Resizes the veil to match the view.
-    ///
-    /// The text view grows as layout progresses; without this callback, the
-    /// veil would keep the height it had at open and would leave the bottom
-    /// of the document at full intensity.
-    func refreshFocusOverlay() {
-        guard focusRange != nil else { return }
-        focusOverlay.frame = bounds
-        focusOverlay.needsDisplay = true
     }
 
     // MARK: - The caret
@@ -633,77 +597,6 @@ final class EditorTextView: NSTextView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         NotificationCenter.default.post(name: .foveaAppearanceChanged, object: self)
-    }
-}
-
-/// The veil that dims everything but the active unit.
-///
-/// It is painted in the background color at low opacity, rather than by
-/// changing the character color. Color attributes already carry meaning:
-/// code, blockquote, revealed marker, and overwriting them would require
-/// recomputing everything to undo it on every caret move.
-private final class FocusOverlayView: NSView {
-
-    private weak var owner: EditorTextView?
-
-    init(owner: EditorTextView) {
-        self.owner = owner
-        super.init(frame: owner.bounds)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("no view comes from a xib") }
-
-    /// Transparent to clicks: the veil is decorative, typing happens through
-    /// it.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    /// **Flipped, like the text view it covers.**
-    ///
-    /// `NSTextView` is flipped; a plain `NSView` isn't. The active unit's
-    /// bounds therefore came from layout in top-down coordinates, and were
-    /// drawn in a bottom-up frame: the light band was the **vertical mirror**
-    /// of the right one. It landed on a different paragraph, and its edges
-    /// cut through the middle of lines instead of sitting between them.
-    override var isFlipped: Bool { true }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let owner, let focusRange = owner.focusRange,
-              let layout = owner.textLayoutManager,
-              let content = owner.textContentStorage,
-              let start = content.location(content.documentRange.location, offsetBy: focusRange.location),
-              let end = content.location(start, offsetBy: focusRange.length),
-              let range = NSTextRange(location: start, end: end) else { return }
-
-        // **Layout fragments, not text segments.**
-        //
-        // A segment hugs the typographic height of the characters it covers,
-        // which is shorter than the line: the veil's edge then fell *inside*
-        // the letters. On the document title, measured to the pixel, the top
-        // half stayed light and the bottom half darkened partway through the
-        // descenders, a line cut in half across its own height.
-        //
-        // Fragments, by contrast, tile the document with no gap and no
-        // overlap: their edge is always *between* two lines, never inside
-        // one.
-        var union: NSRect?
-        layout.enumerateTextLayoutFragments(from: range.location, options: []) { fragment in
-            let frame = fragment.layoutFragmentFrame
-            union = union.map { $0.union(frame) } ?? frame
-            // Stops at the fragment that contains the end of the unit, that
-            // one included, or the last line would stay under the veil.
-            return fragment.rangeInElement.endLocation.compare(range.endLocation) == .orderedAscending
-        }
-        guard let union else { return }
-        let active = union.offsetBy(dx: owner.textContainerOrigin.x, dy: owner.textContainerOrigin.y)
-
-        Theme.NS.window.withAlphaComponent(Accessibility.focusVeilOpacity).setFill()
-        NSRect(x: bounds.minX, y: bounds.minY,
-               width: bounds.width, height: max(0, active.minY - bounds.minY))
-            .intersection(dirtyRect).fill()
-        NSRect(x: bounds.minX, y: active.maxY,
-               width: bounds.width, height: max(0, bounds.maxY - active.maxY))
-            .intersection(dirtyRect).fill()
     }
 }
 

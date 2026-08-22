@@ -126,47 +126,6 @@ private struct EditingSettings: View {
 
     var body: some View {
         Form {
-            // Each setting in its own section, with its own explanation.
-            // The two used to share one box and a single sentence below both:
-            // it looked like it described focus mode, which had none of its
-            // own — and that is the one of the two whose behavior is most
-            // surprising.
-            Section("Writing") {
-                Toggle("Focus Mode", isOn: $settings.focusMode)
-                if settings.focusMode {
-                    Picker("Keep in focus", selection: $settings.focusUnit) {
-                        ForEach(AppSettings.FocusUnit.allCases) { Text($0.label).tag($0) }
-                    }
-                }
-                Text("Everything dims except what you're writing. The active unit stops "
-                     + "at blank lines, headings and each list item.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle("Typewriter Mode", isOn: $settings.typewriterMode)
-                Text("The active line stays at a fixed height and the text scrolls underneath. "
-                     + "When disabled, scrolling behaves like any other app.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Statistics") {
-                Toggle("Show statistics", isOn: $settings.showStatistics)
-                if settings.showStatistics {
-                    LabeledContent("Session Goal") {
-                        HStack {
-                            TextField("", value: $settings.sessionWordGoal, format: .number)
-                                .labelsHidden()
-                                .frame(width: 70)
-                            Text(settings.sessionWordGoal == 0 ? "none" : "words")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
             Section("Markdown") {
                 Toggle("Recognize constructs while typing", isOn: $settings.markdownShortcutsWhileTyping)
                 Text("`-` continues the list on Return, ⇥ changes the level.")

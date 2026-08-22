@@ -198,10 +198,6 @@ enum MainMenu {
         menu.addItem(item("Command Palette", #selector(AppCommands.showCommandPalette(_:)), "k"))
         menu.addItem(.separator())
 
-        menu.addItem(item("Focus Mode", #selector(AppCommands.toggleFocusMode(_:))))
-        menu.addItem(item("Typewriter Mode", #selector(AppCommands.toggleTypewriterMode(_:))))
-        menu.addItem(.separator())
-
         let fullScreen = item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f")
         fullScreen.keyEquivalentModifierMask = [.command, .control]
         menu.addItem(fullScreen)
@@ -311,6 +307,4 @@ enum MainMenu {
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)
     func showCommandPalette(_ sender: Any?)
-    func toggleFocusMode(_ sender: Any?)
-    func toggleTypewriterMode(_ sender: Any?)
 }

@@ -12,13 +12,11 @@ final class DocumentWindowController: NSWindowController {
     let editor = EditorController()
     /// The §6 states, communicated without interrupting.
     let banner = DocumentBanner()
-    private let statusBar = StatusBar()
     private let palette = CommandPalette()
     /// The inset left for the title bar, and for the tab bar when present.
     /// See `applyTitleBarInset()`.
     private var bannerTop: NSLayoutConstraint!
     /// The settings subscription, released on close.
-    private var settingsObserver: (any NSObjectProtocol)?
 
     convenience init() {
         let window = NSWindow(
@@ -52,9 +50,7 @@ final class DocumentWindowController: NSWindowController {
         }
         content.addSubview(banner)
         content.addSubview(editor.scrollView)
-        content.addSubview(statusBar)
         editor.scrollView.translatesAutoresizingMaskIntoConstraints = false
-        statusBar.translatesAutoresizingMaskIntoConstraints = false
         banner.translatesAutoresizingMaskIntoConstraints = false
         bannerTop = banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s64)
 
@@ -75,33 +71,9 @@ final class DocumentWindowController: NSWindowController {
             editor.scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
             editor.scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-
-            // Floating above the text, in the bottom-right corner: it
-            // doesn't steal space from the column, and fades out when the
-            // pointer is elsewhere.
-            statusBar.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Theme.Space.s16),
-            statusBar.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -Theme.Space.s12),
-            statusBar.heightAnchor.constraint(equalToConstant: 20),
         ])
         window.contentView = content
 
-        editor.onSelectionChanged = { [weak self] in self?.refreshStatistics() }
-        refreshStatistics()
-
-        // The status bar is the only piece of chrome whose visibility is a
-        // setting. Without this subscription, unchecking "Show statistics"
-        // did nothing visible: the bar only went away on the next
-        // keystroke, when some other path called `refreshStatistics`. The
-        // setting looked broken when it was only late.
-        // The token is retained and released in `deinit`: the block-based
-        // variant does **not** remove its observer by itself, unlike the
-        // one that takes a target. The block stayed registered after the
-        // window closed, and every document opened in the session left one
-        // more behind.
-        settingsObserver = NotificationCenter.default.addObserver(
-            forName: AppSettings.didChange, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refreshStatistics() }
-            }
 
         // The first responder must be the text view as soon as the window
         // opens: in a writing app, the caret should be blinking before the
@@ -158,41 +130,6 @@ final class DocumentWindowController: NSWindowController {
         bannerTop.constant = taken
     }
 
-    /// The pending recount. See `refreshStatistics`.
-    private var pendingStatistics: DispatchWorkItem?
-
-    /// Refreshes the status bar.
-    ///
-    /// Called on every selection change **and** on every keystroke. Since
-    /// the bar can be hidden, nothing is paid at all when it is.
-    func refreshStatistics() {
-        guard AppSettings.shared.showStatistics else {
-            statusBar.isHidden = true
-            return
-        }
-        statusBar.isHidden = false
-
-        // **The count is debounced, not redone on every keystroke.**
-        //
-        // It excludes markdown syntax, so it walks the whole document and
-        // allocates a flag per character along the way: 26 ms for 50,000
-        // words, measured. Called on every key *and* every caret move, it
-        // had become the most expensive step of the typing cycle, well
-        // above the 16 ms budget from §9, for a number nobody reads while
-        // typing.
-        //
-        // A quarter second of silence is enough: the counter updates as
-        // soon as the fingers lift, and typing never pays for it again.
-        pendingStatistics?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            statusBar.update(editor.statistics,
-                             goal: AppSettings.shared.sessionWordGoal,
-                             isSelection: editor.textView.selectedRange().length > 0)
-        }
-        pendingStatistics = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
-    }
 }
 
 /// A view that notifies when it has just been laid out.
@@ -217,14 +154,9 @@ extension DocumentWindowController: NSWindowDelegate {
     /// isolation domains. The window closing is, in any case, the exact
     /// moment the subscription stops having an object.
     func windowWillClose(_ notification: Notification) {
-        if let settingsObserver {
-            NotificationCenter.default.removeObserver(settingsObserver)
-            self.settingsObserver = nil
-        }
         // The palette is a separate window: without this, it would outlive
         // the document it operates on.
         palette.dismiss()
-        pendingStatistics?.cancel()
     }
 }
 
@@ -249,14 +181,6 @@ extension DocumentWindowController: NSMenuItemValidation {
         // action, and the ⌘⌃n shortcut stays readable in the menu.
         guard let item = sender as? NSMenuItem else { return }
         editor.setHeadingLevel(item.tag)
-    }
-
-    @objc func toggleFocusMode(_ sender: Any?) {
-        AppSettings.shared.focusMode.toggle()
-    }
-
-    @objc func toggleTypewriterMode(_ sender: Any?) {
-        AppSettings.shared.typewriterMode.toggle()
     }
 
     @objc func pastePlainText(_ sender: Any?) {
@@ -292,10 +216,6 @@ extension DocumentWindowController: NSMenuItemValidation {
                   detail: key(#selector(toggleSourceMode(_:)), nil)) { [weak self] in
                       self?.editor.toggleSourceMode()
                   },
-            .init(title: AppSettings.shared.focusMode ? "Turn Off Focus Mode" : "Focus Mode",
-                  detail: key(#selector(toggleFocusMode(_:)), nil)) { AppSettings.shared.focusMode.toggle() },
-            .init(title: AppSettings.shared.typewriterMode ? "Turn Off Typewriter Mode" : "Typewriter Mode",
-                  detail: key(#selector(toggleTypewriterMode(_:)), nil)) { AppSettings.shared.typewriterMode.toggle() },
             .init(title: "Bold", detail: key(#selector(toggleBold(_:)), nil)) { [weak self] in
                 self?.editor.wrapSelection(with: "**")
             },
@@ -359,12 +279,6 @@ extension DocumentWindowController: NSMenuItemValidation {
         switch menuItem.action {
         case #selector(toggleSourceMode(_:)):
             menuItem.title = editor.isSourceMode ? "Hide Source" : "Show Source"
-
-        case #selector(toggleFocusMode(_:)):
-            menuItem.state = AppSettings.shared.focusMode ? .on : .off
-
-        case #selector(toggleTypewriterMode(_:)):
-            menuItem.state = AppSettings.shared.typewriterMode ? .on : .off
 
         case #selector(toggleTaskAtCaret(_:)):
             // The item says what it will do, and grays out outside a task

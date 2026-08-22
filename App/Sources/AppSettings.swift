@@ -57,26 +57,6 @@ final class AppSettings {
 
     // MARK: - Editing
 
-    enum FocusUnit: String, CaseIterable, Identifiable {
-        case sentence, paragraph
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .sentence: "Sentence"
-            case .paragraph: "Paragraph"
-            }
-        }
-    }
-
-    var focusMode = false { didSet { store(focusMode, .focusMode); notify() } }
-    var focusUnit: FocusUnit = .sentence { didSet { store(focusUnit.rawValue, .focusUnit); notify() } }
-
-    /// **Disabled by default**: normal scrolling is the default (§4.5).
-    var typewriterMode = false { didSet { store(typewriterMode, .typewriter); notify() } }
-
-    var showStatistics = true { didSet { store(showStatistics, .statistics); notify() } }
-    var sessionWordGoal: Int = 0 { didSet { store(sessionWordGoal, .wordGoal); notify() } }
-
     /// Where the `/` key opens the block insertion menu (§4.5).
     ///
     /// Three states rather than a toggle: "at the start of a line" was the
@@ -124,7 +104,7 @@ final class AppSettings {
 
     private enum Key: String {
         case appearance, bodyFontName, monoFontName, bodySize, lineHeight, columnWidth
-        case colorfulCode, focusMode, focusUnit, typewriter, statistics, wordGoal
+        case colorfulCode
         case shortcuts, automaticPairs, slashMenu, slashMenuScope, assetsFolder
     }
 
@@ -143,11 +123,6 @@ final class AppSettings {
         lineHeightMultiple = read(.lineHeight) as? Double ?? 1.5
         columnWidthInCharacters = read(.columnWidth) as? Int ?? 68
         colorfulCodeBlocks = read(.colorfulCode) as? Bool ?? false
-        focusMode = read(.focusMode) as? Bool ?? false
-        if let raw = read(.focusUnit) as? String, let value = FocusUnit(rawValue: raw) { focusUnit = value }
-        typewriterMode = read(.typewriter) as? Bool ?? false
-        showStatistics = read(.statistics) as? Bool ?? true
-        sessionWordGoal = read(.wordGoal) as? Int ?? 0
         markdownShortcutsWhileTyping = read(.shortcuts) as? Bool ?? true
         automaticPairs = read(.automaticPairs) as? Bool ?? true
         if let raw = read(.slashMenuScope) as? String, let value = SlashMenuScope(rawValue: raw) {

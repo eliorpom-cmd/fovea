@@ -80,11 +80,10 @@ final class MarkdownDocument: NSDocument {
                                                        encoding: sourceEncoding,
                                                        isWritable: isWritable))
 
-        controller.editor.onTextChanged = { [weak self, weak controller] in
+        controller.editor.onTextChanged = { [weak self] in
             // `updateChangeCount` is what lights up the close button's dot
             // and triggers autosave.
             self?.updateChangeCount(.changeDone)
-            controller?.refreshStatistics()
         }
     }
 
