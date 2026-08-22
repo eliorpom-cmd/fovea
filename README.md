@@ -45,11 +45,13 @@ you haven't edited.
 **Reads everything.** Headings, bold, italic, strikethrough, inline code,
 links, blockquotes, bulleted and numbered lists, task lists, horizontal
 rules, code blocks with syntax highlighting for eleven languages, YAML front
-matter, footnotes, inline images, and tables as an aligned grid.
+matter, footnotes, inline images, and tables as an aligned grid. All six
+heading levels render; the menu offers the first three, which are the ones
+that differ in size.
 
 **Writes the simple things.** `⏎` continues a list and exits it on an empty
 item, `⇥`/`⇧⇥` change the level, `⌘B`/`⌘I`/`⌘⇧X`/`⌘⇧K` wrap or remove
-formatting, `⌘⌃0..6` change the heading level, `⌘⌥K` inserts a link from the
+formatting, `⌘⌃0..3` change the heading level, `⌘K` inserts a link from the
 pasteboard. Clicking a checkbox checks it — `⌘⏎` from the keyboard. `(`
 closes itself, and `⇥` steps out of the pair.
 
@@ -57,9 +59,6 @@ closes itself, and `⇥` steps out of the pair.
 horizontal rule — and shows the syntax it writes. Essential when the markers
 are hidden. Attached to a character it does nothing: `https://` and `12/03`
 stay as they are.
-
-**`⌘K` finds anything**: commands and the document's headings in one list,
-filtered by subsequence — "mdf" finds "Show Source".
 
 **`⌥⌘S` shows the raw markdown**, the safety net. And for anything more
 elaborate than the list above — restructuring a table, writing a long
@@ -126,7 +125,7 @@ See [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-262 tests, including the performance budgets, which **fail** if they're
+258 tests, including the performance budgets, which **fail** if they're
 exceeded: 8 ms per keystroke at 10,000 words, 16 ms at 100,000, 500 ms to
 first display. They run in Debug, the least favorable configuration.
 

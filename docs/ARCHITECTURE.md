@@ -283,7 +283,7 @@ breaks, and VoiceOver's cursor starts lying.
 
 What is done, and tested: `Accessibility` is the single entry point for
 system settings; semantic roles never contain syntax; the
-palette and the slash menu carry them properly, where `accessibilityLabel`
+slash menu carries them properly, where `accessibilityLabel`
 actually works; the layout holds from 11 to 32 points.
 
 ## Constraints to keep in mind
