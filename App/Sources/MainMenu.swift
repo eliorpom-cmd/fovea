@@ -195,10 +195,6 @@ enum MainMenu {
         menu.addItem(source)
         menu.addItem(.separator())
 
-        let outline = item("Document Outline", #selector(AppCommands.toggleOutline(_:)), "0")
-        outline.keyEquivalentModifierMask = [.command, .option]
-        menu.addItem(outline)
-
         menu.addItem(item("Command Palette", #selector(AppCommands.showCommandPalette(_:)), "k"))
         menu.addItem(.separator())
 
@@ -314,7 +310,6 @@ enum MainMenu {
     func toggleTaskAtCaret(_ sender: Any?)
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)
-    func toggleOutline(_ sender: Any?)
     func showCommandPalette(_ sender: Any?)
     func toggleFocusMode(_ sender: Any?)
     func toggleTypewriterMode(_ sender: Any?)

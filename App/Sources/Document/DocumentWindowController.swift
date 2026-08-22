@@ -13,10 +13,7 @@ final class DocumentWindowController: NSWindowController {
     /// The §6 states, communicated without interrupting.
     let banner = DocumentBanner()
     private let statusBar = StatusBar()
-    private let outline = OutlinePanel()
     private let palette = CommandPalette()
-    /// Outline width when open. Zero closes it.
-    private var outlineWidth: NSLayoutConstraint!
     /// The inset left for the title bar, and for the tab bar when present.
     /// See `applyTitleBarInset()`.
     private var bannerTop: NSLayoutConstraint!
@@ -53,39 +50,30 @@ final class DocumentWindowController: NSWindowController {
             self?.applyTitleBarInset()
             editor?.applyColumnLayout()
         }
-        content.addSubview(outline)
         content.addSubview(banner)
         content.addSubview(editor.scrollView)
         content.addSubview(statusBar)
         editor.scrollView.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
-        outline.translatesAutoresizingMaskIntoConstraints = false
         banner.translatesAutoresizingMaskIntoConstraints = false
-        outlineWidth = outline.widthAnchor.constraint(equalToConstant: 0)
         bannerTop = banner.topAnchor.constraint(equalTo: content.topAnchor, constant: Theme.Space.s64)
 
         NSLayoutConstraint.activate([
-            outline.topAnchor.constraint(equalTo: content.topAnchor),
-            outline.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            outline.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            outlineWidth,
-
             // The banner sits **above** the column, not over it: it pushes
             // the text down instead of covering it, and gives it back in
             // full once it closes.
             //
-            // The inset matches the outline's, for the same reason: the
-            // title bar is transparent and tabs overlap it. At 40, the
-            // banner passed underneath it: of its 34 points of height, only
-            // the last ten showed, and its message was unreadable at the
-            // exact moment it needed to be read.
+            // The top inset exists because the title bar is transparent and
+            // tabs overlap it. At 40, the banner passed underneath it: of its
+            // 34 points of height, only the last ten showed, and its message
+            // was unreadable at the exact moment it needed to be read.
             bannerTop,
-            banner.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
+            banner.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             banner.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
             editor.scrollView.topAnchor.constraint(equalTo: banner.bottomAnchor),
             editor.scrollView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-            editor.scrollView.leadingAnchor.constraint(equalTo: outline.trailingAnchor),
+            editor.scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor),
             editor.scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor),
 
             // Floating above the text, in the bottom-right corner: it
@@ -97,12 +85,7 @@ final class DocumentWindowController: NSWindowController {
         ])
         window.contentView = content
 
-        editor.onSelectionChanged = { [weak self] in
-            self?.refreshStatistics()
-            self?.refreshOutlineHighlight()
-        }
-        editor.onSpansChanged = { [weak self] in self?.refreshOutline() }
-        outline.onSelect = { [weak self] location in self?.goTo(location) }
+        editor.onSelectionChanged = { [weak self] in self?.refreshStatistics() }
         refreshStatistics()
 
         // The status bar is the only piece of chrome whose visibility is a
@@ -159,8 +142,7 @@ final class DocumentWindowController: NSWindowController {
     /// 64 points was enough for a title bar alone. As soon as a second tab
     /// opens, macOS adds a tab bar on top of it: the first visible line was
     /// then **cut in half** by its bottom edge for the whole scroll. The
-    /// outline already had an inset for exactly this reason, but that one
-    /// was hardcoded too.
+    /// The inset was hardcoded, for exactly this reason.
     ///
     /// `contentLayoutRect` is the only measurement that's accurate: it's
     /// AppKit reporting what it actually took.
@@ -174,7 +156,6 @@ final class DocumentWindowController: NSWindowController {
         let taken = max(Theme.Space.s64, content.bounds.height - window.contentLayoutRect.height)
         guard abs(bannerTop.constant - taken) > 0.5 else { return }
         bannerTop.constant = taken
-        outline.topInset = taken
     }
 
     /// The pending recount. See `refreshStatistics`.
@@ -282,38 +263,7 @@ extension DocumentWindowController: NSMenuItemValidation {
         editor.textView.pastePlainText(sender)
     }
 
-    // MARK: - Outline and palette (§4.5)
-
-    @objc func toggleOutline(_ sender: Any?) {
-        let opening = outlineWidth.constant == 0
-        // The width **before** the fill: `refreshOutline` guards against
-        // acting on a closed panel, and calling it first left it empty.
-        //
-        // **220 points, but never more than a third of the window.** The
-        // width used to be fixed: in a 430-point window (above the allowed
-        // minimum), the outline took up more than half the space and the
-        // text column dropped to about fifteen characters per line. The
-        // outline is there to navigate a document; it shouldn't get in the
-        // way of reading it.
-        let available = window?.frame.width ?? 820
-        outlineWidth.constant = opening ? min(220, max(140, available / 3)) : 0
-        if opening {
-            refreshOutline()
-            refreshOutlineHighlight()
-        }
-
-        // "Reduce motion" is a need, not a preference (§8): the panel still
-        // opens, it just doesn't slide. The setting is read by
-        // `Accessibility`, the sole entry point.
-        Accessibility.animate(0.2) {
-            window?.contentView?.layoutSubtreeIfNeeded()
-        } completion: {
-            // The completion block is called by AppKit with no declared
-            // isolation, but always on the main thread: it's the one
-            // animating.
-            MainActor.assumeIsolated { [weak self] in self?.editor.applyColumnLayout() }
-        }
-    }
+    // MARK: - Palette (§4.5)
 
     @objc func showCommandPalette(_ sender: Any?) {
         // The shortcut that opens also closes: `⌘K` on a palette that was
@@ -342,8 +292,6 @@ extension DocumentWindowController: NSMenuItemValidation {
                   detail: key(#selector(toggleSourceMode(_:)), nil)) { [weak self] in
                       self?.editor.toggleSourceMode()
                   },
-            .init(title: outlineWidth.constant == 0 ? "Document Outline" : "Hide Outline",
-                  detail: key(#selector(toggleOutline(_:)), nil)) { [weak self] in self?.toggleOutline(nil) },
             .init(title: AppSettings.shared.focusMode ? "Turn Off Focus Mode" : "Focus Mode",
                   detail: key(#selector(toggleFocusMode(_:)), nil)) { AppSettings.shared.focusMode.toggle() },
             .init(title: AppSettings.shared.typewriterMode ? "Turn Off Typewriter Mode" : "Typewriter Mode",
@@ -379,15 +327,15 @@ extension DocumentWindowController: NSMenuItemValidation {
         }
 
         let text = editor.textView.textStorage?.mutableString ?? NSMutableString()
-        // The markers only once for all headings, like in the outline:
+        // The markers only once for all headings:
         // recomputing them per heading would be quadratic.
-        let markers = OutlinePanel.inlineMarkers(of: editor.spans)
+        let markers = HeadingText.inlineMarkers(of: editor.spans)
         for span in editor.spans {
             guard case .heading(let level) = span.kind,
                   span.content.upperBound <= text.length else { continue }
-            // The same text as the outline: the document's, not its source.
+            // The text as the document reads it, not as it is written.
             // A heading containing bold text used to list with its asterisks.
-            let title = OutlinePanel.plainText(of: span.content, markers: markers, text: text)
+            let title = HeadingText.plainText(of: span.content, markers: markers, text: text)
             guard !title.isEmpty else { continue }
             entries.append(.init(title: title,
                                  detail: "Heading \(level)") { [weak self] in
@@ -404,21 +352,6 @@ extension DocumentWindowController: NSMenuItemValidation {
         window?.makeFirstResponder(editor.textView)
     }
 
-    private func refreshOutline() {
-        guard outlineWidth?.constant != 0 else { return }
-        outline.update(spans: editor.spans,
-                       text: editor.textView.textStorage?.mutableString ?? NSMutableString())
-        // A reload clears the highlighted line: it's restored here. The
-        // outline already guards itself against reloading for nothing, so
-        // this is free in the common case.
-        refreshOutlineHighlight()
-    }
-
-    private func refreshOutlineHighlight() {
-        guard outlineWidth?.constant != 0 else { return }
-        outline.highlight(caret: editor.textView.selectedRange().location)
-    }
-
     /// `NSWindowController` doesn't inherit validation: without this
     /// conformance, the items would stay grayed out even though the actions
     /// exist. This is also where the checked states get updated.
@@ -432,9 +365,6 @@ extension DocumentWindowController: NSMenuItemValidation {
 
         case #selector(toggleTypewriterMode(_:)):
             menuItem.state = AppSettings.shared.typewriterMode ? .on : .off
-
-        case #selector(toggleOutline(_:)):
-            menuItem.state = outlineWidth?.constant != 0 ? .on : .off
 
         case #selector(toggleTaskAtCaret(_:)):
             // The item says what it will do, and grays out outside a task

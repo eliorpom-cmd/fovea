@@ -4,18 +4,18 @@ import XCTest
 import AppKit
 @testable import Fovea
 
-/// The document outline (§4.5).
+/// The heading titles the command palette lists (§4.5).
 ///
 /// It's a list of headings, so text read over someone's shoulder: it must
 /// read like the document, not like its source.
 @MainActor
-final class OutlinePanelTests: XCTestCase {
+final class HeadingTextTests: XCTestCase {
 
     private func title(of source: String) -> String {
         let spans = MarkdownParser.parse(source).spans
         let heading = spans.first { if case .heading = $0.kind { return true } else { return false } }
         guard let heading else { return "" }
-        return OutlinePanel.plainText(of: heading.content, spans: spans, text: source as NSString)
+        return HeadingText.plainText(of: heading.content, spans: spans, text: source as NSString)
     }
 
     /// The outline used to show the source: a heading's `**` read verbatim
@@ -64,13 +64,13 @@ final class OutlinePanelTests: XCTestCase {
         """
         let text = source as NSString
         let spans = MarkdownParser.parse(source).spans
-        let markers = OutlinePanel.inlineMarkers(of: spans)
+        let markers = HeadingText.inlineMarkers(of: spans)
 
         let headings = spans.filter { if case .heading = $0.kind { return true } else { return false } }
         XCTAssertEqual(headings.count, 3)
         for heading in headings {
-            XCTAssertEqual(OutlinePanel.plainText(of: heading.content, markers: markers, text: text),
-                           OutlinePanel.plainTextByScan(of: heading.content, spans: spans, text: text))
+            XCTAssertEqual(HeadingText.plainText(of: heading.content, markers: markers, text: text),
+                           HeadingText.plainTextByScan(of: heading.content, spans: spans, text: text))
         }
     }
 }
