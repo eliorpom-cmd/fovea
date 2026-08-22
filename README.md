@@ -49,16 +49,11 @@ matter, footnotes, inline images, and tables as an aligned grid. All six
 heading levels render; the menu offers the first three, which are the ones
 that differ in size.
 
-**Writes the simple things.** `⏎` continues a list and exits it on an empty
-item, `⇥`/`⇧⇥` change the level, `⌘B`/`⌘I`/`⌘⇧X`/`⌘⇧K` wrap or remove
+**Writes the simple things.** Type the markers and they fold away as soon as
+the caret leaves. `⏎` continues a list and exits it on an empty item, `⇥`/`⇧⇥` change the level, `⌘B`/`⌘I`/`⌘⇧X`/`⌘⇧K` wrap or remove
 formatting, `⌘⌃0..3` change the heading level, `⌘K` inserts a link from the
 pasteboard. Clicking a checkbox checks it — `⌘⏎` from the keyboard. `(`
 closes itself, and `⇥` steps out of the pair.
-
-**A `/` inserts a block** — heading, list, task, blockquote, code, table,
-horizontal rule — and shows the syntax it writes. Essential when the markers
-are hidden. Attached to a character it does nothing: `https://` and `12/03`
-stay as they are.
 
 **`⌥⌘S` shows the raw markdown**, the safety net. And for anything more
 elaborate than the list above — restructuring a table, writing a long
@@ -77,8 +72,9 @@ Installs as the system's default Markdown editor.
 
 No export, no PDF, no printing, no share sheet. No vault, no tags, no
 backlinks, no plugins. No focus mode, no typewriter mode, no word count. No
-font importing. No editing inside the table grid — the source is right there
-under the caret.
+font importing. No command palette, no insertion menu, no panels of any kind:
+you write markdown, or you press `⌥⌘S` and write it with the syntax showing.
+No editing inside the table grid — the source is right there under the caret.
 
 Each of these existed at some point and was removed. They come back one at a
 time if enough people ask, and not before: the app that opens in two seconds
@@ -125,7 +121,7 @@ See [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-258 tests, including the performance budgets, which **fail** if they're
+222 tests, including the performance budgets, which **fail** if they're
 exceeded: 8 ms per keystroke at 10,000 words, 16 ms at 100,000, 500 ms to
 first display. They run in Debug, the least favorable configuration.
 
