@@ -77,7 +77,7 @@ extension Theme {
         /// **Hovered** row in a list. One notch below selection, so "what I'm
         /// about to click" is distinguishable from "what's chosen".
         static let rowHover = ns(light: (0x787880, 0.10), dark: (0x787880, 0.20))
-        /// **Selected row** in a list — the slash menu, the palette.
+        /// **Selected row** in the slash menu, the app's only list.
         ///
         /// Gray, because `NSTableView` paints its selection in system blue,
         /// which was the only accent color left in the app.

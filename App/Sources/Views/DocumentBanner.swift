@@ -76,7 +76,7 @@ final class DocumentBanner: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("no view comes from a xib") }
 
-    /// Same reason as in the outline: see `applyLayerBackground(_:)`.
+    /// See `applyLayerBackground(_:)` for why this is not set directly.
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyLayerBackground(Theme.NS.fillQuaternary)

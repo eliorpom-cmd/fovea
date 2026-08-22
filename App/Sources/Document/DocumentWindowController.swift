@@ -12,7 +12,6 @@ final class DocumentWindowController: NSWindowController {
     let editor = EditorController()
     /// The §6 states, communicated without interrupting.
     let banner = DocumentBanner()
-    private let palette = CommandPalette()
     /// The inset left for the title bar, and for the tab bar when present.
     /// See `applyTitleBarInset()`.
     private var bannerTop: NSLayoutConstraint!
@@ -36,7 +35,6 @@ final class DocumentWindowController: NSWindowController {
         window.isMovableByWindowBackground = false
 
         self.init(window: window)
-        window.delegate = self
 
         // The text column is centered, so its margin depends on the width
         // available. `windowDidResize` isn't enough: on first display it
@@ -145,21 +143,6 @@ private final class LayoutObservingView: NSView {
     }
 }
 
-// MARK: - NSWindowDelegate
-
-extension DocumentWindowController: NSWindowDelegate {
-
-    /// The settings subscription is released here rather than in `deinit`:
-    /// the latter is `nonisolated`, and an observer token doesn't cross
-    /// isolation domains. The window closing is, in any case, the exact
-    /// moment the subscription stops having an object.
-    func windowWillClose(_ notification: Notification) {
-        // The palette is a separate window: without this, it would outlive
-        // the document it operates on.
-        palette.dismiss()
-    }
-}
-
 // MARK: - Menu bar commands
 
 extension DocumentWindowController: NSMenuItemValidation {
@@ -176,96 +159,14 @@ extension DocumentWindowController: NSMenuItemValidation {
     @objc func toggleTaskAtCaret(_ sender: Any?) { editor.toggleTaskAtCaret() }
 
     @objc func setHeadingLevel(_ sender: Any?) {
-        // The level travels in the menu item's `tag`: six entries, one
-        // action, and the ⌘⌃n shortcut stays readable in the menu.
+        // The level travels in the menu item's `tag`: one action for all of
+        // them, and the ⌘⌃n shortcut stays readable in the menu.
         guard let item = sender as? NSMenuItem else { return }
         editor.setHeadingLevel(item.tag)
     }
 
     @objc func pastePlainText(_ sender: Any?) {
         editor.textView.pastePlainText(sender)
-    }
-
-    // MARK: - Palette (§4.5)
-
-    @objc func showCommandPalette(_ sender: Any?) {
-        // The shortcut that opens also closes: `⌘K` on a palette that was
-        // already showing used to reset it, which looked like a key with no
-        // effect.
-        guard !palette.isVisible else {
-            palette.dismiss()
-            return
-        }
-        palette.present(entries: paletteEntries(), relativeTo: window)
-    }
-
-    /// Commands **and** the document's headings, in the same list.
-    ///
-    /// In a long document, searching for a heading and jumping to it is
-    /// more frequent than any command; separating them would force a choice
-    /// of mode before even knowing what's being searched for.
-    private func paletteEntries() -> [CommandPalette.Entry] {
-        // Shortcuts are **read from the menu bar**, never written here:
-        // macOS remaps them based on the keyboard layout, and the palette
-        // was the only place in the app that displayed them, so the only
-        // place that got them wrong. See `MainMenu.shortcut(for:tag:)`.
-        let key = MainMenu.shortcut
-        var entries: [CommandPalette.Entry] = [
-            .init(title: editor.isSourceMode ? "Hide Source" : "Show Source",
-                  detail: key(#selector(toggleSourceMode(_:)), nil)) { [weak self] in
-                      self?.editor.toggleSourceMode()
-                  },
-            .init(title: "Bold", detail: key(#selector(toggleBold(_:)), nil)) { [weak self] in
-                self?.editor.wrapSelection(with: "**")
-            },
-            .init(title: "Italic", detail: key(#selector(toggleItalic(_:)), nil)) { [weak self] in
-                self?.editor.wrapSelection(with: "*")
-            },
-            .init(title: "Code", detail: key(#selector(toggleInlineCode(_:)), nil)) { [weak self] in
-                self?.editor.wrapSelection(with: "`")
-            },
-            .init(title: "Strikethrough", detail: key(#selector(toggleStrikethrough(_:)), nil)) { [weak self] in
-                self?.editor.wrapSelection(with: "~~")
-            },
-            .init(title: "Link…", detail: key(#selector(insertLink(_:)), nil)) { [weak self] in
-                self?.editor.insertLink()
-            },
-            .init(title: "Settings",
-                  detail: key(#selector(AppDelegate.showSettings(_:)), nil)) {
-                      SettingsWindowController.shared.present()
-                  },
-        ]
-        for level in 1...3 {
-            entries.append(.init(title: "Heading \(level)",
-                                 detail: key(#selector(setHeadingLevel(_:)), level)) { [weak self] in
-                self?.editor.setHeadingLevel(level)
-            })
-        }
-
-        let text = editor.textView.textStorage?.mutableString ?? NSMutableString()
-        // The markers only once for all headings:
-        // recomputing them per heading would be quadratic.
-        let markers = HeadingText.inlineMarkers(of: editor.spans)
-        for span in editor.spans {
-            guard case .heading(let level) = span.kind,
-                  span.content.upperBound <= text.length else { continue }
-            // The text as the document reads it, not as it is written.
-            // A heading containing bold text used to list with its asterisks.
-            let title = HeadingText.plainText(of: span.content, markers: markers, text: text)
-            guard !title.isEmpty else { continue }
-            entries.append(.init(title: title,
-                                 detail: "Heading \(level)") { [weak self] in
-                self?.goTo(span.range.location)
-            })
-        }
-        return entries
-    }
-
-    private func goTo(_ location: Int) {
-        let length = editor.textView.textStorage?.length ?? 0
-        editor.textView.setSelectedRange(NSRange(location: min(location, length), length: 0))
-        editor.textView.scrollRangeToVisible(NSRange(location: min(location, length), length: 0))
-        window?.makeFirstResponder(editor.textView)
     }
 
     /// `NSWindowController` doesn't inherit validation: without this

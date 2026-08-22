@@ -8,7 +8,7 @@ import AppKit
 /// by the text view — lives in `FloatingPanel`. Only the list of blocks and
 /// its filtering remain here.
 ///
-/// The alternative — a panel that takes focus, like `⌘K` — would force
+/// The alternative — a panel that takes focus — would force
 /// removing the `/` from the buffer and putting it back, and the caret would
 /// blink elsewhere while typing. That would be a mode; there is none here.
 @MainActor

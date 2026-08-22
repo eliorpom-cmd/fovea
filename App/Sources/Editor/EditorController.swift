@@ -447,7 +447,7 @@ final class EditorController: NSObject {
         // **The column never exceeds the available space.**
         //
         // The calculation used to set a fixed 240-point floor and a fixed
-        // 24-point margin. At the minimum window size with the outline open,
+        // 24-point margin. At the minimum window size,
         // only 200 points of width remain: the column overflowed, and since
         // the view isn't horizontally resizable, the text was cut off
         // outright.

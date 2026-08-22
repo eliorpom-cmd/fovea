@@ -128,25 +128,29 @@ enum MainMenu {
         inlineCode.keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(inlineCode)
 
-        // `⌘K` is already the command palette (§4.5, decision settled in §12).
-        // The link therefore takes the `⌘⌥K` variant instead of contesting the
-        // key: with two entries on the same shortcut, the first one in menu
-        // order wins, and the loser becomes a shortcut that doesn't work
-        // without anything saying so.
-        let link = item("Link…", #selector(AppCommands.insertLink(_:)), "k")
-        link.keyEquivalentModifierMask = [.command, .option]
-        menu.addItem(link)
+        // **`⌘K`, the shortcut everyone already has in their fingers.** It
+        // belonged to the command palette, which took it because it was the
+        // busier surface; the link made do with `⌘⌥K`. With the palette gone
+        // the key is free, and it goes to the thing every other app binds it
+        // to — Slack, Notion, Bear, every browser's address bar.
+        menu.addItem(item("Link…", #selector(AppCommands.insertLink(_:)), "k"))
 
         let task = item("Toggle Task", #selector(AppCommands.toggleTaskAtCaret(_:)), "\r")
         menu.addItem(task)
         menu.addItem(.separator())
 
-        // ⌘⌃1..6 for heading levels, ⌘⌃0 to go back to Body.
+        // **Three levels offered, six still read.** A file that uses `#####`
+        // renders it, and source mode writes any level by hand. But past the
+        // third, the heading is carried by weight alone — an h5 and an h6 are
+        // the same size as the body text around them — and nobody reaches for
+        // one in a file they opened to fix a line.
+        //
+        // ⌘⌃1..3 for the levels, ⌘⌃0 to go back to Body.
         let paragraph = item("Body", #selector(AppCommands.setHeadingLevel(_:)), "0")
         paragraph.keyEquivalentModifierMask = [.command, .control]
         paragraph.tag = 0
         menu.addItem(paragraph)
-        for level in 1...6 {
+        for level in 1...3 {
             let heading = item("Heading \(level)", #selector(AppCommands.setHeadingLevel(_:)), "\(level)")
             heading.keyEquivalentModifierMask = [.command, .control]
             heading.tag = level
@@ -165,19 +169,15 @@ enum MainMenu {
         // **⌥⌘S, not ⌘/.** The slash isn't in the same place from one
         // keyboard layout to another: on a French keyboard it requires a
         // shift, so macOS remaps the equivalent to `⇧⌘:` — which is what the
-        // menu displayed, while the palette and the README advertised `⌘/`.
-        // And neither combination triggered anything, while `⌘K` went through
-        // the same path: a key equivalent based on punctuation doesn't
-        // survive a layout change.
+        // menu displayed, while the README advertised `⌘/`. Neither
+        // combination triggered anything: a key equivalent based on
+        // punctuation doesn't survive a layout change.
         //
         // A letter, by contrast, is in the same place everywhere. "S" as in
         // source.
         let source = item("Show Source", #selector(AppCommands.toggleSourceMode(_:)), "s")
         source.keyEquivalentModifierMask = [.command, .option]
         menu.addItem(source)
-        menu.addItem(.separator())
-
-        menu.addItem(item("Command Palette", #selector(AppCommands.showCommandPalette(_:)), "k"))
         menu.addItem(.separator())
 
         let fullScreen = item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f")
@@ -211,52 +211,6 @@ enum MainMenu {
         NSMenuItem(title: title, action: action, keyEquivalent: key)
     }
 
-    // MARK: - A command's real shortcut
-
-    /// A command's shortcut **exactly as the menu bar carries it**.
-    ///
-    /// # Why this isn't a hand-written string
-    ///
-    /// The palette used to display its shortcuts hardcoded: `"⌘/"`, `"⌘⌥0"`,
-    /// `"⌘⌃1"`. But macOS remaps key equivalents based on punctuation or a
-    /// digit according to the keyboard layout: on a French keyboard, the same
-    /// command shows up as `⇧⌘:` or `⌥⌘à`. The palette was therefore the only
-    /// place in the app that displays shortcuts, and the only one that got it
-    /// wrong.
-    ///
-    /// A single place decides now, and it's the one that triggers them.
-    static func shortcut(for action: Selector, tag: Int? = nil) -> String {
-        guard let item = item(for: action, tag: tag, in: NSApp.mainMenu) else { return "" }
-        guard !item.keyEquivalent.isEmpty else { return "" }
-
-        // The order follows the interface guidelines: control, option, shift,
-        // command. Reading it any other way stands out immediately.
-        var result = ""
-        let flags = item.keyEquivalentModifierMask
-        if flags.contains(.control) { result += "⌃" }
-        if flags.contains(.option) { result += "⌥" }
-        if flags.contains(.shift) { result += "⇧" }
-        if flags.contains(.command) { result += "⌘" }
-
-        switch item.keyEquivalent {
-        case "\r": result += "⏎"
-        case "\t": result += "⇥"
-        case "\u{8}": result += "⌫"
-        case "\u{1b}": result += "⎋"
-        default: result += item.keyEquivalent.uppercased()
-        }
-        return result
-    }
-
-    private static func item(for action: Selector, tag: Int?, in menu: NSMenu?) -> NSMenuItem? {
-        guard let menu else { return nil }
-        for entry in menu.items {
-            if entry.action == action, tag == nil || entry.tag == tag { return entry }
-            if let found = item(for: action, tag: tag, in: entry.submenu) { return found }
-        }
-        return nil
-    }
-
     private static func finder(_ title: String, tag: Int, key: String,
                                modifiers: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
         let menuItem = NSMenuItem(title: title,
@@ -287,5 +241,4 @@ enum MainMenu {
     func toggleTaskAtCaret(_ sender: Any?)
     func setHeadingLevel(_ sender: Any?)
     func toggleSourceMode(_ sender: Any?)
-    func showCommandPalette(_ sender: Any?)
 }

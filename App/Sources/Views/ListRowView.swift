@@ -8,8 +8,8 @@ import AppKit
 ///
 /// `NSTableView` paints its selection with the system's accent color, that
 /// is, blue. It was the last accent color left in the app, in the three
-/// lists the user sees the most: the slash menu, the command palette and
-/// the document outline. §7 only allows it on the user's own content — their
+/// list the user sees: the slash menu.
+/// §7 only allows colour on the user's own content — their
 /// images, their code blocks colored on request — and `Theme` already
 /// claimed to neutralize the system selection without any list actually
 /// applying it.
@@ -35,7 +35,7 @@ final class ListRowView: NSTableRowView {
 
     /// Hover feedback, which was missing everywhere.
     ///
-    /// The app's three lists — slash menu, palette, outline — did not react
+    /// The app's lists did not react
     /// to the pointer passing over them: there was no way to know what would
     /// be clicked before clicking it. `Theme.rowHover` existed, documented,
     /// and was used nowhere.

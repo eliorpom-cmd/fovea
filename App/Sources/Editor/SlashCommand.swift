@@ -76,16 +76,14 @@ extension SlashCommand {
 
     /// The entries that match what was typed after the `/`.
     ///
-    /// The score is the same as the `⌘K` palette: same gesture, same rule.
-    /// Typing `/tb` should find "Table", just as `⌘K` finds "Focus Mode" with
-    /// `mdf` — two different filtering mechanisms in the same app would be
-    /// two things to learn instead of one.
+    /// Typing `/tb` should find "Table", and `/hr` "Horizontal Rule": the
+    /// letters in order, not the exact word. See `SubsequenceMatch`.
     static func matching(_ query: String) -> [SlashCommand] {
         guard !query.isEmpty else { return allCases }
         return allCases
             .compactMap { command -> (SlashCommand, Int)? in
                 let candidates = [command.title] + command.keywords
-                guard let best = candidates.compactMap({ CommandPalette.score($0, query: query) }).max() else {
+                guard let best = candidates.compactMap({ SubsequenceMatch.score($0, query: query) }).max() else {
                     return nil
                 }
                 return (command, best)

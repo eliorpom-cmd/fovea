@@ -3,12 +3,12 @@
 import XCTest
 @testable import Fovea
 
-/// The palette's filtering (§4.5).
+/// The slash menu's filtering (§4.5).
 ///
 /// It's an approximate search: a few letters typed in order, not the exact
 /// title. What matters is that it finds what's being aimed at without
 /// requiring it to be spelled correctly.
-final class CommandPaletteTests: XCTestCase {
+final class SubsequenceMatchTests: XCTestCase {
 
     /// **Accents must not be a barrier to entry.**
     ///
@@ -16,35 +16,35 @@ final class CommandPaletteTests: XCTestCase {
     /// whose titles are accented as often as not, it required typing the
     /// exact accent — that is, already knowing what was being searched for.
     func testAccentsAreNotRequiredToFindATitle() {
-        XCTAssertNotNil(CommandPalette.score("Order a café", query: "cafe"))
-        XCTAssertNotNil(CommandPalette.score("Write my résumé", query: "resume"))
-        XCTAssertNotNil(CommandPalette.score("Stay naïve", query: "naive"))
-        XCTAssertNotNil(CommandPalette.score("Meet Zoë", query: "zoe"))
+        XCTAssertNotNil(SubsequenceMatch.score("Order a café", query: "cafe"))
+        XCTAssertNotNil(SubsequenceMatch.score("Write my résumé", query: "resume"))
+        XCTAssertNotNil(SubsequenceMatch.score("Stay naïve", query: "naive"))
+        XCTAssertNotNil(SubsequenceMatch.score("Meet Zoë", query: "zoe"))
     }
 
     /// And the reverse: typing the accent must still work.
     func testTypingTheAccentStillWorks() {
-        XCTAssertNotNil(CommandPalette.score("Order a café", query: "café"))
-        XCTAssertNotNil(CommandPalette.score("Meet Zoë", query: "Zoë"))
+        XCTAssertNotNil(SubsequenceMatch.score("Order a café", query: "café"))
+        XCTAssertNotNil(SubsequenceMatch.score("Meet Zoë", query: "Zoë"))
     }
 
     func testTheCaseIsStillIgnored() {
-        XCTAssertNotNil(CommandPalette.score("Focus Mode", query: "FOCUS"))
-        XCTAssertNotNil(CommandPalette.score("Focus Mode", query: "focus"))
+        XCTAssertNotNil(SubsequenceMatch.score("Code Block", query: "CODE"))
+        XCTAssertNotNil(SubsequenceMatch.score("Code Block", query: "code"))
     }
 
     /// What doesn't match must not start matching: folding accents must not
     /// make everything equivalent.
     func testWhatDoesNotMatchStillDoesNot() {
-        XCTAssertNil(CommandPalette.score("Focus Mode", query: "zzz"))
-        XCTAssertNil(CommandPalette.score("Résumé", query: "table"))
+        XCTAssertNil(SubsequenceMatch.score("Code Block", query: "zzz"))
+        XCTAssertNil(SubsequenceMatch.score("Résumé", query: "table"))
     }
 
     /// A word start is worth more than a letter in the middle: it's what
     /// puts "Print Document" ahead when typing "pd".
     func testAWordStartScoresHigherThanAMiddleLetter() throws {
-        let atStart = try XCTUnwrap(CommandPalette.score("Print Document", query: "pd"))
-        let inMiddle = try XCTUnwrap(CommandPalette.score("Ападpd", query: "pd"))
+        let atStart = try XCTUnwrap(SubsequenceMatch.score("Print Document", query: "pd"))
+        let inMiddle = try XCTUnwrap(SubsequenceMatch.score("Ападpd", query: "pd"))
         XCTAssertGreaterThan(atStart, inMiddle)
     }
 }
