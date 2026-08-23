@@ -301,7 +301,10 @@ interface carries them, where `accessibilityLabel` actually works; the layout ho
   and will raise a loud error if either flag ever gets turned on.
 - **Not sandboxed** (§10): reading images relative to the document requires
   it.
-- **arm64 only.**
+- **arm64 only**, and now enforced: `ARCHS` was `arm64 x86_64` while this
+  line claimed otherwise, and half of a 4.8 MB download served Intel Macs.
+  With dead-code stripping and the symbol table removed from the installed
+  product, the bundle is 1.7 MB.
 
 ## A testing pitfall
 

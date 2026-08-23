@@ -92,6 +92,12 @@ spec.
 Also missing: **notarization**, which requires a paid developer account, and
 a **built-in updater**.
 
+## Weight
+
+1.7 MB on disk, one process, about 30 MB of memory with a document open, and
+355 ms from double-click to a window on an M1 Pro — where TextEdit takes 400 ms
+opening the same file. Apple silicon only.
+
 ## Install
 
 ```bash
@@ -122,7 +128,7 @@ See [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-222 tests, including the performance budgets, which **fail** if they're
+223 tests, including the performance budgets, which **fail** if they're
 exceeded: 8 ms per keystroke at 10,000 words, 16 ms at 100,000, 500 ms to
 first display. They run in Debug, the least favorable configuration.
 

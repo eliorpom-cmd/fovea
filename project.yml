@@ -61,6 +61,32 @@ targets:
         # Developer ID exists (§10 of the spec).
         ENABLE_HARDENED_RUNTIME: NO
         MACOSX_DEPLOYMENT_TARGET: "15.0"
+
+        # **Apple silicon only.**
+        #
+        # The build was universal, and half of a 4.8 MB download served Intel
+        # Macs — while `docs/ARCHITECTURE.md` had claimed arm64 for as long as
+        # it has existed. The claim is now true. An app whose argument is that
+        # it weighs nothing should not carry a second architecture it does not
+        # target.
+        ARCHS: arm64
+        ONLY_ACTIVE_ARCH: NO
+
+        # **What ships is stripped.**
+        #
+        # These three are off by default and there is no reason for it here:
+        # dead code stripping drops what nothing reaches, and the symbol table
+        # is a debugging aid that the released binary has no use for. Together
+        # they take the binary from 2.33 MB to 1.44 MB, on top of the 51 % the
+        # architecture just saved. Debug builds are untouched — the settings
+        # only apply to the installed product.
+        DEAD_CODE_STRIPPING: YES
+        DEPLOYMENT_POSTPROCESSING: YES
+        STRIP_INSTALLED_PRODUCT: YES
+        # `debugging`, not `all`: `all` removes symbols the dynamic linker and
+        # the signature still need, and the build fails outright.
+        STRIP_STYLE: debugging
+
         # Zero warnings tolerated. Set on the TARGET, not the project: at the
         # project level, the flag would also reach the SwiftPM dependencies,
         # which compile with -suppress-warnings, and the two together would

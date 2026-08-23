@@ -202,6 +202,38 @@ final class TableRenderingTests: XCTestCase {
 
     // MARK: - When there is no grid (§6)
 
+    /// **A table the parser refuses shows every character it is made of.**
+    ///
+    /// A mistyped delimiter, a missing one, a row with the wrong number of
+    /// cells: cmark does not see a table, so no span is produced and no grid
+    /// is drawn. What must never happen is the app hiding something anyway —
+    /// a `|` masked to zero width in a block it decided not to render would
+    /// leave the author looking at text with holes in it and no way to tell.
+    ///
+    /// §6: no grid is drawn, the source stays displayed as is, and intent is
+    /// never guessed at. This test is the "as is" half.
+    func testAMalformedTableHidesNothing() throws {
+        let malformed = [
+            "| a | b |\n|---|--x--|\n| 1 | 2 |",     // a letter in the delimiter
+            "| a | b |\n| 1 | 2 |",                   // no delimiter row
+            "| a | b | c |\n|---|---|\n| 1 |",       // ragged column counts
+            "|a|b|\n|--|\n|1|2|",                    // delimiter too short
+        ]
+        for source in malformed {
+            // A paragraph first, so the caret sits outside: inside the block
+            // everything reveals anyway and the test would prove nothing.
+            let whole = "Some text.\n\n" + source
+            let storage = try XCTUnwrap(render(whole, caret: 0).textStorage)
+            let text = storage.mutableString
+
+            for offset in 0..<text.length where text.character(at: offset) == UInt16(UnicodeScalar("|").value) {
+                XCTAssertFalse(MarkerMask.isMasked(storage, at: offset),
+                               "A `|` was hidden in a block that renders no grid: \(source)")
+            }
+            XCTAssertEqual(text as String, whole, "The buffer must still hold the source verbatim")
+        }
+    }
+
     func testAMalformedTableKeepsItsSourceIntact() throws {
         // No grid, no masking: intent is never guessed.
         let source = "| a | b |\n| x | y |\n| 1 | 2 |"
