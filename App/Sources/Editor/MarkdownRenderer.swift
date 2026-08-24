@@ -79,6 +79,106 @@ struct MarkdownRenderer {
         for index in ordered where isTable(spans[index]) {
             applyTable(storage, span: spans[index], revealed: revealed.contains(index))
         }
+
+        applyRawTableLines(storage, spans: spans, in: range)
+    }
+
+    /// Lines that were meant to be a table and are not one, in the fixed-pitch
+    /// font.
+    ///
+    /// # Why the renderer and not the parser
+    ///
+    /// A mistyped delimiter, a missing one, a row with the wrong number of
+    /// cells: cmark sees no table, so there is no span to style. §6 says the
+    /// source then stays displayed as is, and it does — every `|` is on
+    /// screen. But it was displayed in the **body** font, where nothing lines
+    /// up under anything, so the one thing a reader wants from a broken table
+    /// — seeing which cell went wrong — was the thing hardest to do.
+    ///
+    /// This does not guess that the block *is* a table, which §6 forbids and
+    /// which would mean re-implementing the parser's job. It notices something
+    /// weaker and certain: **two or more lines in a row that open with `|`**.
+    /// That is not prose. Whatever it is, it is read in columns.
+    ///
+    /// Detection reads the whole buffer, application stays inside the render
+    /// scope: a run that starts above the edited scope is still recognised,
+    /// and only the lines being re-rendered are touched.
+    private func applyRawTableLines(_ storage: NSTextStorage, spans: [SyntaxSpan], in range: NSRange) {
+        let text = storage.mutableString
+        guard text.length > 0 else { return }
+
+        // Anything cmark did claim belongs to somebody else: a real table has
+        // its grid, a code block its own face, and a fence full of pipes is
+        // code.
+        let claimed = spans.compactMap { span -> NSRange? in
+            switch span.kind {
+            case .table, .codeBlock, .frontMatter: span.range
+            default: nil
+            }
+        }
+        func isRawLine(_ line: NSRange) -> Bool {
+            opensWithPipe(text, line)
+                && !claimed.contains { NSIntersectionRange($0, line).length > 0 }
+        }
+
+        // Back up to the first line of the run the scope starts inside, so a
+        // run beginning above the edited region is still recognised as one.
+        var first = text.lineRange(for: NSRange(location: min(range.location, text.length - 1), length: 0))
+        while first.location > 0 {
+            let previous = text.lineRange(for: NSRange(location: first.location - 1, length: 0))
+            guard previous.location < first.location, isRawLine(previous) else { break }
+            first = previous
+        }
+
+        // A single line that happens to open with `|` is a sentence, not a
+        // table, so a run is only styled once its second line is known.
+        var run: [NSRange] = []
+        func flush() {
+            defer { run.removeAll(keepingCapacity: true) }
+            guard run.count >= 2 else { return }
+            for line in run where EditorController.touches(line, range) {
+                storage.addAttribute(.font, value: typography.codeBlock, range: line)
+            }
+        }
+
+        var cursor = first.location
+        while cursor < text.length {
+            let line = text.lineRange(for: NSRange(location: cursor, length: 0))
+            guard line.length > 0 else { break }
+
+            if isRawLine(line) {
+                run.append(line)
+            } else {
+                flush()
+                // Past the scope and not inside a run: nothing further can
+                // touch the range being rendered.
+                if line.location > range.upperBound { return }
+            }
+
+            // **The loop advances or it stops.** `lineRange(for:)` on the last
+            // line of a buffer with no trailing newline answers with that same
+            // line, so a cursor set from `upperBound` alone never moves and the
+            // render never returns. Found by a test that hung rather than
+            // failed, which is the expensive way to find it.
+            guard line.upperBound > cursor else { break }
+            cursor = line.upperBound
+        }
+        flush()
+    }
+
+    /// Is the first thing on this line a `|`, after at most three spaces?
+    ///
+    /// Three, because that is markdown's own tolerance before a construct
+    /// becomes indented code.
+    private func opensWithPipe(_ text: NSString, _ line: NSRange) -> Bool {
+        var offset = line.location
+        var spaces = 0
+        while offset < line.upperBound, spaces < 4 {
+            let unit = text.character(at: offset)
+            if unit == 32 || unit == 9 { spaces += 1; offset += 1; continue }
+            return unit == UInt16(UnicodeScalar("|").value)
+        }
+        return false
     }
 
     func isTable(_ span: SyntaxSpan) -> Bool {
@@ -253,7 +353,7 @@ struct MarkdownRenderer {
         // construct reveals itself when touched, and a table is a construct
         // like any other.
         guard !revealed else {
-            showTableSource(storage, table: table, font: typography.body)
+            showTableSource(storage, table: table)
             return
         }
 
@@ -262,7 +362,7 @@ struct MarkdownRenderer {
         // wrap line by line, and a wrapped grid can't be read at all.
         guard let layout = TableLayout.measure(table, in: storage, typography: typography,
                                                available: gridWidth) else {
-            showTableSource(storage, table: table, font: typography.body)
+            showTableSource(storage, table: table)
             return
         }
         layOutTable(storage, table: table, layout: layout)
@@ -271,9 +371,23 @@ struct MarkdownRenderer {
     /// The table as written: `|` characters and whitespace visible, delimiter
     /// row at its normal height. This is the state under the caret, and
     /// the state of a table too wide for the column.
-    private func showTableSource(_ storage: NSTextStorage, table: MarkdownTable, font: NSFont) {
+    ///
+    /// **In the fixed-pitch font**, like `⌥⌘S`. The pipes were revealed in the
+    /// body font, where they do not line up under each other: a grid the app
+    /// gave up on came back as ragged text, which is harder to read than the
+    /// source the author actually typed. A monospaced face restores the
+    /// alignment they wrote it with, and says the same thing source mode says.
+    private func showTableSource(_ storage: NSTextStorage, table: MarkdownTable) {
+        let whole = NSRange(location: table.rows.first?.line.location ?? table.delimiter.location,
+                            length: 0)
+        let end = max(table.delimiter.upperBound, table.rows.last?.line.upperBound ?? 0)
+        let block = NSRange(location: whole.location, length: max(0, end - whole.location))
+        if block.length > 0, block.upperBound <= storage.length {
+            storage.addAttribute(.font, value: typography.codeBlock, range: block)
+        }
+
         for marker in table.markerRanges where marker.upperBound <= storage.length {
-            MarkerMask.reveal(in: storage, range: marker, font: font)
+            MarkerMask.reveal(in: storage, range: marker, font: typography.codeBlock)
         }
         // Line wrapping is **restored**: the pipe-delimited source is wider
         // than the grid it replaces, and clipping it would hide from the author

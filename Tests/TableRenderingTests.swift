@@ -234,6 +234,44 @@ final class TableRenderingTests: XCTestCase {
         }
     }
 
+    /// **A table that draws no grid is shown in the fixed-pitch font.**
+    ///
+    /// Whether cmark refused it or it was too wide for the column, the source
+    /// is what ends up on screen — and in the body font the pipes do not line
+    /// up under each other, so the one thing worth seeing in a broken table,
+    /// which cell went wrong, is the hardest thing to see. Monospaced is what
+    /// `⌥⌘S` does, and it means the same thing here.
+    func testATableWithNoGridIsMonospaced() throws {
+        let lead = "Some text.\n\n"
+        let mono = EditorTypography.default.codeBlock.fontName
+        let body = EditorTypography.default.body.fontName
+
+        let asSource = [
+            lead + "| a | b |\n|---|--x--|\n| 1 | 2 |",                       // cmark sees no table
+            lead + "| a | b |\n| 1 | 2 |",                                     // no delimiter row
+            lead + "| " + String(repeating: "wide content here ", count: 12)
+                 + " | b |\n|---|---|\n| 1 | 2 |",                            // too wide for the column
+        ]
+        for source in asSource {
+            let storage = try XCTUnwrap(render(source, caret: 0).textStorage)
+            let pipe = (source as NSString).range(of: "|").location
+            let font = storage.attribute(.font, at: pipe, effectiveRange: nil) as? NSFont
+            XCTAssertEqual(font?.fontName, mono, "A table shown as source must be monospaced")
+        }
+
+        // And the two things that must NOT be caught by it.
+        let grid = try XCTUnwrap(render(lead + "| a | b |\n|---|---|\n| 1 | 2 |", caret: 0).textStorage)
+        let gridPipe = (lead + "|") .count - 1
+        XCTAssertEqual((grid.attribute(.font, at: gridPipe, effectiveRange: nil) as? NSFont)?.fontName,
+                       body, "A real grid keeps the body font")
+
+        let prose = lead + "a | b is not a table\n\nmore text"
+        let proseStorage = try XCTUnwrap(render(prose, caret: 0).textStorage)
+        let prosePipe = (prose as NSString).range(of: "|").location
+        XCTAssertEqual((proseStorage.attribute(.font, at: prosePipe, effectiveRange: nil) as? NSFont)?.fontName,
+                       body, "One pipe in a sentence is a sentence")
+    }
+
     func testAMalformedTableKeepsItsSourceIntact() throws {
         // No grid, no masking: intent is never guessed.
         let source = "| a | b |\n| x | y |\n| 1 | 2 |"

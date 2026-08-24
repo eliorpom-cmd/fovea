@@ -75,7 +75,9 @@ No export, no PDF, no printing, no share sheet. No vault, no tags, no
 backlinks, no plugins. No focus mode, no typewriter mode, no word count. No
 font importing. No command palette, no insertion menu, no panels of any kind:
 you write markdown, or you press `⌥⌘S` and write it with the syntax showing.
-No editing inside the table grid — the source is right there under the caret.
+No editing inside the table grid — the source is right there under the caret,
+and a table the parser refuses is shown in the fixed-pitch font so its columns
+still line up.
 
 Each of these existed at some point and was removed. They come back one at a
 time if enough people ask, and not before: the app that opens in two seconds
@@ -128,7 +130,7 @@ See [docs/BUILDING.md](docs/BUILDING.md).
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-223 tests, including the performance budgets, which **fail** if they're
+224 tests, including the performance budgets, which **fail** if they're
 exceeded: 8 ms per keystroke at 10,000 words, 16 ms at 100,000, 500 ms to
 first display. They run in Debug, the least favorable configuration.
 
