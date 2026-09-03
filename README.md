@@ -146,7 +146,7 @@ the Fovea menu.
 | --- | --- |
 | **macOS** | 15 Sequoia or later |
 | **Chip** | Apple Silicon (arm64) — no Intel build |
-| **Disk** | 2.9 MB |
+| **Disk** | 1.9 MB |
 | **Memory** | ~30 MB with a document open |
 | **Network** | None. Ever. |
 | **Account** | None. Ever. |
@@ -211,6 +211,7 @@ the result on a `git diff`.
 | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) | The rules the code answers to. The `§n` references throughout the sources point here |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Why the code is built this way, and the dead ends avoided |
 | [docs/BUILDING.md](docs/BUILDING.md) | Building, testing, signing, troubleshooting |
+| [design/README.md](design/README.md) | The icon: its Icon Composer source, and why a rendered `.icns` ships instead |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | The scope policy, and how to propose a change |
 | [SECURITY.md](SECURITY.md) | Reporting a vulnerability |
 | [CHANGELOG.md](CHANGELOG.md) | Notable changes per version |

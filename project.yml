@@ -43,9 +43,9 @@ targets:
     platform: macOS
     sources:
       - path: App/Sources
-      # The icon. `Fovea.icon` is an Icon Composer document; actool compiles
-      # it and Info.plist points at it by name. Without this path it wouldn't
-      # reach the bundle and the Finder would show the generic icon.
+      # The icon, rendered from design/Fovea.icon. Without this path the
+      # .icns wouldn't be copied into the bundle and the Finder would show
+      # the generic icon.
       - path: App/Resources
     dependencies:
       - package: Markdown
@@ -54,7 +54,6 @@ targets:
         PRODUCT_NAME: Fovea
         PRODUCT_BUNDLE_IDENTIFIER: com.byelior.fovea
         INFOPLIST_FILE: App/Info.plist
-        ASSETCATALOG_COMPILER_APPICON_NAME: Fovea
         CODE_SIGN_ENTITLEMENTS: App/Fovea.entitlements
         GENERATE_INFOPLIST_FILE: NO
         # Hardened runtime OFF: only required for Apple notarization, which

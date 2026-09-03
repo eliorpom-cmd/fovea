@@ -14,12 +14,14 @@
 	<string>Fovea</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<!-- CFBundleIconName, resolved by actool from App/Resources/Fovea.icon.
-	     That file is an Icon Composer document: JSON plus four SVGs, all of
-	     it readable in a diff, which is why it replaced the .icns the repo
-	     used to carry. -->
-	<key>CFBundleIconName</key>
-	<string>Fovea</string>
+	<!-- CFBundleIconFile, not CFBundleIconName: the latter needs a compiled
+	     asset catalogue, and compiling design/Fovea.icon into one cost 1.5 MB
+	     against the 434 KB of this .icns — on an app whose whole argument is
+	     that it weighs nothing. The .icns is rendered from that same Icon
+	     Composer document, so it keeps the Liquid Glass treatment; what it
+	     gives up is switching appearance at runtime. See design/README.md. -->
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
