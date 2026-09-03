@@ -57,6 +57,11 @@ removals are the design, not an accident — see the scope policy in
   through a document no longer makes every heading and list item flash.
 - The build is Apple silicon only, dead-code stripped and symbol stripped:
   5.0 MB became 1.7 MB.
+- The app icon is an **Icon Composer document** (`App/Resources/Fovea.icon`),
+  so it adapts to the light, dark and tinted appearances and gets the macOS 26
+  Liquid Glass treatment. It replaces the hand-drawn `.icns` and the two
+  scripts that produced it. The cost is honest: the compiled asset catalogue
+  is 1.5 MB, which takes the app from 1.7 MB to **2.9 MB**.
 - Licensed under the GNU GPL v3 or later (previously AGPL v3).
 
 ### Known limitations

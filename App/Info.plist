@@ -14,12 +14,12 @@
 	<string>Fovea</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
-	<!-- CFBundleIconFile, not CFBundleIconName: the latter expects an asset
-	     catalog, while Fovea's icon is a .icns produced by scripts/icon.sh —
-	     code readable in a diff rather than an opaque binary checked into
-	     the repository. -->
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<!-- CFBundleIconName, resolved by actool from App/Resources/Fovea.icon.
+	     That file is an Icon Composer document: JSON plus four SVGs, all of
+	     it readable in a diff, which is why it replaced the .icns the repo
+	     used to carry. -->
+	<key>CFBundleIconName</key>
+	<string>Fovea</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
