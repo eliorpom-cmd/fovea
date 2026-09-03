@@ -1,10 +1,9 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import AppKit
 
 /// Design system: monochrome, no accent color, neutral gray undertone.
-/// Hierarchy comes from weight, size and space, never from hue (§7 of the
-/// spec).
+/// Hierarchy comes from weight, size and space, never from hue (§7).
 ///
 /// Two rules specific to Fovea:
 ///

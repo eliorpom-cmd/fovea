@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the scope policy first
+    url: https://github.com/eliorpom-cmd/fovea/blob/main/CONTRIBUTING.md
+    about: >-
+      Export, the command palette, the outline, focus mode, editable tables
+      and the settings window all shipped and were all removed on purpose.
+      Please read why before asking for one of them back.
+  - name: Security vulnerability
+    url: https://github.com/eliorpom-cmd/fovea/security/advisories/new
+    about: Report privately, never as a public issue. See SECURITY.md.
+  - name: Question or idea
+    url: https://github.com/eliorpom-cmd/fovea/discussions
+    about: Anything that isn't a defect report or a concrete request.

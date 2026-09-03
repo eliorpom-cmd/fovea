@@ -1,0 +1,55 @@
+name: Feature request
+description: Ask for something the app doesn't do
+labels: ["feature", "needs-scope-decision"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read the scope policy in
+        [CONTRIBUTING.md](https://github.com/eliorpom-cmd/fovea/blob/main/CONTRIBUTING.md)
+        before filling this in.
+
+        Export, PDF, printing, the command palette, the slash menu, the
+        document outline, focus mode, typewriter mode, the word count, font
+        importing, editable tables, coloured code and the settings window
+        **all shipped at some point and were all removed**. Asking for one of
+        them back is allowed — the README says they return one at a time if
+        enough people ask — but the answer starts at no, and the case has to
+        be made.
+
+        **Do not open a pull request for a feature before this issue has an
+        answer.** It will most likely be declined, and that wastes your
+        afternoon, not mine.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        What are you trying to do that you currently can't? Describe the
+        situation, not the feature — the solution you have in mind may not be
+        the one that fits.
+    validations:
+      required: true
+
+  - type: textarea
+    id: forty-seconds
+    attributes:
+      label: How it fits the forty seconds
+      description: >-
+        Fovea is the tool you reach for between a double-click in the Finder
+        and closing the window again. How does this earn its place in that
+        window of time, given that everything in the app has to load before
+        the caret appears?
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What you do instead today
+      description: >-
+        Including whether `⌥⌘S` (source mode) already solves it. It is the
+        answer to a surprising number of these.
+    validations:
+      required: true

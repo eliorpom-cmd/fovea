@@ -1,10 +1,10 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import Foundation
 
 /// Reading and writing the text file, without AppKit, so it's testable.
 ///
-/// This type carries the promise of §5 of the spec: **what the user hasn't
+/// This type carries the promise of §5: **what the user hasn't
 /// touched comes back out byte for byte**. Nothing here normalizes, trims
 /// or reformats anything.
 enum TextFile {

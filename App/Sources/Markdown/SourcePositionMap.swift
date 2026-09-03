@@ -1,5 +1,5 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import Foundation
 
 /// Converts `swift-markdown` positions to `NSTextStorage` offsets.
@@ -15,7 +15,7 @@ import Foundation
 ///
 /// A naive conversion, treating the column as a character index, misaligns
 /// every attribute at the first accented letter. In French text, that means
-/// right away. §3.3 of the spec had flagged this as non-negotiable; this is
+/// right away. §3.3 flags this as non-negotiable; this is
 /// where that promise is kept, and `SourcePositionMapTests` verifies it
 /// against accented text, emoji and CJK.
 ///

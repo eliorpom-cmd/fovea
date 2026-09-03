@@ -1,5 +1,5 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import Foundation
 
 /// Where a document was last being read: **the first character on screen**.

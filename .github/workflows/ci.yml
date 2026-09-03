@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Build and test
+    # macOS 15 is the deployment target, and the runner is Apple silicon —
+    # the app is arm64 only.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+          uname -m
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Fovea.xcodeproj is generated and git-ignored: project.yml is the
+      # source of truth.
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # Debug, deliberately: @testable import needs ENABLE_TESTABILITY, and
+      # the performance budgets are pessimistic in this configuration —
+      # holding them here guarantees they hold in Release.
+      - name: Test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Fovea.xcodeproj \
+            -scheme Fovea \
+            -destination 'platform=macOS' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build Release
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Fovea.xcodeproj \
+            -scheme Fovea \
+            -configuration Release \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+
+  conventions:
+    name: Repository conventions
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every source file carries the licence header. Documented in
+      # CONTRIBUTING.md; checked here so it stays true.
+      - name: Licence headers
+        run: |
+          missing=0
+          while IFS= read -r f; do
+            if ! head -4 "$f" | grep -q 'GNU GPL v3 or later'; then
+              echo "::error file=$f::missing licence header"
+              missing=1
+            fi
+          done < <(git ls-files '*.swift' '*.sh')
+          exit $missing
+
+      # Comments are in English. Accented characters are legitimate in test
+      # fixtures, so only the sources are scanned.
+      - name: No stray French in the sources
+        run: |
+          if git ls-files 'App/Sources/*.swift' | xargs grep -nEiw \
+            "(le|la|les|des|une|est|sont|dans|pour|avec|sans|mais|donc|qui|nous|vous|cette|fichier|ligne|texte|police|couleur|taille|fenêtre|réglages|toujours|jamais|chaque|être|avoir)" ; then
+            echo "::error::French found in App/Sources — comments are English only"
+            exit 1
+          fi
+
+      # The §n references throughout the code point at docs/PRINCIPLES.md.
+      # A reference to a section that does not exist is a dead link.
+      - name: Section references resolve
+        run: |
+          missing=0
+          for ref in $(git ls-files | grep -v '\.icns$' | xargs grep -ho '§[0-9]\+\(\.[0-9]\+\)\?' | sort -u | tr -d '§'); do
+            if ! grep -qE "^#{2,3} ${ref}[. ]" docs/PRINCIPLES.md; then
+              echo "::error::§${ref} is referenced but absent from docs/PRINCIPLES.md"
+              missing=1
+            fi
+          done
+          exit $missing

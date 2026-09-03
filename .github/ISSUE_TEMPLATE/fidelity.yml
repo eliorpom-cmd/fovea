@@ -1,0 +1,55 @@
+name: File fidelity failure
+description: A file came back changed after being opened and saved
+labels: ["fidelity", "bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This is the most serious class of bug Fovea has.** The app promises
+        that whatever you haven't touched comes back byte for byte. If a
+        `git diff` shows something you didn't type, that promise is broken
+        and the report goes to the front of the queue.
+
+  - type: textarea
+    id: diff
+    attributes:
+      label: The diff
+      description: >-
+        `git diff` after opening the file and saving it without typing
+        anything.
+      render: diff
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: The input file
+      description: >-
+        The smallest excerpt that still reproduces it. **Attach the file**
+        rather than pasting it — pasting loses the line endings and the
+        trailing spaces, which are often the whole story. Drag it into this
+        box.
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.4"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: >-
+            I opened the file, saved it without typing, and the diff above is
+            what came out.
+          required: true
+        - label: >-
+            I checked `⌥⌘S` (source mode) to confirm this is the file
+            changing, not just the rendering looking wrong.

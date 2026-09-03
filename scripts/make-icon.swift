@@ -1,6 +1,6 @@
 #!/usr/bin/env swift
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 //
 // Draws the app icon and writes a .iconset ready for `iconutil`.
 //

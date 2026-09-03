@@ -1,4 +1,6 @@
 #!/bin/bash
+# Fovea — native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+# Licensed under the GNU GPL v3 or later. See LICENSE.
 #
 # Builds Fovea in Release and installs it into /Applications.
 #

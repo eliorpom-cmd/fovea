@@ -1,5 +1,5 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import XCTest
 @testable import Fovea
 
@@ -58,11 +58,11 @@ final class RevealPolicyTests: XCTestCase {
         XCTAssertEqual(revealed(caret: 20), [0])
     }
 
-    // MARK: - The Consequence That Fixed §2.3 of the Spec
+    // MARK: - The Consequence That Fixed §2.3
 
     /// **The caret can never sit inside a hidden marker.**
     ///
-    /// The spec announced "invisible positions" to work around by
+    /// The original design announced "invisible positions" to work around by
     /// intercepting every movement command of `NSTextView`. This test shows
     /// the problem does not exist: any position inside a marker belongs to
     /// the range of its own construct, so that construct is revealed.

@@ -1,6 +1,8 @@
 #!/bin/bash
+# Fovea — native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
+# Licensed under the GNU GPL v3 or later. See LICENSE.
 #
-# Checks the §5 promise of the spec end to end, with the real app rather
+# Checks the §5 promise end to end, with the real app rather
 # than unit tests: open a document, save it without touching it, and check
 # that `git diff` is **empty**.
 #

@@ -88,8 +88,8 @@ is the app that has little to load.
 **VoiceOver still reads the hidden syntax.** The semantic roles exist and
 interface elements carry them, but the text buffer itself is read as-is:
 macOS doesn't consult the string's attributes for accessibility. The detail,
-and why the obvious workaround is worse than the problem, is in §8 of the
-spec.
+and why the obvious workaround is worse than the problem, is in
+[§8 of the design principles](docs/PRINCIPLES.md#8-accessibility).
 
 Also missing: **notarization**, which requires a paid developer account, and
 a **built-in updater**.
@@ -145,10 +145,23 @@ judges the result on a `git diff`.
 
 ## Documentation
 
+- [Principles](docs/PRINCIPLES.md) — the rules the code answers to. The
+  `§n` references throughout the sources point here.
 - [Architecture](docs/ARCHITECTURE.md) — why the code is built the way it
   is, and the dead ends avoided.
 - [Building](docs/BUILDING.md)
 
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and in particular the scope
+policy: this app is defined as much by what was removed from it as by what
+it does, so a feature pull request that arrives without a prior discussion
+is very likely to be declined — which is a waste of your time, not mine.
+Bug reports and fidelity failures are always welcome.
+
 ## License
 
-GNU AGPL v3 or later. See [LICENSE](LICENSE).
+GNU GPL v3 or later. See [LICENSE](LICENSE).
+
+Fovea depends on [swift-markdown](https://github.com/apple/swift-markdown),
+Apache-2.0. See [NOTICE](NOTICE).

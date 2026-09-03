@@ -1,5 +1,5 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import AppKit
 
 /// Applies rendering attributes to the buffer.
@@ -321,7 +321,7 @@ struct MarkdownRenderer {
     /// `.wholeBlock`, so the reveal engine does it, exactly as it does for a
     /// code fence. `revealed` is simply passed through.
     ///
-    /// The spec once aimed for a truly editable grid, with a `firstResponder`
+    /// An earlier design aimed for a truly editable grid, with a `firstResponder`
     /// nested per cell. It would have meant two undo stacks to keep in sync, a
     /// selection that no longer crosses the table, and a `⌘F` that stops at
     /// its edges — a second editor inside the editor, for a construct nobody

@@ -1,5 +1,5 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import Foundation
 
 /// Decides which markers are visible, based on where the caret is.
@@ -26,11 +26,11 @@ import Foundation
 /// starting state** — which would be false with an open interval, where
 /// entry and exit would not happen at the same position.
 ///
-/// The consequence matters even more, and it corrected §2.3 of the spec:
+/// The consequence matters even more, and it corrected §2.3:
 /// **any position inside a marker belongs to the interval of its own
 /// construct**, so that construct is revealed, so its markers are visible.
 /// In other words, the caret can never sit inside a hidden marker. The
-/// "invisible positions" the spec promised to work around by intercepting
+/// "invisible positions" the original design promised to work around by intercepting
 /// every `NSTextView` movement command **do not exist**.
 ///
 /// # What real-world use corrected: line-scoped constructs moved too much

@@ -4,8 +4,8 @@ This document explains **why** the code is built the way it is. The *what*
 is readable in the sources; what doesn't show up there are the dead ends
 that were avoided.
 
-The spec remains the reference for product decisions. `§n` references
-throughout this document point to it.
+[PRINCIPLES.md](PRINCIPLES.md) is the reference for product decisions.
+`§n` references, here and throughout the sources, point to it.
 
 ## Repository layout
 
@@ -23,7 +23,7 @@ App/
     Document/             NSDocument, read/write, file fidelity
     Markdown/              parsing — no AppKit import, so it's testable
     Editor/                NSTextView, masking, rendering, decorations, typing
-Tests/                    108 tests, including the §9 budgets
+Tests/                    224 tests, including the §9 budgets
 scripts/fidelity-check.sh end-to-end fidelity check
 project.yml               XcodeGen manifest — source of truth for the project
 ```
@@ -81,7 +81,7 @@ clicking, search and accessibility all at once.
 
 ### Why there's nothing to intercept on the keyboard
 
-The spec promised to intercept every `NSTextView` movement command to jump
+The original design promised to intercept every `NSTextView` movement command to jump
 over invisible markers. That turned out to be unnecessary, and the reason
 is worth understanding before "fixing" anything here.
 
@@ -172,7 +172,7 @@ draw.
 
 ## Tables: a grid built out of kerning
 
-The spec (§2.6) called for a genuinely editable grid, with a
+An earlier design called for a genuinely editable grid, with a
 `firstResponder` per cell, and planned a fallback in advance. **The fallback
 is what shipped, and it turned out better than the original target.** An
 editor inside the editor would have required keeping two undo stacks in
@@ -262,7 +262,7 @@ entire document.
 
 ## Accessibility: what the SDK forbids
 
-§8 of the spec promised that masked ranges would carry an empty
+§8 promised that masked ranges would carry an empty
 `accessibilityLabel`, so VoiceOver wouldn't read "hash hash space
 Architecture". **That's impossible**, and the SDK header says so:
 
@@ -287,9 +287,9 @@ interface carries them, where `accessibilityLabel` actually works; the layout ho
 
 ## Constraints to keep in mind
 
-- **macOS 15** minimum. Not macOS 13 like TBD: the core of this app *is*
-  TextKit 2, and Ventura carries fragment and attachment bugs that would
-  need manual workarounds.
+- **macOS 15** minimum, and not earlier: the core of this app *is* TextKit
+  2, and Ventura carries fragment and attachment bugs that would need
+  manual workarounds.
 - **Swift 6, strict concurrency**, warnings treated as errors.
   `EditorTypography` and `FontCache` are `@MainActor` because they resolve
   `NSFont` values; AppKit isn't thread-safe and a lock would cost something

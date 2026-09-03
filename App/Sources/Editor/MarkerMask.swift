@@ -1,5 +1,5 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import AppKit
 
 extension NSAttributedString.Key {
@@ -21,7 +21,7 @@ extension NSAttributedString.Key {
 ///
 /// # The milestone-0 bet
 ///
-/// The spec (§3.4) laid out two possible mechanisms and did not settle on
+/// §3.4 lays out two possible mechanisms without settling on
 /// either. The one chosen is **A — zero-width rendering**: markers stay in
 /// the buffer *and* in the display string, but receive an infinitesimal
 /// font size and a transparent color.
@@ -33,7 +33,7 @@ extension NSAttributedString.Key {
 /// `NSTextContentStorageDelegate` — would have made `NSTextLocation` and the
 /// storage offsets diverge across all of those subsystems at once.
 ///
-/// # What the prototype corrected in the spec
+/// # What the prototype corrected
 ///
 /// §2.3 announced "invisible caret positions" to work around by
 /// intercepting every `NSTextView` movement command. **That fear was

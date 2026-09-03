@@ -1,12 +1,12 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import XCTest
 import AppKit
 @testable import Fovea
 
 /// The §6 edge states.
 ///
-/// The spec sets the rule: each one has a defined behaviour, and **none of
+/// §6 sets the rule: each one has a defined behaviour, and **none of
 /// them is allowed to be a default state**. An empty screen, a false
 /// message, or silence are three ways of getting the same thing wrong.
 @MainActor

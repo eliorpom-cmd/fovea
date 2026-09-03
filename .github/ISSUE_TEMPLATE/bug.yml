@@ -1,0 +1,53 @@
+name: Bug report
+description: Something renders wrong, crashes, hangs, or misbehaves
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a file that came back **changed** after a save, use the
+        *File fidelity failure* template instead — that one is handled
+        differently.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: markdown
+    attributes:
+      label: The markdown that triggers it
+      description: >-
+        The smallest snippet that reproduces it. Say where the caret was —
+        for a rendering bug, the caret position is usually the whole answer,
+        since markers reveal themselves based on it.
+      render: markdown
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.4"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Fovea version
+      description: Fovea → About Fovea. Or the commit you built from.
+    validations:
+      required: true
+
+  - type: textarea
+    id: crash
+    attributes:
+      label: Crash log
+      description: >-
+        If it crashed: Console.app → Crash Reports, or
+        `~/Library/Logs/DiagnosticReports/`. Optional otherwise.
+      render: text

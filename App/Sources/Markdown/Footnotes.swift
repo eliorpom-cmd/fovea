@@ -1,10 +1,10 @@
 // Fovea — a native WYSIWYG markdown editor. Copyright (C) 2026 Elior Pommier.
-// Licensed under the GNU AGPL v3 or later. See LICENSE.
+// Licensed under the GNU GPL v3 or later. See LICENSE.
 import Foundation
 
 /// Locates footnotes, which `swift-markdown` does not parse.
 ///
-/// The spec (§4.1) raised the question; the answer is no: `cmark-gfm` does
+/// §4.1 raises the question; the answer is no: `cmark-gfm` does
 /// have the extension, but `swift-markdown` does not expose it, and `[^1]`
 /// comes out as plain `Text`. The pattern being entirely unambiguous, a
 /// homemade pass is enough — this is the fallback that was planned.
