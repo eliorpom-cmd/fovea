@@ -41,12 +41,30 @@ final class MarkdownTableTests: XCTestCase {
         XCTAssertEqual(table.rows[0].cells.map { text(source, $0.content) }, ["a", "b"])
     }
 
-    /// The delimiter row is what declares how many columns there are, and the
-    /// alignments it may also carry are validated and then dropped: every cell
-    /// renders from the same edge. They stay in the file untouched.
-    func testTheDelimiterRowDeclaresTheColumnCount() throws {
+    /// The delimiter row declares how many columns there are **and** which
+    /// edge each of them is drawn from.
+    func testTheDelimiterRowDeclaresTheColumnsAndTheirAlignment() throws {
         let table = try XCTUnwrap(scan("| a | b | c | d |\n|:--|--:|:-:|---|\n| 1 | 2 | 3 | 4 |"))
         XCTAssertEqual(table.columnCount, 4)
+        XCTAssertEqual(table.alignments, [.left, .right, .center, .left])
+    }
+
+    /// A row with more cells than the delimiter announced asks for an
+    /// alignment nobody declared: left, like a bare `---`, and no crash.
+    func testAColumnNobodyDeclaredIsLeftAligned() throws {
+        let table = try XCTUnwrap(scan("| a | b |\n|:-:|--:|\n| 1 | 2 |"))
+        XCTAssertEqual(table.alignment(of: 0), .center)
+        XCTAssertEqual(table.alignment(of: 1), .right)
+        XCTAssertEqual(table.alignment(of: 2), .left)
+        XCTAssertEqual(table.alignment(of: -1), .left)
+    }
+
+    /// The colons stay in the file: reading them changed the rendering, not
+    /// the text (§5).
+    func testTheAlignmentColonsAreNotTouched() throws {
+        let source = "| a | b |\n|:-:|--:|\n| 1 | 2 |"
+        let table = try XCTUnwrap(scan(source))
+        XCTAssertEqual(text(source, table.delimiter), "|:-:|--:|")
     }
 
     // MARK: - What disappears

@@ -52,23 +52,36 @@ The detail that separates a calm editor from a nervous one.
 | Construct | Revealed scope |
 |---|---|
 | **Inline** (`**`, `*`, `` ` ``, `~~`, `[text](url)`) | The **innermost** construct containing the caret, and only that one. |
-| **Line-start marker** (`#`, `>`, `-`, `1.`, `- [ ]`) | Revealed when the caret **touches the prefix**, bounds included — then held for as long as it stays on the line. |
+| **Line-start marker** (`#`, `>`, `-`, `1.`, `- [ ]`) | Revealed when the caret **lands on the line on purpose** — a click, a horizontal move — or touches the prefix, bounds included; then held for as long as it stays on the line. |
 | **Fenced block** (` ``` `, YAML front matter `---`) | Both fences revealed together as soon as the caret is inside. |
 | **Attachment** (image, table) | See §2.6 — the view is replaced by its source. |
 
 The middle row first read "anywhere on the line". That is the simplest rule
 to state and was the most unpleasant to use: a level-2 heading's `## ` is
 some forty points wide, and **every press of the down arrow** made every
-heading, list item and quote it passed through jump and settle. The prefix
-now reveals itself when you go and get it, which is to say at the start of
-the line — where you were going anyway in order to change it.
+heading, list item and quote it passed through jump and settle. So the rule
+became: the prefix reveals itself when you go and get it, at the start of the
+line.
 
-The **latch** is what redeems the new rule: once the prefix is revealed, it
-stays revealed for as long as the caret is on the line. Without it, the first
-letter typed after the `⏎` that continues a list would shift the line at the
-worst possible moment. The state is therefore no longer a pure function of
-position — but it depends on the path only in the direction that **removes**
-movement: the latch never reveals anything that wasn't already revealed.
+Which was right about the arrow keys and wrong about everything else. An
+alpha tester reading a README reported that the syntax "only shows on double
+click" — and that was precisely true, for a reason nobody had foreseen:
+double-clicking the first word of a heading selects it, which puts the caret
+at the end of the `## `, the one position on that line touching the marker. A
+single click anywhere else on the same line showed nothing, and nothing said
+why.
+
+**What the rule was protecting was vertical navigation, and only that.** It
+now says so: `↑`, `↓`, page and document moves reveal nothing, so reading a
+document still never makes it move. A click, or a horizontal move, is a
+deliberate arrival on one line — and that line shows what it is made of.
+
+The **latch** is what holds it: once the prefix is revealed, it stays revealed
+for as long as the caret is on the line. Without it, the first letter typed
+after the `⏎` that continues a list would shift the line at the worst possible
+moment. The state is therefore no longer a pure function of position — it
+depends on how the caret got there — but only in the direction that
+**removes** movement.
 
 **One inline element is revealed at a time.** The paragraph never turns into
 syntax soup.
@@ -90,12 +103,13 @@ test that guards it.
 
 | Element | Caret outside | Caret inside |
 |---|---|---|
-| `# Heading` … `###### Heading` | Text at the level's size, `semibold` | `#` revealed in `label/tertiary` |
+| `# Heading` … `###### Heading` | Text at the level's size, `semibold`; a hairline closes `#` and `##` | `#` revealed in `label/tertiary` |
 | `**bold**` | `semibold` | `**` revealed |
 | `*italic*` / `_italic_` | Italic | Marker revealed, in its original form (`*` stays `*`) |
 | `` `code` `` | Mono, `fill/quaternary` background, horizontal padding | Backticks revealed |
 | `~~struck~~` | Struck through | `~~` revealed |
-| `[text](url)` | Underlined text, `⌘`-click opens the URL | `[`, `]`, `(url)` revealed |
+| `[text](url)` | Underlined text, `⌘`-click follows it: a URL to the system, a relative path to the file next to the document, `#anchor` to that heading in the page | `[`, `]`, `(url)` revealed |
+| `https://…` written bare | Underlined and followed like any other link | Nothing to reveal: the address is the text |
 | `![alt](path)` | Rendered image (§2.6) | Markdown source in place of the image |
 | `> quote` | Vertical rule at the left, `label/secondary`, indented | `>` revealed |
 | `- item` / `1. item` | `•` bullet or number, indented per level | Source marker revealed |
@@ -109,11 +123,15 @@ test that guards it.
 
 Revealing `## ` pushes the heading text two characters to the right. The
 original answer was a permanent gutter to the left of every heading, with the
-hashes drawn into it. What shipped instead is §2.2 as revised: the prefix
-only reveals itself when the caret goes to fetch it, so the shift happens
-once, deliberately, instead of on every pass. The same problem solved by the
-rule rather than by the layout, and it costs a pure function instead of a
-permanent gutter down the whole body text.
+hashes drawn into it. What shipped instead is §2.2: the shift happens when a
+line is aimed at, once, and never while passing through — the same problem
+solved by the rule rather than by the layout, and it costs a state variable
+instead of a permanent gutter down the whole body text.
+
+The hairline under `#` and `##` is not decoration. It is what says, without a
+word being read, where one section ends — every preview of the same file draws
+it, and a long README without it reads as one undivided block. It is drawn,
+never written: §3.1 forbids adding the character it would take.
 
 ### 2.5 Typing behaviour
 
@@ -139,7 +157,10 @@ outlined frame carrying the path rather than a gap. An animated GIF shows its
 first frame only, with an indicator: animation in an editor is a permanent
 CPU cost for nothing.
 
-**Tables** render as an aligned grid, and the grid is **read-only**. Putting
+**Tables** render as a grid, each column drawn from the edge its `|:--|:-:|--:|`
+row declares — the colons used to be validated and then dropped, which made
+the same file say two different things depending on where it was opened. The
+grid is **read-only**. Putting
 the caret in a table brings its `|` back, to be edited as the plain text they
 are. An editable grid shipped once and was removed: it needed a second
 editing model, a second undo path and a second selection model, for a
@@ -236,10 +257,14 @@ that touches a range, which is all of them.
 code blocks, nested bulleted and numbered lists, blockquotes, links, images,
 horizontal rules, hard line breaks.
 
-**GFM** — tables, `- [ ]` task lists, strikethrough, autolinks.
+**GFM** — tables and the alignment their delimiter row declares, `- [ ]` task
+lists, strikethrough, autolinks — bare addresses included.
 
 **Extensions** — `[^1]` footnotes, YAML front matter. Front matter is
-detected ahead of the parser; cmark doesn't know it.
+detected ahead of the parser; cmark doesn't know it. Footnotes and bare
+addresses are found the same way, by a scan of our own: `cmark-gfm` has both
+extensions, `swift-markdown` exposes neither, and both patterns are
+unambiguous enough to read by hand.
 
 **Out of scope:** LaTeX, Mermaid, `[[wiki]]` links, Obsidian callouts,
 Kramdown `{: attributes}`, definition lists.

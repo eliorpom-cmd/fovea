@@ -13,13 +13,23 @@ source — see [BUILDING.md](docs/BUILDING.md).
 ### Added
 
 - Hybrid WYSIWYG rendering: markdown markers are masked by default and
-  revealed when the caret touches the construct they belong to.
+  revealed when the caret touches the construct they belong to. A line-start
+  marker — `#`, `>`, `-` — also reveals itself when the caret **lands on its
+  line on purpose**, by a click or a horizontal move; vertical navigation
+  still reveals nothing, so reading a document never makes it move.
 - Byte-for-byte file fidelity. Whatever isn't edited comes back unchanged —
   line endings, marker style and list indentation included.
 - Reading support for headings, bold, italic, strikethrough, inline code,
   links, blockquotes, bulleted, numbered and task lists, horizontal rules,
   fenced code blocks with monochrome highlighting for eleven languages, YAML
-  front matter, footnotes, inline images, and GFM tables as an aligned grid.
+  front matter, footnotes, inline images, and GFM tables as a grid that keeps
+  the alignment declared by its `|:--|:-:|--:|` row.
+- A hairline under level-1 and level-2 headings, the one every markdown
+  preview draws.
+- Links are followed on `⌘`-click wherever they lead: an absolute address to
+  the browser, a relative path to the file sitting next to the document, an
+  `#anchor` to that heading in the open document. Addresses written bare,
+  without any markdown around them, are links too.
 - Writing shortcuts: list continuation and exit, level changes, `⌘B`/`⌘I`/
   `⌘⇧X`/`⌘⇧K`, `⌘⌃0..3` for heading levels, `⌘K` for a link from the
   pasteboard, auto-pairing.
@@ -29,7 +39,7 @@ source — see [BUILDING.md](docs/BUILDING.md).
 - Four settings in the View menu: appearance, body font, code font, and text
   size.
 - Installs itself as the system's default Markdown editor.
-- 224 tests, including performance budgets that fail when exceeded: 8 ms per
+- 248 tests, including performance budgets that fail when exceeded: 8 ms per
   keystroke at 10,000 words, 16 ms at 100,000, 500 ms to first display.
 
 ### Removed

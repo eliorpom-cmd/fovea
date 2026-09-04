@@ -56,6 +56,24 @@ struct MarkdownParser {
         // pass, the pattern being unambiguous (§4.1).
         spans.append(contentsOf: Footnotes.scan(utf16: utf16, skippingCodeIn: builder.verbatimRanges))
 
+        // Bare URLs, for the same reason and by the same means: the GFM
+        // autolink extension is in `cmark-gfm` and not in what
+        // `swift-markdown` exposes.
+        //
+        // What is off limits is only what would **contend for the same
+        // characters**: a URL inside `[text](url)` belongs to that link, one
+        // inside code is not an address. Not the blocks that merely contain
+        // it — the first version handed over every span, and since a list
+        // item's range covers its whole line, `- Bare: https://example.com`
+        // claimed its own address away.
+        let claimed = spans.compactMap { span -> NSRange? in
+            switch span.kind {
+            case .link, .image, .inlineCode, .codeBlock, .frontMatter: span.range
+            default: nil
+            }
+        } + builder.verbatimRanges
+        spans.append(contentsOf: Autolinks.scan(utf16: utf16, skipping: claimed))
+
         return Result(spans: spans, positions: positions)
     }
 

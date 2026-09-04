@@ -49,15 +49,32 @@ struct MarkdownTable: Equatable, Sendable {
     /// The header row followed by the body. The delimiter row is not part of
     /// it.
     var rows: [Row]
-    /// How many columns the delimiter row declares.
+    /// The edge each column is drawn from, as the delimiter row declares it:
+    /// `:--` left, `:-:` centred, `--:` right, and a bare `---` left.
     ///
-    /// The `:--`/`:-:`/`--:` alignments it can also carry are **read but not
-    /// kept**: every cell is drawn from the same edge, because a grid whose
-    /// columns each start somewhere different is harder to scan than one
-    /// where every entry lands at the same point. The delimiter row still has
-    /// to be validated — that is what makes the block a table at all — so the
-    /// colons are parsed and then dropped. They stay in the file untouched.
-    var columnCount: Int
+    /// The colons used to be read and then **dropped**, on the grounds that a
+    /// grid whose columns each start somewhere different is harder to scan
+    /// than one where every entry lands at the same point. That is true of a
+    /// grid one designs; it is false of a grid one *reads*, because the file
+    /// then says one thing and the screen shows another. A column of figures
+    /// written `--:` — the whole reason the syntax exists — came out flush
+    /// left here and flush right everywhere the same file is read. The
+    /// rendering now says what the source says.
+    var alignments: [Alignment]
+
+    /// How a column's cells sit inside their column.
+    enum Alignment: Equatable, Sendable {
+        case left, center, right
+    }
+
+    /// How many columns the delimiter row declares.
+    var columnCount: Int { alignments.count }
+
+    /// The alignment of a column, `left` for anything the delimiter row did
+    /// not declare — a row with more cells than the delimiter announced.
+    func alignment(of column: Int) -> Alignment {
+        column >= 0 && column < alignments.count ? alignments[column] : .left
+    }
 
     /// Everything that must disappear when read: the `|`, the padding
     /// whitespace, and the whole delimiter row.
@@ -107,11 +124,11 @@ struct MarkdownTable: Equatable, Sendable {
         guard lines.count >= 2 else { return nil }
 
         let parsed = lines.map { row(utf16: utf16, line: $0) }
-        guard let columnCount = delimiterColumnCount(parsed[1], utf16: utf16) else { return nil }
+        guard let alignments = delimiterAlignments(parsed[1], utf16: utf16) else { return nil }
 
         return MarkdownTable(delimiter: lines[1],
                              rows: Array(parsed[..<1] + parsed[2...]),
-                             columnCount: columnCount)
+                             alignments: alignments)
     }
 
     // MARK: - Splitting a row
@@ -179,10 +196,10 @@ struct MarkdownTable: Equatable, Sendable {
         return Cell(content: content, padding: padding)
     }
 
-    /// Validates the delimiter row and counts its columns, or `nil` if it is
-    /// not a delimiter row.
-    private static func delimiterColumnCount(_ row: Row, utf16: [UInt16]) -> Int? {
-        var count = 0
+    /// Validates the delimiter row and reads the alignment of each of its
+    /// columns, or `nil` if it is not a delimiter row.
+    private static func delimiterAlignments(_ row: Row, utf16: [UInt16]) -> [Alignment]? {
+        var alignments: [Alignment] = []
         for cell in row.cells {
             guard cell.content.length > 0 else { return nil }
             let colon = UInt16(UnicodeScalar(":").value)
@@ -190,17 +207,24 @@ struct MarkdownTable: Equatable, Sendable {
 
             var offset = cell.content.location
             let end = cell.content.upperBound
-            if utf16[offset] == colon { offset += 1 }
+            var opensWithColon = false
+            var endsWithColon = false
+            if utf16[offset] == colon { offset += 1; opensWithColon = true }
             var dashes = 0
             while offset < end, utf16[offset] == dash { offset += 1; dashes += 1 }
-            if offset < end, utf16[offset] == colon { offset += 1 }
+            if offset < end, utf16[offset] == colon { offset += 1; endsWithColon = true }
 
             // Nothing else is tolerated: `|--x--|` is not a delimiter, and
             // the block is then not a table.
             guard dashes >= 1, offset == end else { return nil }
-            count += 1
+            let alignment: Alignment = switch (opensWithColon, endsWithColon) {
+            case (true, true): .center
+            case (false, true): .right
+            default: .left
+            }
+            alignments.append(alignment)
         }
-        return count > 0 ? count : nil
+        return alignments.isEmpty ? nil : alignments
     }
 
     // MARK: - Tools

@@ -54,13 +54,15 @@ final class TableRenderingTests: XCTestCase {
 
     // MARK: - Alignments
 
-    /// **Every cell starts from the same edge.**
+    /// **A column is drawn from the edge its delimiter row declares.**
     ///
-    /// The alignment of the `|:---:|---:|` line stays in the file: it simply
-    /// isn't rendered anymore. A grid whose columns each start at a different
-    /// edge is harder to scan than one whose entries all land at the same
-    /// point, and rendering is what settled the question.
-    func testEveryCellIsLeftAlignedWhateverTheDelimiterSays() throws {
+    /// The colons used to be parsed and then dropped, on the grounds that a
+    /// grid whose columns each start somewhere different is harder to scan.
+    /// That reasoning holds for a grid one designs and fails for a file one
+    /// reads: `--:` exists to line figures up on the right, every other
+    /// reader of that file does it, and Fovea did not — so the same table
+    /// said two different things depending on where it was opened.
+    func testEachColumnIsDrawnFromTheEdgeItsDelimiterDeclares() throws {
         let source = """
         | g | c | d |
         |---|:-:|--:|
@@ -68,10 +70,55 @@ final class TableRenderingTests: XCTestCase {
         | 1234 | 1234 | 1234 |
         """
         let view = try render(source)
-        for column in 0..<3 {
-            let short = try cellStart(row: "| 1 | 1 | 1 |", column: column, in: source, view: view)
-            let long = try cellStart(row: "| 1234 | 1234 | 1234 |", column: column, in: source, view: view)
-            XCTAssertEqual(short, long, accuracy: tolerance,
+        let short = "| 1 | 1 | 1 |"
+        let long = "| 1234 | 1234 | 1234 |"
+
+        let left = (try cellSpan(row: short, column: 0, in: source, view: view),
+                    try cellSpan(row: long, column: 0, in: source, view: view))
+        XCTAssertEqual(left.0.start, left.1.start, accuracy: tolerance,
+                       "A `---` column stays flush left")
+
+        let centre = (try cellSpan(row: short, column: 1, in: source, view: view),
+                      try cellSpan(row: long, column: 1, in: source, view: view))
+        XCTAssertEqual((centre.0.start + centre.0.end) / 2, (centre.1.start + centre.1.end) / 2,
+                       accuracy: tolerance, "A `:-:` column is centred on the same axis")
+        XCTAssertGreaterThan(centre.0.start, centre.1.start,
+                             "The shorter cell must be pushed in from the left")
+
+        let right = (try cellSpan(row: short, column: 2, in: source, view: view),
+                     try cellSpan(row: long, column: 2, in: source, view: view))
+        XCTAssertEqual(right.0.end, right.1.end, accuracy: tolerance,
+                       "A `--:` column ends on the same edge")
+    }
+
+    /// The header follows its column like any other row: a title over a
+    /// right-aligned column of figures sits on the right too, which is what
+    /// makes the column read as one block.
+    func testTheHeaderFollowsTheAlignmentOfItsColumn() throws {
+        let source = """
+        | left | count |
+        |---|--:|
+        | a | 1000 |
+        """
+        let view = try render(source)
+        let header = try cellSpan(row: "| left | count |", column: 1, in: source, view: view)
+        let body = try cellSpan(row: "| a | 1000 |", column: 1, in: source, view: view)
+        XCTAssertEqual(header.end, body.end, accuracy: tolerance)
+    }
+
+    /// A grid with no alignment declared is exactly what it was before.
+    func testAPlainDelimiterStillDrawsEverythingFromTheLeft() throws {
+        let source = """
+        | a | b |
+        |---|---|
+        | 1 | 2 |
+        | 1234 | 5678 |
+        """
+        let view = try render(source)
+        for column in 0..<2 {
+            let short = try cellSpan(row: "| 1 | 2 |", column: column, in: source, view: view)
+            let long = try cellSpan(row: "| 1234 | 5678 |", column: column, in: source, view: view)
+            XCTAssertEqual(short.start, long.start, accuracy: tolerance,
                            "Column \(column) must start at the same x on both rows")
         }
     }
@@ -366,6 +413,28 @@ final class TableRenderingTests: XCTestCase {
             offset += 1
         }
         return try caretX(at: offset + 1, view: view)
+    }
+
+    /// X-coordinates of both ends of a cell's content, located by its source
+    /// row. The padding and the `|` are masked, so the end of the content is
+    /// where the space before the closing `|` sits.
+    private func cellSpan(row: String, column: Int, in source: String,
+                          view: EditorTextView) throws -> (start: CGFloat, end: CGFloat) {
+        let text = source as NSString
+        let line = text.range(of: row)
+        XCTAssertNotEqual(line.location, NSNotFound, "Row \"\(row)\" not found")
+        let pipe = UInt16(UnicodeScalar("|").value)
+
+        var offset = line.location
+        var seen = 0
+        while seen <= column, offset < line.upperBound {
+            if text.character(at: offset) == pipe { seen += 1 }
+            offset += 1
+        }
+        let start = offset + 1
+        var end = start
+        while end < line.upperBound, text.character(at: end) != pipe { end += 1 }
+        return (try caretX(at: start, view: view), try caretX(at: end - 1, view: view))
     }
 
     /// Rendered width of a fragment, measured between its two ends.

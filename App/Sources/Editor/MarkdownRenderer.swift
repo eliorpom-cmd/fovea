@@ -221,13 +221,35 @@ struct MarkdownRenderer {
     /// A `#section` anchor or a relative path aren't addresses to
     /// hand off to Finder or a browser: the former would say nothing, the latter
     /// would open a file at random, depending on where the app was launched from.
-    static func openableURL(_ destination: String) -> URL? {
+    static func openableURL(_ destination: String, relativeTo documentURL: URL? = nil) -> URL? {
         let trimmed = destination.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
+        // An anchor leads inside the open document: there is no URL for that,
+        // and the editor scrolls to the heading itself. See
+        // `EditorController.jumpToAnchor`.
+        guard !trimmed.hasPrefix("#") else { return nil }
         if trimmed.hasPrefix("www.") { return URL(string: "https://" + trimmed) }
-        guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
-              ["http", "https", "mailto"].contains(scheme) else { return nil }
-        return url
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() {
+            return ["http", "https", "mailto", "file"].contains(scheme) ? url : nil
+        }
+
+        // **A relative path leads to the file next to the document.**
+        //
+        // `[the licence](LICENSE)`, `[building](docs/BUILDING.md)`: this is
+        // the most common link in the most common markdown file there is, a
+        // README — and it was the one link that did nothing. Only a scheme
+        // was accepted, so every relative path failed the test silently, and
+        // an alpha tester reasonably concluded the app did not do links.
+        //
+        // The file has to exist for the link to be one: a path that leads
+        // nowhere gets no `.link`, so no hand cursor, and `⌘`-click does not
+        // open a Finder error in the reader's face.
+        guard let documentURL else { return nil }
+        let path = trimmed.components(separatedBy: "#")[0]
+        guard !path.isEmpty else { return nil }
+        let resolved = URL(fileURLWithPath: path.removingPercentEncoding ?? path,
+                           relativeTo: documentURL.deletingLastPathComponent()).standardizedFileURL
+        return FileManager.default.fileExists(atPath: resolved.path) ? resolved : nil
     }
 
     private static func isBlank(_ text: NSString, _ range: NSRange) -> Bool {
@@ -417,12 +439,23 @@ struct MarkdownRenderer {
                 let own = measure(storage, cell.content)
                 let origin = column < origins.count ? origins[column] : pen
 
-                // **All cells left-aligned**, regardless of the
-                // `|:---:|---:|` line. Markdown alignment stays in the
-                // file — it just isn't rendered anymore: a grid where
-                // each column starts from a different edge reads worse
-                // than a grid where every entry starts at the same point.
-                let offset: CGFloat = 0
+                // **The cell sits against the edge its column declares**
+                // (§2.6). The `|:---:|---:|` line used to be parsed and
+                // then ignored, so a column written `--:` — a column of
+                // figures, always — came out flush left here and flush
+                // right in every other reader of the same file.
+                //
+                // The offset is measured against the column's own width,
+                // the stretched one: it is the width the grid actually
+                // draws, so a centred cell lands between the two rules the
+                // reader can see rather than between the ones the content
+                // would have had.
+                let columnWidth = column < layout.columnWidths.count ? layout.columnWidths[column] : own
+                let offset: CGFloat = switch table.alignment(of: column) {
+                case .left: 0
+                case .center: max(0, (columnWidth - own) / 2).rounded()
+                case .right: max(0, columnWidth - own).rounded()
+                }
 
                 // The separator preceding the cell: the left-edge `|`
                 // for the first one, the one separating it from the previous cell otherwise.
@@ -630,7 +663,7 @@ struct MarkdownRenderer {
             // And without this attribute, `⌘`-click found **nothing**: the view
             // looks for a `.link` that nobody was setting, and the opening promised
             // in §2.4 never happened.
-            if let url = Self.openableURL(destination) {
+            if let url = Self.openableURL(destination, relativeTo: documentURL) {
                 attributes[.link] = url
             }
             storage.addAttributes(attributes, range: content)
@@ -691,6 +724,10 @@ struct MarkdownRenderer {
         case .heading(let level):
             let style = typography.paragraphStyle()
             style.paragraphSpacingBefore = typography.spacingBefore(headingLevel: level)
+            // A level-1 or level-2 heading is closed by a rule (§2.4), and
+            // the rule needs somewhere to be: the space below the line is
+            // reserved here, and `DecorationPainter` draws into it.
+            if level <= 2 { style.paragraphSpacing = typography.headingRuleSpacing }
             storage.addAttributes([.font: typography.heading(level: level),
                                    .paragraphStyle: style], range: whole)
 

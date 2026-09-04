@@ -30,6 +30,8 @@ struct EditorDecoration {
         case checkbox(checked: Bool)
         /// Horizontal rule from a `---`.
         case rule
+        /// The hairline that closes a level-1 or level-2 heading.
+        case headingRule
         /// Rounded background of a code block.
         case codeBackground
         /// An image rendered inline (§4.4).
@@ -130,6 +132,20 @@ extension EditorDecoration {
 
             case .thematicBreak where !isRevealed:
                 decorations.append(EditorDecoration(kind: .rule, range: span.range, indent: 0))
+
+            // The rule under `#` and `##`, the one every preview draws. It
+            // stays under the caret: like the blockquote's bar and the code
+            // block's background, it **replaces** no syntax — it separates
+            // two sections, and they are just as separate while being
+            // edited.
+            //
+            // It is carried by the heading's *content*, not by its range: a
+            // `setext` heading's range includes the `===` row underneath,
+            // and a rule hung from the bottom of that would land a line
+            // lower than the title it closes.
+            case .heading(let level) where level <= 2:
+                decorations.append(EditorDecoration(kind: .headingRule,
+                                                    range: span.content, indent: 0))
 
             case .codeBlock:
                 decorations.append(EditorDecoration(kind: .codeBackground,
@@ -348,6 +364,18 @@ struct DecorationPainter {
             // invisible dashes it rests on.
             let span = columnSpan(inset: 0)
             let rule = NSRect(x: span.x, y: frame.midY - 0.5, width: span.width, height: 1)
+            Theme.NS.separator.setFill()
+            NSBezierPath(rect: rule).fill()
+
+        case .headingRule:
+            // Halfway down the air reserved by `headingRuleSpacing`: against
+            // the title it would read as an underline of the words, against
+            // the paragraph below it would read as that paragraph's ceiling.
+            // In the middle, it belongs to neither and separates both.
+            let span = columnSpan(inset: 0)
+            let rule = NSRect(x: span.x,
+                              y: (frame.maxY + typography.headingRuleSpacing / 2).rounded(),
+                              width: span.width, height: 1)
             Theme.NS.separator.setFill()
             NSBezierPath(rect: rule).fill()
 

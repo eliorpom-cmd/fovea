@@ -70,6 +70,16 @@ struct EditorTypography: Equatable {
         return (bodySize * scale).rounded()
     }
 
+    /// The air kept under a level-1 or level-2 heading, where the rule that
+    /// closes it is drawn.
+    ///
+    /// Every markdown preview worth the name — GitHub's first of all — sets a
+    /// hairline under `#` and `##`. It is not decoration: it is what tells a
+    /// reader, at a glance and without reading a word, where one section ends
+    /// and the next begins. Without it a heading is only a bigger line of
+    /// text, and a long README reads as one undivided block.
+    var headingRuleSpacing: CGFloat { (bodySize * 0.9).rounded() }
+
     // MARK: - Layout
 
     var lineHeight: CGFloat { (bodySize * lineHeightMultiple).rounded() }

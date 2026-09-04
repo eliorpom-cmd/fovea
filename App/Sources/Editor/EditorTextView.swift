@@ -76,9 +76,63 @@ final class EditorTextView: NSTextView {
     /// jumping to its other half.
     var handlesFootnoteJump: ((Int) -> Bool)?
 
+    /// Called on `⌘`+click at a given position: a link to a heading in the
+    /// same document — a README's table of contents is made of nothing else —
+    /// responds by scrolling to that heading.
+    var handlesAnchorJump: ((Int) -> Bool)?
+
     /// Called when a task's checkbox is clicked. Receives the range of the
     /// item's content, the one the decoration carries.
     var handlesTaskToggle: ((NSRange) -> Bool)?
+
+    /// True when the caret was last placed by a gesture that **aims at a
+    /// line** — a click, a horizontal arrow, `⌘←` — rather than one that
+    /// crosses lines.
+    ///
+    /// `EditorController` reads it to decide whether a line shows its
+    /// prefixes. False on opening: a document opens rendered, never with the
+    /// `#` of the line the reading position was restored to.
+    private(set) var caretAimedAtLine = false
+
+    /// The commands that move **through** lines rather than within one. On
+    /// any of them the prefixes stay hidden, which is the whole point of the
+    /// rule: cruising down a document must not make every heading it passes
+    /// jump sideways.
+    private static let crossesLines: Set<Selector> = [
+        #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
+        #selector(NSResponder.moveUpAndModifySelection(_:)),
+        #selector(NSResponder.moveDownAndModifySelection(_:)),
+        #selector(NSResponder.pageUp(_:)), #selector(NSResponder.pageDown(_:)),
+        #selector(NSResponder.pageUpAndModifySelection(_:)),
+        #selector(NSResponder.pageDownAndModifySelection(_:)),
+        #selector(NSResponder.scrollPageUp(_:)), #selector(NSResponder.scrollPageDown(_:)),
+        #selector(NSResponder.moveToBeginningOfDocument(_:)),
+        #selector(NSResponder.moveToEndOfDocument(_:)),
+        #selector(NSResponder.moveToBeginningOfDocumentAndModifySelection(_:)),
+        #selector(NSResponder.moveToEndOfDocumentAndModifySelection(_:)),
+        #selector(NSResponder.scrollToBeginningOfDocument(_:)),
+        #selector(NSResponder.scrollToEndOfDocument(_:)),
+    ]
+
+    /// A command that **places the caret inside a line**: everything AppKit
+    /// names `move…` that does not cross lines.
+    ///
+    /// Typing and deleting are deliberately not in it. They change the text,
+    /// they do not arrive anywhere — and a `⌫` inside a heading that made its
+    /// `## ` reappear would shift the line under the fingers, which is the
+    /// one thing the whole rule exists to prevent.
+    private static func aimsAtALine(_ selector: Selector) -> Bool {
+        NSStringFromSelector(selector).hasPrefix("move") && !crossesLines.contains(selector)
+    }
+
+    override func doCommand(by selector: Selector) {
+        if Self.aimsAtALine(selector) {
+            caretAimedAtLine = true
+        } else if Self.crossesLines.contains(selector) {
+            caretAimedAtLine = false
+        }
+        super.doCommand(by: selector)
+    }
 
     // MARK: - Setup
 
@@ -485,6 +539,9 @@ final class EditorTextView: NSTextView {
     /// clicking inside a link is primarily meant to place the caret there.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        // A click is the most deliberate way there is of designating a line:
+        // whatever is on it shows its syntax. See `caretAimedAtLine`.
+        caretAimedAtLine = true
 
         // A checkbox gets checked on click. This is the mouse counterpart of
         // §2.5: the checkbox is drawn, so the only way to check it would
@@ -507,6 +564,9 @@ final class EditorTextView: NSTextView {
             NSWorkspace.shared.open(link)
             return
         }
+        // `[text](#a-heading)` has no address either: it leads to a place in
+        // this document, and the editor is the only thing that can go there.
+        if handlesAnchorJump?(index) == true { return }
         // A footnote has no address to open, but it has another half
         // somewhere in the document: the same gesture leads there.
         if handlesFootnoteJump?(index) == true { return }

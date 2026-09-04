@@ -121,6 +121,9 @@ final class EditorController: NSObject {
         textView.handlesFootnoteJump = { [weak self] index in
             self?.jumpBetweenFootnoteHalves(at: index) ?? false
         }
+        textView.handlesAnchorJump = { [weak self] index in
+            self?.jumpToAnchor(at: index) ?? false
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(appearanceChanged),
             name: .foveaAppearanceChanged, object: textView)
@@ -377,10 +380,27 @@ final class EditorController: NSObject {
         let line = currentLineRange()
         if latchedLineStart != line.location { latchedLineStart = nil }
 
+        // **Landing on a line shows what that line is made of.**
+        //
+        // The prefix rule — reveal when the caret touches the `#` itself —
+        // was written against vertical navigation, where revealing on the
+        // whole line made every heading passed through jump sideways. It
+        // still holds there, and that is the case it was written for. But it
+        // also governed the click, and there it read as a bug: an alpha
+        // tester reported that the markers "only show on double click", and
+        // they were exactly right — double-clicking the first word of a
+        // heading puts the caret at the end of the `## `, the one position
+        // on the line that touches the marker. Clicking anywhere else on
+        // that same line showed nothing.
+        //
+        // A click, or a horizontal move, therefore latches the line at once.
+        // What the rule protects is untouched: `↑` and `↓` still reveal
+        // nothing, so nothing moves while reading.
+        let aimed = textView.caretAimedAtLine && selection.length == 0
         let revealed = RevealPolicy.revealedIndices(index: spanIndex,
                                                     selection: selection,
                                                     lineRange: line,
-                                                    linePrefixesLatched: latchedLineStart != nil)
+                                                    linePrefixesLatched: latchedLineStart != nil || aimed)
         // The latch engages as soon as a prefix is revealed, and releases
         // itself on the next call made from a different line.
         latchedLineStart = revealed.contains { index in
@@ -648,6 +668,65 @@ final class EditorController: NSObject {
         textView.scrollRangeToVisible(destination.range)
         textView.showFindIndicator(for: destination.range)
         return true
+    }
+
+    /// `⌘`+click on `[text](#a-heading)` scrolls to that heading.
+    ///
+    /// A README's table of contents is made of nothing but these, and until
+    /// now it was the one link in the file that did nothing at all: an anchor
+    /// has no URL to hand to the system, so the click fell through the
+    /// opening path and stopped there. Someone reading a long README could
+    /// reasonably conclude that the app did not do links.
+    ///
+    /// The slug computed here is GitHub's: lowercased, punctuation dropped,
+    /// spaces turned into hyphens. Matching it exactly is what makes an
+    /// anchor written for the rendered page land in the same place here.
+    private func jumpToAnchor(at index: Int) -> Bool {
+        guard !isSourceMode else { return false }
+
+        // The innermost link containing the click: a link inside a list item
+        // inside a quote must answer for itself, not for its container.
+        let clicked = spans.filter { span in
+            guard case .link = span.kind else { return false }
+            return NSLocationInRange(index, span.range)
+        }.min { $0.range.length < $1.range.length }
+        guard let clicked, case .link(let destination) = clicked.kind,
+              destination.hasPrefix("#") else { return false }
+
+        let wanted = String(destination.dropFirst())
+        let target = (wanted.removingPercentEncoding ?? wanted).lowercased()
+        let text = textView.string as NSString
+        let heading = spans.first { span in
+            guard case .heading = span.kind, span.content.upperBound <= text.length else { return false }
+            return Self.anchorSlug(text.substring(with: span.content)) == target
+        }
+        guard let heading else { return false }
+
+        // Like a footnote jump: the caret lands on the content, never inside
+        // a marker, and the destination is flashed so the eye finds it.
+        textView.setSelectedRange(NSRange(location: heading.content.location, length: 0))
+        textView.scrollRangeToVisible(heading.range)
+        textView.showFindIndicator(for: heading.content)
+        return true
+    }
+
+    /// A heading's anchor, the way GitHub computes it.
+    ///
+    /// Everything that is not a letter, a digit, a hyphen or an underscore is
+    /// dropped, which is also what removes the `**` of a heading formatted in
+    /// bold; a space becomes a hyphen. Two headings with the same text would
+    /// need a `-1` suffix — that is left out on purpose: guessing wrong there
+    /// scrolls to the wrong section, and doing nothing at least says so.
+    static func anchorSlug(_ heading: String) -> String {
+        var slug = ""
+        for character in heading.lowercased() {
+            if character.isLetter || character.isNumber || character == "-" || character == "_" {
+                slug.append(character)
+            } else if character == " " {
+                slug.append("-")
+            }
+        }
+        return slug
     }
 
     /// `⇥` placed right before the closing tag jumps over it.

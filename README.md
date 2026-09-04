@@ -11,7 +11,7 @@ A native macOS markdown reader you can also write in — no code view, no previe
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-0A0A0A?style=flat-square&logo=apple&logoColor=white)](#system-requirements)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-0A0A0A?style=flat-square)](#system-requirements)
 [![Swift](https://img.shields.io/badge/Swift-AppKit%20%2B%20TextKit%202-0A0A0A?style=flat-square&logo=swift&logoColor=white)](#how-it-works)
-[![Tests](https://img.shields.io/badge/tests-224-0A0A0A?style=flat-square)](#test)
+[![Tests](https://img.shields.io/badge/tests-248-0A0A0A?style=flat-square)](#test)
 [![License](https://img.shields.io/badge/license-GPL--3.0-0A0A0A?style=flat-square)](LICENSE)
 
 <!-- Enable once the first release is published:
@@ -68,11 +68,18 @@ it is **structurally incapable** of reformatting anything you haven't edited.
 
 ### It reads everything
 
-Headings, bold, italic, strikethrough, inline code, links, blockquotes,
-bulleted and numbered lists, task lists, horizontal rules, code blocks with
-syntax highlighting for eleven languages, YAML front matter, footnotes, inline
-images, and tables as an aligned grid. All six heading levels render; the menu
-offers the first three, which are the ones that differ in size.
+Headings — closed by a hairline at levels 1 and 2, like every preview draws
+them — bold, italic, strikethrough, inline code, links, blockquotes, bulleted
+and numbered lists, task lists, horizontal rules, code blocks with syntax
+highlighting for eleven languages, YAML front matter, footnotes, inline
+images, and tables as a grid that keeps the alignment its `|:--|--:|` row
+declares. All six heading levels render; the menu offers the first three,
+which are the ones that differ in size.
+
+Links are followed on `⌘`-click, wherever they lead: an address to the
+browser, `[the licence](LICENSE)` to the file next to the document,
+`[contents](#highlights)` to that heading in the page. An address written
+bare is a link too.
 
 ### It writes the simple things
 
@@ -191,7 +198,7 @@ xcodebuild -project Fovea.xcodeproj -scheme Fovea -configuration Release build
 xcodebuild -project Fovea.xcodeproj -scheme Fovea -destination 'platform=macOS' test
 ```
 
-224 tests, including the performance budgets, which **fail** if they're
+248 tests, including the performance budgets, which **fail** if they're
 exceeded: 8 ms per keystroke at 10,000 words, 16 ms at 100,000, 500 ms to first
 display. They run in Debug, the least favorable configuration.
 
