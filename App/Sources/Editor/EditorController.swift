@@ -226,9 +226,17 @@ final class EditorController: NSObject {
     /// The width **actually** offered to the text: the container's width, which
     /// `applyColumnLayout` has bounded to the available space. It is this width
     /// that must decide a table's geometry, not the settings' width.
+    ///
+    /// Minus the line fragment padding on both sides: the text starts one
+    /// padding in from the container's edge and stops one padding before the
+    /// other. Given the full width, a table started with the text and ran
+    /// one padding past its right edge, beyond the heading rules and code
+    /// backgrounds.
     private var renderedColumnWidth: CGFloat {
-        let width = textView.textContainer?.size.width ?? 0
-        return width > 0 ? width : typography.columnWidth
+        guard let container = textView.textContainer, container.size.width > 0 else {
+            return typography.columnWidth
+        }
+        return max(1, container.size.width - container.lineFragmentPadding * 2)
     }
 
     /// The width at the last render, to know when tables need to be repositioned.
