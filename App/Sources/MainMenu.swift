@@ -72,6 +72,14 @@ enum MainMenu {
         menu.addItem(saveAs)
 
         menu.addItem(item("Revert to Saved", #selector(NSDocument.revertToSaved(_:))))
+
+        // Printing came back on its own, without the exports it left with:
+        // see `DocumentPrinting`. "Save as PDF" lives in the print panel.
+        menu.addItem(.separator())
+        let pageSetup = item("Page Setup…", #selector(NSDocument.runPageLayout(_:)), "p")
+        pageSetup.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(pageSetup)
+        menu.addItem(item("Print…", #selector(NSDocument.printDocument(_:)), "p"))
         return menu
     }
 

@@ -12,6 +12,11 @@ source — see [BUILDING.md](docs/BUILDING.md).
 
 ### Added
 
+- Printing (`⌘P`, and Page Setup on `⇧⌘P`): the document as it reads on
+  screen — markers hidden, bullets, checkboxes, tables, code backgrounds —
+  on white paper whatever the system appearance, at a paper-sized body
+  font, with page breaks that never cut a line. "Save as PDF" is the print
+  panel's own button.
 - Hybrid WYSIWYG rendering: markdown markers are masked by default and
   revealed when the caret touches the construct they belong to. A line-start
   marker — `#`, `>`, `-` — also reveals itself when the caret **lands on its
@@ -48,7 +53,8 @@ Each of these shipped and was then taken out. They are listed because the
 removals are the design, not an accident — see the scope policy in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- Export to PDF, HTML, print, share sheet and rich text.
+- Export to PDF, HTML, share sheet and rich text. (Printing came back on
+  its own, without the HTML writer: see Added.)
 - The command palette, the slash menu, and every floating panel.
 - The document outline.
 - Focus mode, typewriter mode, and the statistics bar.
@@ -58,6 +64,17 @@ removals are the design, not an accident — see the scope policy in
 - Colour syntax highlighting and the language picker.
 - Image drag-and-drop.
 - The settings window, replaced by four items in the View menu.
+
+### Fixed
+
+- A list item that wraps has its bullet, number or checkbox on its first
+  line, not its last.
+- A nested list item with children of its own is drawn at its own level,
+  not its parent's.
+- A list inside a blockquote is indented past the quote's bar instead of
+  drawing its bullets on it.
+- A table stops at the right edge of the text instead of one line padding
+  past it.
 
 ### Changed
 

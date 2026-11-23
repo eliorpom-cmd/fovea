@@ -6,12 +6,14 @@ afternoon of work that gets declined.
 ## The scope policy — read this first
 
 Fovea is defined as much by what was taken out of it as by what it does.
-Export, PDF, printing, the share sheet, the command palette, the slash menu,
+Export, PDF, the share sheet, the command palette, the slash menu,
 the document outline, focus mode, typewriter mode, the word count, font
 importing, editable tables, coloured code and the settings window **all
 shipped at some point, and were all removed**. The list in the README under
 "What it deliberately doesn't do" is not a roadmap of things not yet built.
-It is a record of decisions.
+It is a record of decisions. Printing went out with the exports and came
+back on its own (November 2026), because it was the one missed in daily use;
+it draws with the editor's renderer and adds no export code.
 
 The reason is a measurement, not a taste: the app opens in 355 ms because it
 has almost nothing to load, and every feature is weighed against the forty

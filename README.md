@@ -110,7 +110,9 @@ Four settings, and no window for them: appearance, body font, code font and
 
 ## What it deliberately doesn't do
 
-No export, no PDF, no printing, no share sheet. No vault, no tags, no
+No export, no PDF export, no share sheet. Printing is the one exception:
+`⌘P` prints the document as it reads, and the print panel's own PDF button
+covers the rest. No vault, no tags, no
 backlinks, no plugins. No focus mode, no typewriter mode, no word count. No
 font importing. No command palette, no insertion menu, no panels of any kind.
 No editing inside the table grid — the source is right there under the caret,

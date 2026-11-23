@@ -67,6 +67,22 @@ final class MarkdownDocument: NSDocument {
         }
     }
 
+    // MARK: - Printing
+
+    /// What `File > Print…` prints: the rendered document, see
+    /// `DocumentPrinting`. The editor's buffer wins over `text`, for the same
+    /// reason as when saving: it's what the user sees.
+    override func printOperation(withSettings printSettings: [NSPrintInfo.AttributeKey: Any]) throws -> NSPrintOperation {
+        MainActor.assumeIsolated {
+            let info = printInfo.copy() as? NSPrintInfo ?? NSPrintInfo()
+            info.dictionary().addEntries(from: printSettings)
+            return DocumentPrinting.operation(for: editor?.text ?? text,
+                                              documentURL: fileURL,
+                                              typography: AppSettings.shared.typography,
+                                              printInfo: info)
+        }
+    }
+
     // MARK: - Window
 
     override func makeWindowControllers() {
