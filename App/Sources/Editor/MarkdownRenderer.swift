@@ -745,7 +745,7 @@ struct MarkdownRenderer {
             // Dimming, not strikethrough: strikethrough already has a meaning in markdown,
             // and using it here would make `~~text~~` unreadable inside a task.
             let style = typography.paragraphStyle()
-            let indent = typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))
+            let indent = typography.itemIndent(for: span)
             style.firstLineHeadIndent = indent
             style.headIndent = indent
             let body = clamp(span.layoutRange, to: storage.length)
@@ -759,7 +759,7 @@ struct MarkdownRenderer {
             // stuck to the margin, and the bullet, drawn to its left, would land at
             // a negative x-coordinate — outside the view, in other words.
             let style = typography.paragraphStyle()
-            let indent = typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))
+            let indent = typography.itemIndent(for: span)
             style.firstLineHeadIndent = indent
             style.headIndent = indent
             storage.addAttributes([.paragraphStyle: style],

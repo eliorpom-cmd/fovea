@@ -83,7 +83,73 @@ final class ListRenderingTests: XCTestCase {
         XCTAssertGreaterThan(child, parent, "The child stays to the right of its parent")
     }
 
+    func testANestedItemWithChildrenStaysAtItsOwnLevel() throws {
+        // cmark starts a nested item at its marker, after the source indent.
+        // Its layout range started there too, so the paragraph's first
+        // characters — the indent — kept the parent's style, and a paragraph
+        // takes its style from its first character: `B`, which has a child of
+        // its own, was drawn at the parent's level while `A` was not.
+        let source = """
+        - Parent
+          - A
+          - B
+            - C
+        """
+        let view = try render(source)
+        let a = try caretX(atFirstOccurrenceOf: "A", in: source, view: view)
+        let b = try caretX(atFirstOccurrenceOf: "B", in: source, view: view)
+        let c = try caretX(atFirstOccurrenceOf: "C", in: source, view: view)
+        XCTAssertEqual(b, a, accuracy: tolerance, "Two siblings share one level, children or not")
+        XCTAssertGreaterThan(c, b, "The grandchild stays to the right of its parent")
+    }
+
+    func testAListInsideAQuoteIsIndentedPastTheQuote() throws {
+        // The item's indent used to replace the quote's instead of adding to
+        // it: the bullet landed on the quote's bar.
+        let plain = try render("- Item\n")
+        let quoted = try render("> - Item\n")
+        let inside = try caretX(atFirstOccurrenceOf: "Item", in: "> - Item\n", view: quoted)
+        let outside = try caretX(atFirstOccurrenceOf: "Item", in: "- Item\n", view: plain)
+        XCTAssertEqual(inside - outside, EditorTypography.default.quoteIndent, accuracy: tolerance,
+                       "A quoted item moves right by exactly one quote indent")
+    }
+
+    func testTheCheckboxOfAWrappedTaskSitsOnItsFirstLine() throws {
+        // The mark was bottom-aligned on the union of the whole first source
+        // line: on an item that wraps, that union ends on the last visual
+        // line, and the box (and a bullet, by the same path) sat next to the
+        // end of the sentence.
+        let source = "- [ ] " + String(repeating: "word ", count: 80) + "end\n"
+        let view = try render(source)
+        view.decorations = EditorDecoration.build(from: MarkdownParser.parse(source).spans,
+                                                  in: try XCTUnwrap(view.textStorage),
+                                                  typography: .default)
+        let painter = DecorationPainter(typography: .default)
+        let box = try XCTUnwrap(painter.checkboxTargets(among: view.decorations, in: view).first?.box)
+
+        let firstLine = try lineFrame(at: 6, view: view)
+        let lastLine = try lineFrame(at: (source as NSString).range(of: "end").location, view: view)
+        XCTAssertGreaterThan(lastLine.minY, firstLine.maxY - 1, "The task wraps onto several lines")
+        let origin = view.textContainerOrigin
+        XCTAssertTrue(firstLine.offsetBy(dx: origin.x, dy: origin.y).insetBy(dx: -50, dy: 0)
+                        .contains(NSPoint(x: firstLine.minX + origin.x, y: box.midY)),
+                      "The box sits on the first line: box \(box), first line \(firstLine)")
+    }
+
     // MARK: - Helpers
+
+    private func lineFrame(at offset: Int, view: EditorTextView) throws -> NSRect {
+        let layout = try XCTUnwrap(view.textLayoutManager)
+        let content = try XCTUnwrap(view.textContentStorage)
+        let location = try XCTUnwrap(content.location(content.documentRange.location, offsetBy: offset))
+        var frame: NSRect?
+        layout.enumerateTextSegments(in: NSTextRange(location: location),
+                                     type: .selection, options: []) { _, segment, _, _ in
+            frame = segment
+            return false
+        }
+        return try XCTUnwrap(frame)
+    }
 
     private func render(_ source: String) throws -> EditorTextView {
         let view = EditorTextView.make()

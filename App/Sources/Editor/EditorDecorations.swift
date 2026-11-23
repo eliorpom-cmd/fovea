@@ -43,6 +43,15 @@ struct EditorDecoration {
         /// applied the kerning: the rules therefore land exactly between the
         /// columns, not beside them.
         case tableColumns(x: [CGFloat], width: CGFloat)
+
+        /// Marks that introduce an item and belong next to its first line,
+        /// however many lines the item wraps onto.
+        var sitsOnFirstLine: Bool {
+            switch self {
+            case .listMarker, .checkbox: true
+            default: false
+            }
+        }
     }
 
     /// Where a horizontal rule sits within the range that carries it.
@@ -122,13 +131,13 @@ extension EditorDecoration {
                 decorations.append(EditorDecoration(
                     kind: .listMarker(symbol(for: marker)),
                     range: span.content,
-                    indent: typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))))
+                    indent: typography.itemIndent(for: span)))
 
             case .taskItem(_, let checked) where !isRevealed:
                 decorations.append(EditorDecoration(
                     kind: .checkbox(checked: checked),
                     range: span.content,
-                    indent: typography.listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth))))
+                    indent: typography.itemIndent(for: span)))
 
             case .thematicBreak where !isRevealed:
                 decorations.append(EditorDecoration(kind: .rule, range: span.range, indent: 0))
@@ -264,7 +273,8 @@ struct DecorationPainter {
 
         for decoration in decorations {
             guard touches(decoration.range, onScreen) else { continue }
-            guard let frame = boundingFrame(of: decoration.range, layout: layout, content: content) else { continue }
+            guard let frame = boundingFrame(of: decoration.range, layout: layout, content: content,
+                                            firstLineOnly: decoration.kind.sitsOnFirstLine) else { continue }
             let placed = frame.offsetBy(dx: origin.x, dy: origin.y)
             guard placed.intersects(dirtyRect) else { continue }
             paint(decoration, at: placed, columnLeft: origin.x, columnWidth: columnWidth)
@@ -306,7 +316,13 @@ struct DecorationPainter {
             // catch the eye. That surplus is removed at the top; at the bottom, the frame
             // already stops at the descender.
             let leading = max(0, typography.lineHeight - (typography.body.ascender - typography.body.descender))
-            let bar = NSRect(x: frame.minX - decoration.indent + (decoration.indent - 2) / 3,
+            //
+            // **The x is taken from the column, not from the text.** A quote
+            // always starts at the column's edge, but the text it carries
+            // doesn't: a list inside a quote pushes its items further right,
+            // and a bar placed relative to them followed them — straight
+            // under the bullets.
+            let bar = NSRect(x: columnLeft + (decoration.indent - 2) / 3,
                              y: frame.minY + leading,
                              width: 2,
                              height: max(1, frame.height - leading))
@@ -541,7 +557,8 @@ struct DecorationPainter {
 
         return decorations.compactMap { decoration in
             guard case .checkbox = decoration.kind, touches(decoration.range, onScreen),
-                  let frame = boundingFrame(of: decoration.range, layout: layout, content: content)
+                  let frame = boundingFrame(of: decoration.range, layout: layout, content: content,
+                                            firstLineOnly: true)
             else { return nil }
             let box = checkboxBox(at: frame.offsetBy(dx: origin.x, dy: origin.y))
             return (decoration.range, box.insetBy(dx: -5, dy: -5))
@@ -614,9 +631,15 @@ struct DecorationPainter {
     }
 
     /// Bounding rectangle of a range, in text container coordinates.
+    /// - Parameter firstLineOnly: stop at the first line fragment. A bullet,
+    ///   a number or a checkbox belongs to the **first** line of its item:
+    ///   they are bottom-aligned on the frame they get, and the union of an
+    ///   item that wraps ends on its last line, so the bullet used to sit next
+    ///   to the end of the sentence instead of its start.
     private func boundingFrame(of range: NSRange,
                                layout: NSTextLayoutManager,
-                               content: NSTextContentStorage) -> NSRect? {
+                               content: NSTextContentStorage,
+                               firstLineOnly: Bool = false) -> NSRect? {
         guard range.length >= 0,
               let start = content.location(content.documentRange.location, offsetBy: range.location),
               let end = content.location(start, offsetBy: range.length),
@@ -625,7 +648,7 @@ struct DecorationPainter {
         var union: NSRect?
         layout.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, frame, _, _ in
             union = union.map { $0.union(frame) } ?? frame
-            return true
+            return !firstLineOnly
         }
         return union
     }

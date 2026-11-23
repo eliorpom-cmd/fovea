@@ -85,6 +85,11 @@ struct SyntaxSpan: Equatable, Sendable {
     /// this avoids recomputing it on every selection change.
     var depth: Int
 
+    /// Blockquotes around a list item. Its bullet and text move right by one
+    /// quote indent per level, so they land inside the quote instead of on
+    /// its bar. Always 0 for anything that isn't a list item.
+    var quoteLevel = 0
+
     /// The range of the whole block, when `range` had to be narrowed.
     ///
     /// A multi-line list item is revealed **at the line** (§2.2): `range`
@@ -107,13 +112,14 @@ struct SyntaxSpan: Equatable, Sendable {
     }
 
     init(kind: Kind, range: NSRange, markers: [NSRange], content: NSRange, depth: Int = 0,
-         blockRange: NSRange? = nil) {
+         blockRange: NSRange? = nil, quoteLevel: Int = 0) {
         self.kind = kind
         self.range = range
         self.markers = markers
         self.content = content
         self.depth = depth
         self.blockRange = blockRange
+        self.quoteLevel = quoteLevel
     }
 
     /// The range on which to apply the block's layout.

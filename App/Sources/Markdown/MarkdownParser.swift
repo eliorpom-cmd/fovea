@@ -290,13 +290,28 @@ struct MarkdownParser {
             // own bullet**, and their source indentation showed up as blank
             // space in front of the text.
             let firstLine = lineRange(at: full.location)
+            var quotes = 0
+            var ancestor = node.parent
+            while let current = ancestor {
+                if current is BlockQuote { quotes += 1 }
+                ancestor = current.parent
+            }
+            // The layout range starts at the **line**, not at the marker.
+            // cmark starts a nested item at its marker, after the source
+            // indent; but a paragraph takes its style from its first
+            // character, and those leading spaces kept the parent's style.
+            // A nested item with children of its own was drawn at its
+            // parent's level, bullet included.
+            let block = NSRange(location: firstLine.location,
+                                length: max(0, NSMaxRange(full) - firstLine.location))
             spans.append(SyntaxSpan(kind: kind,
                                     range: firstLine,
                                     markers: [markerRange],
                                     content: NSRange(location: inner.location,
                                                      length: max(0, firstLine.location + firstLine.length - inner.location)),
                                     depth: depth,
-                                    blockRange: full.length > firstLine.length ? full : nil))
+                                    blockRange: block.length > firstLine.length ? block : nil,
+                                    quoteLevel: quotes))
         }
 
         private mutating func emitThematicBreak(_ node: ThematicBreak, depth: Int) {

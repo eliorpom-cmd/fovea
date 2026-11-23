@@ -93,6 +93,11 @@ struct EditorTypography: Equatable {
         (bodySize * 1.6 * CGFloat(level + 1)).rounded()
     }
 
+    /// Indentation of a list item, counting the blockquotes it sits in.
+    func itemIndent(for span: SyntaxSpan) -> CGFloat {
+        listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth)) + quoteIndent * CGFloat(span.quoteLevel)
+    }
+
     /// Gap between the bullet and the text it introduces.
     var listMarkerGap: CGFloat { (bodySize * 0.45).rounded() }
 
