@@ -561,7 +561,8 @@ final class EditorTextView: NSTextView {
         let index = characterIndexForInsertion(at: point)
         if let storage = textStorage, index < storage.length,
            let link = storage.attribute(.link, at: index, effectiveRange: nil) as? URL {
-            NSWorkspace.shared.open(link)
+            // A local file opens only if it is read, not run. See `LinkOpening`.
+            LinkOpening.follow(link)
             return
         }
         // `[text](#a-heading)` has no address either: it leads to a place in

@@ -67,6 +67,11 @@ removals are the design, not an accident — see the scope policy in
 
 ### Fixed
 
+- `⌘`-click on a link to a local file opens it only if it is read, not run:
+  text, images, PDFs, audio and video. Applications, scripts, executables,
+  packages and folders are shown in Finder instead. A link such as
+  `[docs](setup.command)` in a cloned README used to run the script in
+  Terminal on a single click.
 - A list item that wraps has its bullet, number or checkbox on its first
   line, not its last.
 - A nested list item with children of its own is drawn at its own level,

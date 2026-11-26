@@ -127,4 +127,62 @@ final class LinkTests: XCTestCase {
         XCTAssertEqual(EditorController.anchorSlug("**Bold** title!"), "bold-title")
         XCTAssertEqual(EditorController.anchorSlug("Étape 1 : c'est parti"), "étape-1--cest-parti")
     }
+
+    // MARK: - Opening a local file
+
+    /// A temporary folder with one file per case, removed after each test.
+    private func scratchFile(_ name: String, contents: String = "x", executable: Bool = false,
+                             directory: Bool = false) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fovea-links-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent(name)
+        if directory {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        } else {
+            try contents.write(to: url, atomically: true, encoding: .utf8)
+            if executable {
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            }
+        }
+        return url
+    }
+
+    func testAMarkdownFileOpens() throws {
+        XCTAssertEqual(LinkOpening.action(for: try scratchFile("notes.md")), .open)
+    }
+
+    func testAnImageOpens() throws {
+        XCTAssertEqual(LinkOpening.action(for: try scratchFile("photo.png")), .open)
+    }
+
+    func testACommandFileIsOnlyShownInFinder() throws {
+        // Terminal runs a `.command` file as soon as it opens it.
+        let script = try scratchFile("setup.command", contents: "#!/bin/sh\necho hi\n")
+        XCTAssertEqual(LinkOpening.action(for: script), .revealInFinder)
+    }
+
+    func testAShellScriptIsOnlyShownInFinder() throws {
+        let script = try scratchFile("install.sh", contents: "#!/bin/sh\necho hi\n")
+        XCTAssertEqual(LinkOpening.action(for: script), .revealInFinder)
+    }
+
+    func testAnExecutableWithoutExtensionIsOnlyShownInFinder() throws {
+        let binary = try scratchFile("run", contents: "#!/bin/sh\necho hi\n", executable: true)
+        XCTAssertEqual(LinkOpening.action(for: binary), .revealInFinder)
+    }
+
+    func testAnApplicationIsOnlyShownInFinder() {
+        let app = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        XCTAssertEqual(LinkOpening.action(for: app), .revealInFinder)
+    }
+
+    func testAFolderIsOnlyShownInFinder() throws {
+        XCTAssertEqual(LinkOpening.action(for: try scratchFile("docs", directory: true)), .revealInFinder)
+    }
+
+    func testARemoteAddressOpens() {
+        XCTAssertEqual(LinkOpening.action(for: URL(string: "https://example.com")!), .open)
+    }
 }
