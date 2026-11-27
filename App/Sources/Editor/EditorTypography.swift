@@ -98,12 +98,43 @@ struct EditorTypography: Equatable {
         listIndent(level: SyntaxSpan.listLevel(forDepth: span.depth)) + quoteIndent * CGFloat(span.quoteLevel)
     }
 
+    /// Indentation of the list or task item a blockquote sits in, or 0
+    /// when the quote isn't inside any item.
+    ///
+    /// The innermost item wins: it is the one with the greatest depth
+    /// among those that are shallower than the quote and whose block
+    /// contains its start.
+    func enclosingItemIndent(of quote: SyntaxSpan, among spans: [SyntaxSpan]) -> CGFloat {
+        var enclosing: SyntaxSpan?
+        for span in spans where span.depth < quote.depth {
+            switch span.kind {
+            case .listItem, .taskItem:
+                guard NSLocationInRange(quote.range.location, span.layoutRange) else { continue }
+                if span.depth > (enclosing?.depth ?? -1) { enclosing = span }
+            default:
+                continue
+            }
+        }
+        return enclosing.map(itemIndent(for:)) ?? 0
+    }
+
     /// Gap between the bullet and the text it introduces.
     var listMarkerGap: CGFloat { (bodySize * 0.45).rounded() }
 
     /// Indentation of a blockquote: room for its vertical bar, plus the
     /// breathing space needed between the bar and the text.
     var quoteIndent: CGFloat { (bodySize * 1.2).rounded() }
+
+    /// Where a quote starts, from the column's edge, for a quote whose text
+    /// is inset by `indent`: 0 at the top level, the item's text indent
+    /// inside a list item.
+    func quoteOrigin(indent: CGFloat) -> CGFloat { max(0, indent - quoteIndent) }
+
+    /// The x of a quote's bar, from the column's edge: a third of the way
+    /// into the quote's own indent, which leaves it air on both sides.
+    func quoteBarX(indent: CGFloat) -> CGFloat {
+        quoteOrigin(indent: indent) + (quoteIndent - 2) / 3
+    }
 
     var codeBlockIndent: CGFloat { (bodySize * 0.75).rounded() }
 

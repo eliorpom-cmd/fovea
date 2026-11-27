@@ -123,9 +123,12 @@ extension EditorDecoration {
                 decorations.append(contentsOf: rules(for: table, in: storage, typography: typography,
                                                      availableWidth: availableWidth))
             case .blockQuote:
+                // Inside a list item, the bar moves with the quote's text:
+                // it sits where the item's text starts.
+                let offset = typography.enclosingItemIndent(of: span, among: spans)
                 decorations.append(EditorDecoration(kind: .quoteBar,
                                                     range: span.range,
-                                                    indent: typography.quoteIndent))
+                                                    indent: offset + typography.quoteIndent))
 
             case .listItem(let marker) where !isRevealed:
                 decorations.append(EditorDecoration(
@@ -322,7 +325,11 @@ struct DecorationPainter {
             // doesn't: a list inside a quote pushes its items further right,
             // and a bar placed relative to them followed them — straight
             // under the bullets.
-            let bar = NSRect(x: columnLeft + (decoration.indent - 2) / 3,
+            //
+            // Inside a list item, the quote starts at the item's text, and the
+            // bar moves along with it: only the part of `indent` that belongs to
+            // the quote itself is split in thirds.
+            let bar = NSRect(x: columnLeft + typography.quoteBarX(indent: decoration.indent),
                              y: frame.minY + leading,
                              width: 2,
                              height: max(1, frame.height - leading))

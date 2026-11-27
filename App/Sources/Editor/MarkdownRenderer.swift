@@ -62,7 +62,7 @@ struct MarkdownRenderer {
             // scope intersects nothing, and the fallback that used to fix this
             // case reprocessed the entire document.
             guard EditorController.touches(span.range, range) else { continue }
-            applyContentStyle(storage, span: span)
+            applyContentStyle(storage, span: span, among: spans)
         }
 
         // Masking comes last, on markers only: it must
@@ -626,7 +626,8 @@ struct MarkdownRenderer {
 
     // MARK: - Content style
 
-    private func applyContentStyle(_ storage: NSTextStorage, span: SyntaxSpan) {
+    private func applyContentStyle(_ storage: NSTextStorage, span: SyntaxSpan,
+                                   among spans: [SyntaxSpan]) {
         let content = clamp(span.content, to: storage.length)
         let whole = clamp(span.range, to: storage.length)
 
@@ -732,11 +733,22 @@ struct MarkdownRenderer {
                                    .paragraphStyle: style], range: whole)
 
         case .blockQuote:
+            // A quote inside a list item starts where the item's text
+            // starts, not at the margin: its indent **adds** to the item's,
+            // the same way an item inside a quote adds the quote's.
             let style = typography.paragraphStyle()
-            style.firstLineHeadIndent = typography.quoteIndent
-            style.headIndent = typography.quoteIndent
-            storage.addAttributes([.foregroundColor: Theme.NS.labelSecondary,
-                                   .paragraphStyle: style], range: whole)
+            let indent = typography.enclosingItemIndent(of: span, among: spans) + typography.quoteIndent
+            style.firstLineHeadIndent = indent
+            style.headIndent = indent
+            storage.addAttributes([.foregroundColor: Theme.NS.labelSecondary], range: whole)
+            // The paragraph style starts at the **line**, not at the `>`.
+            // cmark starts a nested quote at its marker, after the source
+            // indent; but a paragraph takes its style from its first
+            // character, and those leading spaces kept the item's style.
+            let line = storage.mutableString.lineRange(for: NSRange(location: whole.location, length: 0))
+            let layout = NSRange(location: min(line.location, whole.location),
+                                 length: whole.upperBound - min(line.location, whole.location))
+            storage.addAttributes([.paragraphStyle: style], range: layout)
 
         case .taskItem(_, let checked) where checked:
             // A done task is dimmed. That's the only information a task

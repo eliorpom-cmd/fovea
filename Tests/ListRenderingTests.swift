@@ -136,6 +136,97 @@ final class ListRenderingTests: XCTestCase {
                       "The box sits on the first line: box \(box), first line \(firstLine)")
     }
 
+    // MARK: - A quote inside an item
+
+    func testAQuoteInsideAnItemTakesTheItemIndent() throws {
+        // The quote's indent replaced the item's instead of adding to it: a
+        // quote nested in an item started at the margin, left of its bullet.
+        let source = "- Item\n  > Quoted\n"
+        let style = try quoteStyle(in: source, at: "  > Quoted")
+        let expected = try itemIndent(in: source, of: 0) + EditorTypography.default.quoteIndent
+        XCTAssertEqual(style.firstLineHeadIndent, expected, accuracy: tolerance)
+        XCTAssertEqual(style.headIndent, expected, accuracy: tolerance)
+
+        let view = try render(source)
+        let item = try caretX(atFirstOccurrenceOf: "Item", in: source, view: view)
+        let quoted = try caretX(atFirstOccurrenceOf: "Quoted", in: source, view: view)
+        XCTAssertEqual(quoted - item, EditorTypography.default.quoteIndent, accuracy: tolerance,
+                       "The quote's text sits one quote indent right of the item's text")
+    }
+
+    func testAQuoteInsideANestedItemTakesTheNestedIndent() throws {
+        let source = "- Parent\n  - Child\n    > Quoted\n"
+        let style = try quoteStyle(in: source, at: "    > Quoted")
+        let child = (source as NSString).range(of: "  - Child").location
+        let expected = try itemIndent(in: source, of: child) + EditorTypography.default.quoteIndent
+        XCTAssertEqual(style.firstLineHeadIndent, expected, accuracy: tolerance)
+        XCTAssertEqual(style.headIndent, expected, accuracy: tolerance)
+        XCTAssertGreaterThan(expected,
+                             try itemIndent(in: source, of: 0) + EditorTypography.default.quoteIndent,
+                             "The level-2 item's indent is the one taken, not its parent's")
+    }
+
+    func testAQuoteInsideATaskItemTakesTheItemIndent() throws {
+        let source = "- [ ] Task\n  > Quoted\n"
+        let style = try quoteStyle(in: source, at: "  > Quoted")
+        let expected = try itemIndent(in: source, of: 0) + EditorTypography.default.quoteIndent
+        XCTAssertEqual(style.firstLineHeadIndent, expected, accuracy: tolerance)
+        XCTAssertEqual(style.headIndent, expected, accuracy: tolerance)
+    }
+
+    func testAQuoteOutsideAnyListIsUnchanged() throws {
+        let style = try quoteStyle(in: "> Quoted\n", at: "> Quoted")
+        XCTAssertEqual(style.firstLineHeadIndent, EditorTypography.default.quoteIndent, accuracy: tolerance)
+        XCTAssertEqual(style.headIndent, EditorTypography.default.quoteIndent, accuracy: tolerance)
+    }
+
+    func testTheBarOfAQuoteInsideAnItemSitsAtTheItemText() throws {
+        let typography = EditorTypography.default
+        let source = "- Item\n  > Quoted\n"
+        let inside = try quoteBar(in: source)
+        let outside = try quoteBar(in: "> Quoted\n")
+        let itemText = try itemIndent(in: source, of: 0)
+
+        XCTAssertEqual(typography.quoteOrigin(indent: outside.indent), 0, accuracy: tolerance,
+                       "A top-level quote starts at the margin")
+        XCTAssertEqual(typography.quoteOrigin(indent: inside.indent), itemText, accuracy: tolerance,
+                       "A quote inside an item starts at the item's text, not at 0")
+        XCTAssertEqual(typography.quoteBarX(indent: inside.indent)
+                        - typography.quoteBarX(indent: outside.indent),
+                       itemText, accuracy: tolerance,
+                       "The bar moves right by exactly the item's text indent")
+    }
+
+    private func quoteStyle(in source: String, at line: String) throws -> NSParagraphStyle {
+        let view = try render(source)
+        let storage = try XCTUnwrap(view.textStorage)
+        // A paragraph takes its style from its first character: the start
+        // of the line, not the `>`.
+        let start = (source as NSString).range(of: line).location
+        XCTAssertNotEqual(start, NSNotFound, "\"\(line)\" not found")
+        return try XCTUnwrap(storage.attribute(.paragraphStyle, at: start,
+                                               effectiveRange: nil) as? NSParagraphStyle)
+    }
+
+    /// The text indent of the item that starts at `location`.
+    private func itemIndent(in source: String, of location: Int) throws -> CGFloat {
+        let item = try XCTUnwrap(MarkdownParser.parse(source).spans.first { span in
+            switch span.kind {
+            case .listItem, .taskItem: span.layoutRange.location == location
+            default: false
+            }
+        }, "No item at \(location)")
+        return EditorTypography.default.itemIndent(for: item)
+    }
+
+    private func quoteBar(in source: String) throws -> EditorDecoration {
+        let view = try render(source)
+        let decorations = EditorDecoration.build(from: MarkdownParser.parse(source).spans,
+                                                 in: try XCTUnwrap(view.textStorage),
+                                                 typography: .default)
+        return try XCTUnwrap(decorations.first { $0.kind == .quoteBar })
+    }
+
     // MARK: - Helpers
 
     private func lineFrame(at offset: Int, view: EditorTextView) throws -> NSRect {
