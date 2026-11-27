@@ -78,6 +78,8 @@ removals are the design, not an accident — see the scope policy in
   not its parent's.
 - A list inside a blockquote is indented past the quote's bar instead of
   drawing its bullets on it.
+- A blockquote inside a list or task item starts under the item's text, its
+  bar included, on screen and in print, instead of at the margin.
 - A table stops at the right edge of the text instead of one line padding
   past it.
 
